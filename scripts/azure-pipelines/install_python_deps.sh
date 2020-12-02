@@ -1,5 +1,11 @@
 #!/bin/bash
 
+which python
+which python3
+which pip
+which pip3
+echo $PATH
+
 pip3 install --upgrade pip setuptools wheel
 pip3 install numpy scipy
 pip3 install -r acquisition/requirements-dev.txt

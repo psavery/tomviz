@@ -1,5 +1,11 @@
 #!/bin/bash
 
+which python
+which python3
+which pip
+which pip3
+echo $PATH
+
 if [[ $AGENT_OS == 'Darwin' ]]; then
   # Make sure we use python3 on the mac
   export TOMVIZ_TEST_PYTHON_EXECUTABLE=$(which python3)
