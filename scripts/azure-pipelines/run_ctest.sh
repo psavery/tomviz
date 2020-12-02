@@ -13,6 +13,7 @@ elif [[ $AGENT_OS == 'Windows_NT' ]]; then
   # The azure-pipelines docker on Windows can't run Linux images
   # If we find a way to get it to work, we can include this test
   CTEST_EXTRA_ARGS='-E DockerUtilities'
+  export TOMVIZ_TEST_PYTHON_EXECUTABLE=$(which python)
 fi
 
 cd $BUILD_BINARIESDIRECTORY
