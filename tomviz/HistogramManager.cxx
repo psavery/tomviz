@@ -106,12 +106,7 @@ void Populate2DHistogram(vtkImageData* input, vtkImageData* output)
   }
 
   // The bin values are the centers, extending +/- half an inc either side
-  for (int i = 0; i < arrayPtr->GetNumberOfComponents(); ++i) {
-    double* tmp = arrayPtr->GetFiniteRange(i);
-    minmax[0] = std::min(minmax[0], tmp[0]);
-    minmax[1] = std::max(minmax[1], tmp[1]);
-  }
-
+  arrayPtr->GetFiniteRange(minmax, -1);
   if (minmax[0] == minmax[1]) {
     minmax[1] = minmax[0] + 1.0;
   }

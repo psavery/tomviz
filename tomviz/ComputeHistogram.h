@@ -187,7 +187,15 @@ void Calculate2DHistogram(T* values, const int* dim, const int numComp,
           const vtkIdType gradIndex =
             static_cast<vtkIdType>(gradMag * (bins[1] - 1) / maxGradMag);
 
-          const T value = values[strideSlice + centerIndex * numComp];
+          // Use a double to prevent overflows on small ints.
+          // This will affect precision a little for large ints.
+          double value = 0;
+          auto firstInd = strideSlice + centerIndex * numComp;
+          for (auto i = 0; i < numComp; ++i) {
+            value += std::pow(values[firstInd + i], 2);
+          }
+          value = std::sqrt(value);
+
           const vtkIdType valueIndex = static_cast<vtkIdType>(
             (value - range[0]) * (bins[1] - 1) / (range[1] - range[0]));
 
