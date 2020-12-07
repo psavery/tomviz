@@ -125,10 +125,12 @@ bool ModuleVolume::initialize(DataSource* data, vtkSMViewProxy* vtkView)
 
 void ModuleVolume::updateColorMap()
 {
-  m_volumeProperty->SetScalarOpacity(
-    vtkPiecewiseFunction::SafeDownCast(opacityMap()->GetClientSideObject()));
-  m_volumeProperty->SetColor(
-    vtkColorTransferFunction::SafeDownCast(colorMap()->GetClientSideObject()));
+  auto* opacityFunction = vtkPiecewiseFunction::SafeDownCast(opacityMap()->GetClientSideObject());
+  auto* colorFunction = vtkColorTransferFunction::SafeDownCast(colorMap()->GetClientSideObject());
+  for (unsigned i = 0; i < dataSource()->getNumberOfComponents(); ++i) {
+    m_volumeProperty->SetScalarOpacity(i, opacityFunction);
+    m_volumeProperty->SetColor(i, colorFunction);
+  }
 
   int propertyMode = vtkVolumeProperty::TF_1D;
   const Module::TransferMode mode = getTransferMode();
