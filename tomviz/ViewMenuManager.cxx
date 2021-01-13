@@ -5,15 +5,21 @@
 
 #include <pqCoreUtilities.h>
 #include <pqView.h>
+#include <vtkPVRenderView.h>
 #include <vtkSMPropertyHelper.h>
 #include <vtkSMSessionProxyManager.h>
 #include <vtkSMViewProxy.h>
 
+#include <vtkCallbackCommand.h>
 #include <vtkColorTransferFunction.h>
 #include <vtkCommand.h>
 #include <vtkGridAxes3DActor.h>
 #include <vtkImageData.h>
 #include <vtkProperty.h>
+#include <vtkRenderer.h>
+#include <vtkRenderWindow.h>
+#include <vtkSliderRepresentation2D.h>
+#include <vtkSliderWidget.h>
 #include <vtkTextProperty.h>
 
 #include <QAction>
@@ -27,6 +33,8 @@
 #include "DataSource.h"
 #include "SliceViewDialog.h"
 #include "Utilities.h"
+
+#include <QDebug>
 
 namespace tomviz {
 
@@ -78,6 +86,14 @@ ViewMenuManager::ViewMenuManager(QMainWindow* mainWindow, QMenu* menu)
   m_showOrientationAxesAction->setChecked(true);
   connect(m_showOrientationAxesAction, &QAction::triggered, this,
           &ViewMenuManager::setShowOrientationAxes);
+
+  Menu->addSeparator();
+
+  m_imageViewerModeAction = Menu->addAction("Image Viewer Mode");
+  m_imageViewerModeAction->setCheckable(true);
+  m_imageViewerModeAction->setChecked(false);
+  connect(m_imageViewerModeAction, &QAction::triggered, this,
+          &ViewMenuManager::setImageViewerMode);
 
   Menu->addSeparator();
 
@@ -215,6 +231,46 @@ void ViewMenuManager::setShowOrientationAxes(bool show)
   if (view) {
     view->render();
   }
+}
+
+void ViewMenuManager::setImageViewerMode(bool b)
+{
+  if (!m_view) {
+    return;
+  }
+
+  auto* view = vtkPVRenderView::SafeDownCast(m_view->GetClientSideView());
+  auto* renderer = view->GetRenderer();
+  auto* interactor = view->GetInteractor();
+
+  m_sliderRepresentation->SetRenderer(renderer);
+  renderer->AddActor(m_sliderRepresentation);
+  m_sliderRepresentation->GetPoint1Coordinate()->SetCoordinateSystemToDisplay();
+  m_sliderRepresentation->GetPoint2Coordinate()->SetCoordinateSystemToDisplay();
+  m_sliderRepresentation->GetPoint1Coordinate()->SetValue(25, 25);
+  m_sliderRepresentation->GetPoint2Coordinate()->SetValue(1000, 25);
+  m_sliderRepresentation->SetMinimumValue(0);
+  m_sliderRepresentation->SetMaximumValue(100);
+  m_sliderRepresentation->SetValue(0);
+  m_sliderWidget->SetRepresentation(m_sliderRepresentation);
+  m_sliderWidget->SetInteractor(interactor);
+
+  m_sliderCallbackCommand->SetCallback(sliderChangedCallback);
+  m_sliderWidget->AddObserver(vtkCommand::InteractionEvent, m_sliderCallbackCommand);
+
+}
+
+void ViewMenuManager::sliderChangedCallback(vtkObject* object,
+                                            unsigned long event,
+                                            void* vtkNotUsed(clientdata),
+                                            void* vtkNotUsed(calldata))
+{
+  auto target = reinterpret_cast<vtkSliderWidget*>(object);
+  auto representation = target->GetSliderRepresentation();
+  auto value = round(representation->GetValue());
+  representation->SetValue(value);
+
+  qDebug() << "I have been called!\n";
 }
 
 void ViewMenuManager::updateDataSource(DataSource* s)

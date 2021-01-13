@@ -9,9 +9,15 @@
 #include <QPointer>
 #include <QScopedPointer>
 
+#include <vtkNew.h>
+
 class QDialog;
 class QAction;
 
+class vtkCallbackCommand;
+class vtkObject;
+class vtkSliderRepresentation2D;
+class vtkSliderWidget;
 class vtkSMViewProxy;
 
 namespace tomviz {
@@ -36,6 +42,7 @@ private slots:
 
   void setShowCenterAxes(bool show);
   void setShowOrientationAxes(bool show);
+  void setImageViewerMode(bool b);
 
   void showDarkWhiteData();
 
@@ -46,13 +53,21 @@ private:
   void updateDataSource(DataSource* s);
   void updateDataSourceEnableStates();
 
+  static void sliderChangedCallback(vtkObject* object, unsigned long event,
+                                    void* clientdata, void* calldata);
+
   QPointer<QAction> m_perspectiveProjectionAction;
   QPointer<QAction> m_orthographicProjectionAction;
   QPointer<QAction> m_showCenterAxesAction;
   QPointer<QAction> m_showOrientationAxesAction;
+  QPointer<QAction> m_imageViewerModeAction;
   QPointer<QAction> m_showDarkWhiteDataAction;
 
   QScopedPointer<SliceViewDialog> m_sliceViewDialog;
+
+  vtkNew<vtkSliderWidget> m_sliderWidget;
+  vtkNew<vtkSliderRepresentation2D> m_sliderRepresentation;
+  vtkNew<vtkCallbackCommand> m_sliderCallbackCommand;
 
   DataSource* m_dataSource = nullptr;
   vtkSMViewProxy* m_view;
