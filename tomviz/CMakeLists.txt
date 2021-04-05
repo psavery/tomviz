@@ -228,6 +228,8 @@ set(SOURCES
   vtkLengthScaleRepresentation.cxx
   vtkActiveScalarsProducer.h
   vtkActiveScalarsProducer.cxx
+  vtkImageRotationsData.cxx
+  vtkImageRotationsData.h
   vtkNonOrthoImagePlaneWidget.cxx
   vtkNonOrthoImagePlaneWidget.h
   vtkOMETiffReader.cxx

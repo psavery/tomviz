@@ -96,6 +96,9 @@ private:
 
   void setNumberOfParameters(int n) { m_numberOfParameters = n; }
   void setHelpFromJson(const QJsonObject& json);
+
+  bool readResult(Python::Dict& outputDict, const QString& name);
+
   class OPInternals;
   const QScopedPointer<OPInternals> d;
   QString m_label;
@@ -111,6 +114,7 @@ private:
   QList<QString> m_resultNames;
   QString m_childDataSourceName = "output";
   QString m_childDataSourceLabel = "Output";
+  QString m_childDataSourceType = "reconstruction";
 
   QMap<QString, QVariant> m_arguments;
   int m_numberOfParameters = 0;

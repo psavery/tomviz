@@ -32,6 +32,8 @@
 #include "vtkSMSourceProxy.h"
 #include "vtkTrivialProducer.h"
 
+#include "vtkImageRotationsData.h"
+
 #include "ui_EditPythonOperatorWidget.h"
 
 namespace {
@@ -280,6 +282,10 @@ void OperatorPython::setJSONDescription(const QString& str)
       } else if (labelValue.isNull()) {
         qCritical() << "No label given for child DataSet";
       }
+      QJsonValueRef typeValue = dataSourceNode["type"];
+      if (!typeValue.isUndefined() && !typeValue.isNull()) {
+        m_childDataSourceType = typeValue.toString();
+      }
     }
   }
 
@@ -467,26 +473,8 @@ bool OperatorPython::applyTransform(vtkDataObject* data)
 
     // Results (tables, etc.)
     for (int i = 0; i < m_resultNames.size(); ++i) {
-      Python::Object pyDataObject;
-      pyDataObject = outputDict[m_resultNames[i]];
-
-      if (!pyDataObject.isValid()) {
-        errorEncountered = true;
-        qCritical() << "No result named" << m_resultNames[i]
-                    << "defined in dictionary returned from Python script.\n";
-        continue;
-      }
-      vtkObjectBase* vtkobject =
-        Python::VTK::GetPointerFromObject(pyDataObject, "vtkDataObject");
-      vtkDataObject* dataObject = vtkDataObject::SafeDownCast(vtkobject);
-      if (dataObject) {
-        // Emit signal so we switch back to UI thread
-        emit newOperatorResult(m_resultNames[i], dataObject);
-      } else {
-        qCritical() << "Result named '" << m_resultNames[i]
-                    << "' is not a vtkDataObject";
-        continue;
-      }
+      bool success = readResult(outputDict, m_resultNames[i]);
+      errorEncountered = errorEncountered || !success;
     }
 
     if (errorEncountered) {
@@ -497,6 +485,50 @@ bool OperatorPython::applyTransform(vtkDataObject* data)
   }
 
   return !errorEncountered;
+}
+
+bool OperatorPython::readResult(Python::Dict& outputDict, const QString& name)
+{
+  auto pyDataObject = outputDict[name];
+
+  if (!pyDataObject.isValid()) {
+    qCritical() << "No result named" << name
+                << "defined in dictionary returned from Python script.\n";
+    return false;
+  }
+
+  vtkSmartPointer<vtkDataObject> dataObject = nullptr;
+
+  // Handle special cases of child data source types
+  if (m_childDataSourceType == "rotation_images") {
+    auto rotationImages = outputDict["rotation_images"].toDict();
+    auto images = vtkDataObject::SafeDownCast(Python::VTK::GetPointerFromObject(rotationImages["images"], "vtkDataObject"));
+
+    auto pythonRotations = rotationImages["rotations"].toList();
+    std::vector<double> rotations;
+    for (int i = 0; i < pythonRotations.length(); ++i) {
+      rotations.push_back(pythonRotations[i].toDouble());
+    }
+
+    vtkNew<vtkImageRotationsData> data;
+    data->ShallowCopy(images);
+    data->SetRotations(rotations);
+    dataObject = data;
+  } else {
+    auto vtkobject =
+      Python::VTK::GetPointerFromObject(pyDataObject, "vtkDataObject");
+    dataObject = vtkDataObject::SafeDownCast(vtkobject);
+    if (!dataObject) {
+      qCritical() << "Result named '" << name
+                  << "' is not a vtkDataObject";
+      return false;
+    }
+  }
+
+  // Emit signal so we switch back to UI thread
+  emit newOperatorResult(name, dataObject);
+
+  return true;
 }
 
 Operator* OperatorPython::clone() const
