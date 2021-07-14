@@ -575,9 +575,53 @@ QLayout* InterfaceBuilder::buildInterface() const
   return verticalLayout;
 }
 
+static bool setWidgetValue(QObject* o, const QVariant& v)
+{
+  // Returns true if the widget type was found, false otherwise.
+
+  if (auto w = qobject_cast<QCheckBox*>(o)) {
+    w->setChecked(v.toBool());
+  } else if (auto w = qobject_cast<tomviz::SpinBox*>(o)) {
+    w->setValue(v.toInt());
+  } else if (auto w = qobject_cast<tomviz::DoubleSpinBox*>(o)) {
+    w->setValue(v.toDouble());
+  } else if (auto w = qobject_cast<QComboBox*>(o)) {
+    w->setCurrentText(v.toString());
+  } else if (auto w = qobject_cast<QLineEdit*>(o)) {
+    w->setText(v.toString());
+  } else {
+    return false;
+  }
+
+  return true;
+}
+
 void InterfaceBuilder::setParameterValues(QMap<QString, QVariant> values)
 {
   m_parameterValues = values;
+}
+
+void InterfaceBuilder::updateWidgetValues(const QObject* parent)
+{
+  static const QStringList skipTypes = {
+    "QLabel",
+  };
+
+  for (auto* child : parent->findChildren<QWidget*>()) {
+    const auto& name = child->objectName();
+    if (!m_parameterValues.contains(name)) {
+      continue;
+    }
+
+    if (skipTypes.contains(child->metaObject()->className())) {
+      // Skip this type...
+      continue;
+    }
+
+    if (!setWidgetValue(child, m_parameterValues[name])) {
+      qDebug() << "Failed to set value for child: " << child;
+    }
+  }
 }
 
 QVariantMap InterfaceBuilder::parameterValues(const QObject* parent)
