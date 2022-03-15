@@ -30,6 +30,51 @@ def _create_data_source_options_string(data_sources):
     return _data_source_options_string(options)
 
 
+def _data_source_to_id(selected, data_sources):
+    if selected.startswith('0x'):
+        # It's already an id.
+        return selected
+
+    # Check if it matches either a unique label or a unique file name
+    matching_ids = [x['id'] for x in data_sources if x['label'] == selected]
+    if len(matching_ids) == 1:
+        return matching_ids[0]
+    elif len(matching_ids) > 1:
+        ids_str = '\n'.join(matching_ids)
+        msg = (
+            f'Multiple data sources share the label "{selected}" in the state '
+            f'file. One must be selected by id. Options are:\n{ids_str}'
+        )
+        raise Exception(msg)
+
+    matching_ids = [x['id'] for x in data_sources
+                    if x['reader']['fileNames'][0] == selected]
+    if len(matching_ids) == 1:
+        return matching_ids[0]
+    elif len(matching_ids) > 1:
+        ids_str = '\n'.join(matching_ids)
+        msg = (
+            f'Multiple data sources share the file name "{selected}" in the '
+            f'state file. One must be selected by id. Options are:\n{ids_str}'
+        )
+        raise Exception(msg)
+
+    msg = (
+        f'"{selected}" does not match any data source ids, labels, or '
+        'file names in the state file'
+    )
+    raise Exception(msg)
+
+
+def _apply_data_overrides(data_overrides, state):
+    data_sources = state['dataSources']
+    for identifier, new_path in data_overrides:
+        data_id = _data_source_to_id(identifier, data_sources)
+        for data_source in data_sources:
+            if data_source['id'] == data_id:
+                data_source['reader']['fileNames'][0] = new_path
+
+
 def _auto_select_data_source(data_sources):
     if len(data_sources) == 1:
         # Only one data source. Select this one.
@@ -95,6 +140,12 @@ def _extract_pipeline(state, selected_data_source=None):
               ' to override data source in state file. If multiple files are'
               ' provided the pipeline with be run for each file.',
               type=click.Path(exists=True))
+@click.option('-r', '--data-override', help='Override a data source in the '
+              'state file. EMD/Data exchange files can be used. Two arguments '
+              'must be provided: the label or id of the data source to '
+              'override, followed by the data file',
+              type=(str, click.Path(exists=True, dir_okay=False)),
+              multiple=True)
 @click.option('-s', '--state-file-path', help='Path to the Tomviz state file',
               type=click.Path(exists=True), required=True)
 @click.option('-x', '--selected-data-source',
@@ -112,12 +163,17 @@ def _extract_pipeline(state, selected_data_source=None):
 @click.option('-i', '--operator-index',
               help='The operator to start at.',
               type=int, default=0)
-def main(data_path, state_file_path, output_file_path, progress_method,
-         socket_path, operator_index, selected_data_source):
+def main(data_path, data_override, state_file_path, output_file_path,
+         progress_method, socket_path, operator_index, selected_data_source):
 
     # Extract the pipeline
     with open(state_file_path) as fp:
         state = json.load(fp, encoding='utf-8')
+
+    # Apply data overrides to the state
+    _apply_data_overrides(data_override, state)
+
+    breakpoint()
 
     data_source, operators = _extract_pipeline(state, selected_data_source)
 
