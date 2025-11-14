@@ -1,7 +1,8 @@
 from tomviz import utils
+from tomviz.dataset import Dataset as AbstractDataset
 
 
-class Dataset:
+class Dataset(AbstractDataset):
     def __init__(self, data_object, data_source):
         self._data_object = data_object
         self._data_source = data_source
