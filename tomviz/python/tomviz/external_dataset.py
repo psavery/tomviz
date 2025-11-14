@@ -14,10 +14,10 @@ class Dataset:
         self.tilt_axis = None
         # The currently active scalar
         self.active_name = active
-        # If we weren't given the active array and we only have one array, set
-        # it as the active array.
+        # If we weren't given the active array, set the first as the active
+        # array.
         if active is None and len(arrays.keys()):
-            (self.active_name,) = arrays.keys()
+            self.active_name = next(iter(arrays.keys()))
 
         self._spacing = None
 
@@ -31,11 +31,15 @@ class Dataset:
 
     @property
     def active_scalars(self):
-        return self.arrays[self.active_name]
+        return self.scalars(self.active_name)
 
     @active_scalars.setter
     def active_scalars(self, array):
-        self.arrays[self.active_name] = array
+        self.set_scalars(self.active_name, array)
+
+    @property
+    def num_scalars(self):
+        return len(self.arrays)
 
     @property
     def scalars_names(self):
@@ -45,6 +49,9 @@ class Dataset:
         if name is None:
             name = self.active_name
         return self.arrays[name]
+
+    def set_scalars(self, name, array):
+        self.arrays[name] = array
 
     @property
     def spacing(self):
