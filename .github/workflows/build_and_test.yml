@@ -19,6 +19,10 @@ jobs:
             name: Linux,
             os: ubuntu-latest
           }
+        - {
+            name: MacOS,
+            os: macos-latest,
+          }
 
     defaults:
       run:
