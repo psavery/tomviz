@@ -2,7 +2,7 @@ cxx-compiler
 cmake
 ninja
 paraview==6.0.1
-vtk
+vtk==9.5.1
 libxml2-devel=2.14*
 # This is needed for building the tests
 gtest
