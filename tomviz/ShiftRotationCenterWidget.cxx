@@ -1,15 +1,13 @@
 /* This source file is part of the Tomviz project, https://tomviz.org/.
    It is released under the 3-Clause BSD License, see "LICENSE". */
 
-#include "FxiWorkflowWidget.h"
-#include "ui_FxiWorkflowWidget.h"
+#include "ShiftRotationCenterWidget.h"
+#include "ui_ShiftRotationCenterWidget.h"
 
 #include "ActiveObjects.h"
 #include "ColorMap.h"
 #include "DataSource.h"
-#include "InterfaceBuilder.h"
 #include "InternalPythonHelper.h"
-#include "OperatorPython.h"
 #include "PresetDialog.h"
 #include "Utilities.h"
 
@@ -108,22 +106,12 @@ public:
 
 vtkStandardNewMacro(InteractorStyle)
 
-  template <typename Key, typename T>
-  QMap<Key, T> unite(const QMap<Key, T>& map1, const QMap<Key, T>& map2)
-{
-  auto ret = map1;
-  for (const auto& k : map2.keys()) {
-    ret[k] = map2[k];
-  }
-  return ret;
-}
-
-class FxiWorkflowWidget::Internal : public QObject
+class ShiftRotationCenterWidget::Internal : public QObject
 {
   Q_OBJECT
 
 public:
-  Ui::FxiWorkflowWidget ui;
+  Ui::ShiftRotationCenterWidget ui;
   QPointer<Operator> op;
   vtkSmartPointer<vtkImageData> image;
   vtkSmartPointer<vtkImageData> rotationImages;
@@ -136,18 +124,16 @@ public:
   vtkNew<vtkCubeAxesActor> axesActor;
   QString script;
   InternalPythonHelper pythonHelper;
-  QPointer<FxiWorkflowWidget> parent;
+  QPointer<ShiftRotationCenterWidget> parent;
   QPointer<DataSource> dataSource;
-  QPointer<InterfaceBuilder> interfaceBuilder;
-  QVariantMap customReconSettings;
-  QVariantMap customTestRotationSettings;
   int sliceNumber = 0;
   QScopedPointer<InternalProgressDialog> progressDialog;
   QFutureWatcher<void> futureWatcher;
   bool testRotationsSuccess = false;
   QString testRotationsErrorMessage;
 
-  Internal(Operator* o, vtkSmartPointer<vtkImageData> img, FxiWorkflowWidget* p)
+  Internal(Operator* o, vtkSmartPointer<vtkImageData> img,
+           ShiftRotationCenterWidget* p)
     : op(o), image(img)
   {
     // Must call setupUi() before using p in any way
@@ -155,11 +141,7 @@ public:
     setParent(p);
     parent = p;
 
-    readSettings();
-
-    // Keep the axes invisible until the data is displayed
-    axesActor->SetVisibility(false);
-
+    renderer->SetBackground(1, 1, 1);
     mapper->SetOrientation(0);
     slice->SetMapper(mapper);
     renderer->AddViewProp(slice);
@@ -184,11 +166,12 @@ public:
     auto pxm = ActiveObjects::instance().proxyManager();
     vtkNew<vtkSMTransferFunctionManager> tfmgr;
     colorMap =
-      tfmgr->GetColorTransferFunction(QString("FxiWorkflowWidgetColorMap%1")
-                                        .arg(colorMapCounter)
-                                        .toLatin1()
-                                        .data(),
-                                      pxm);
+      tfmgr->GetColorTransferFunction(
+        QString("ShiftRotationCenterWidgetColorMap%1")
+          .arg(colorMapCounter)
+          .toLatin1()
+          .data(),
+        pxm);
 
     setColorMapToGrayscale();
 
@@ -200,29 +183,25 @@ public:
     ui.colorPresetButton->setIcon(QIcon(":/pqWidgets/Icons/pqFavorites.svg"));
 
     auto* dims = image->GetDimensions();
+
+    // All center-related values are offsets from the image midpoint.
+    // 0 means the rotation center is exactly at the midpoint.
+    setRotationCenter(0);
+
+    // Default start/stop to +/- 10% of the detector width
+    auto delta = dims[0] * 0.1;
+    ui.start->setValue(-delta);
+    ui.stop->setValue(delta);
+
+    // Default slice to the middle slice
     ui.slice->setMaximum(dims[1] - 1);
-    ui.sliceStart->setMaximum(dims[1] - 1);
-    ui.sliceStop->setMaximum(dims[1]);
+    ui.slice->setValue(dims[1] / 2);
 
-    // Get the slice start to default to 0, and the slice stop
-    // to default to dims[1], despite whatever settings they read in.
-    ui.sliceStart->setValue(0);
-    ui.sliceStop->setValue(dims[1]);
+    // Load saved settings for steps, algorithm, numIterations only
+    readSettings();
 
-    // Set the default start and stop values around the predicted
-    // center of rotation.
-    auto center = dims[0] / 2.0;
-    auto delta = std::min(40.0, center);
-    ui.start->setValue(center - delta);
-    ui.stop->setValue(center + delta);
-
-    // Indicate what the max is via a tooltip.
-    auto toolTip = "Max: " + QString::number(dims[1]);
-    ui.sliceStop->setToolTip(toolTip);
-
-    // Hide the additional parameters label unless the user adds some
-    ui.reconExtraParamsLayoutWidget->hide();
-    ui.testRotationsExtraParamsLayoutWidget->hide();
+    // Hide iterations by default (only shown for iterative algorithms)
+    updateAlgorithmUI();
 
     progressDialog.reset(new InternalProgressDialog(parent));
 
@@ -246,288 +225,69 @@ public:
             &Internal::onPreviewRangeEdited);
     connect(ui.previewMax, &DoubleSliderWidget::valueEdited, this,
             &Internal::onPreviewRangeEdited);
+    connect(ui.algorithm, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, &Internal::updateAlgorithmUI);
   }
 
-  void setupUI(OperatorPython* pythonOp)
+  void setupRenderer()
   {
-    if (!pythonOp) {
-      return;
-    }
-
-    // If the user added extra parameters, add them here
-    auto json = QJsonDocument::fromJson(pythonOp->JSONDescription().toLatin1());
-    if (json.isNull() || !json.isObject()) {
-      return;
-    }
-
-    DataSource* ds = nullptr;
-    if (pythonOp->hasChildDataSource()) {
-      ds = pythonOp->childDataSource();
-    } else {
-      ds = qobject_cast<DataSource*>(pythonOp->parent());
-    }
-
-    if (!ds) {
-      ds = ActiveObjects::instance().activeDataSource();
-    }
-
-    QJsonObject root = json.object();
-
-    // Get the parameters for the operator
-    QJsonValueRef parametersNode = root["parameters"];
-    if (parametersNode.isUndefined() || !parametersNode.isArray()) {
-      return;
-    }
-    auto parameters = parametersNode.toArray();
-
-    // Set up the interface builder
-    if (interfaceBuilder) {
-      interfaceBuilder->deleteLater();
-      interfaceBuilder = nullptr;
-    }
-
-    interfaceBuilder = new InterfaceBuilder(this, ds);
-    interfaceBuilder->setParameterValues(pythonOp->arguments());
-
-    // Add any extra parameter widgets
-    addReconExtraParamWidgets(parameters);
-    addTestRotationExtraParamWidgets(parameters);
-
-    // Modify the extra param widgets with any saved settings
-    setReconExtraParamValues(customReconSettings);
-    setTestRotationExtraParamValues(customTestRotationSettings);
+    // Pass nullptr for the axes actor to avoid vtkVectorText
+    // "Text is not set" errors caused by degenerate bounds in the
+    // slice axis dimension.
+    tomviz::setupRenderer(renderer, mapper, nullptr);
   }
-
-  void addReconExtraParamWidgets(QJsonArray parameters)
-  {
-    // Here is the list of parameters for which we already have widgets
-    QStringList knownParameters = {
-      "denoise_flag",    "denoise_level", "dark_scale",
-      "rotation_center", "slice_start",   "slice_stop",
-    };
-
-    int i = 0;
-    while (i < parameters.size()) {
-      QJsonValueRef parameterNode = parameters[i];
-      QJsonObject parameterObject = parameterNode.toObject();
-      QJsonValueRef nameValue = parameterObject["name"];
-      auto tagValue = parameterObject["tag"];
-      if (knownParameters.contains(nameValue.toString())) {
-        // This parameter is already known. Remove it.
-        parameters.removeAt(i);
-      } else if (tagValue.toString("") != "") {
-        // Not the right tag. Remove it.
-        parameters.removeAt(i);
-      } else {
-        i += 1;
-      }
-    }
-
-    if (parameters.isEmpty()) {
-      return;
-    }
-
-    // If we get to this point, we have some extra parameters.
-    // Show the additional parameters label, and add the parameters.
-    ui.reconExtraParamsLayoutWidget->show();
-    auto layout = ui.reconExtraParamsLayout;
-    interfaceBuilder->buildParameterInterface(layout, parameters);
-  }
-
-  void addTestRotationExtraParamWidgets(QJsonArray parameters)
-  {
-    QString tag = "test_rotations";
-    bool show = false;
-
-    for (auto node : parameters) {
-      auto obj = node.toObject();
-      if (obj["tag"].toString("") == tag) {
-        show = true;
-        break;
-      }
-    }
-
-    if (!show) {
-      // Nothing to show
-      return;
-    }
-
-    // If we get to this point, we have some extra parameters.
-    // Show the additional parameters label, and add the parameters.
-    ui.testRotationsExtraParamsLayoutWidget->show();
-    auto layout = ui.testRotationsExtraParamsLayout;
-    interfaceBuilder->buildParameterInterface(layout, parameters,
-                                              "test_rotations");
-  }
-
-  void setExtraParamValues(QVariantMap values)
-  {
-    setReconExtraParamValues(values);
-    setTestRotationExtraParamValues(values);
-  }
-
-  void setReconExtraParamValues(QVariantMap values)
-  {
-    if (!interfaceBuilder) {
-      return;
-    }
-
-    auto parentWidget = ui.reconExtraParamsLayoutWidget;
-    interfaceBuilder->setParameterValues(values);
-    interfaceBuilder->updateWidgetValues(parentWidget);
-  }
-
-  void setTestRotationExtraParamValues(QVariantMap values)
-  {
-    if (!interfaceBuilder) {
-      return;
-    }
-
-    auto parentWidget = ui.testRotationsExtraParamsLayoutWidget;
-    interfaceBuilder->setParameterValues(values);
-    interfaceBuilder->updateWidgetValues(parentWidget);
-  }
-
-  QVariantMap extraParamValues()
-  {
-    return unite(reconExtraParamValues(), testRotationsExtraParamValues());
-  }
-
-  QVariantMap reconExtraParamValues()
-  {
-    if (!interfaceBuilder) {
-      return QVariantMap();
-    }
-
-    auto parentWidget = ui.reconExtraParamsLayoutWidget;
-    return interfaceBuilder->parameterValues(parentWidget);
-  }
-
-  QVariantMap testRotationsExtraParamValues()
-  {
-    if (!interfaceBuilder) {
-      return QVariantMap();
-    }
-
-    auto parentWidget = ui.testRotationsExtraParamsLayoutWidget;
-    return interfaceBuilder->parameterValues(parentWidget);
-  }
-
-  void setupRenderer() { tomviz::setupRenderer(renderer, mapper, axesActor); }
 
   void render() { ui.sliceView->renderWindow()->Render(); }
 
   void readSettings()
   {
-    readGeneralSettings();
-    readReconSettings();
-    readTestSettings();
-  }
-
-  void readGeneralSettings()
-  {
     auto settings = pqApplicationCore::instance()->settings();
-    settings->beginGroup("FxiWorkflowWidget");
-    settings->beginGroup("General");
-    setDenoiseFlag(settings->value("denoiseFlag", false).toBool());
-    setDenoiseLevel(settings->value("denoiseLevel", 9).toInt());
-    setDarkScale(settings->value("darkScale", 1).toDouble());
-    settings->endGroup();
-    settings->endGroup();
-  }
-
-  void readReconSettings()
-  {
-    auto settings = pqApplicationCore::instance()->settings();
-    settings->beginGroup("FxiWorkflowWidget");
-    settings->beginGroup("Recon");
-    setRotationCenter(settings->value("rotationCenter", 600).toDouble());
-    setSliceStart(settings->value("sliceStart", 0).toInt());
-    setSliceStop(settings->value("sliceStop", 1).toInt());
-    customReconSettings = settings->value("extraParams").toMap();
-    settings->endGroup();
-    settings->endGroup();
-  }
-
-  void readTestSettings()
-  {
-    auto settings = pqApplicationCore::instance()->settings();
-    settings->beginGroup("FxiWorkflowWidget");
-    settings->beginGroup("TestSettings");
+    settings->beginGroup("ShiftRotationCenterWidget");
     ui.steps->setValue(settings->value("steps", 26).toInt());
-    ui.slice->setValue(settings->value("sli", 0).toInt());
-    customTestRotationSettings = settings->value("extraParams").toMap();
-    settings->endGroup();
+    setAlgorithm(settings->value("algorithm", "mlem").toString());
+    ui.numIterations->setValue(settings->value("numIterations", 15).toInt());
     settings->endGroup();
   }
 
   void writeSettings()
   {
-    writeGeneralSettings();
-    writeReconSettings();
-    writeTestSettings();
-  }
-
-  void writeGeneralSettings()
-  {
     auto settings = pqApplicationCore::instance()->settings();
-    settings->beginGroup("FxiWorkflowWidget");
-    settings->beginGroup("General");
-    settings->setValue("denoiseFlag", denoiseFlag());
-    settings->setValue("denoiseLevel", denoiseLevel());
-    settings->setValue("darkScale", darkScale());
-    settings->endGroup();
-    settings->endGroup();
-  }
-
-  void writeReconSettings()
-  {
-    auto settings = pqApplicationCore::instance()->settings();
-    settings->beginGroup("FxiWorkflowWidget");
-    settings->beginGroup("Recon");
-    settings->setValue("rotationCenter", rotationCenter());
-    settings->setValue("sliceStart", sliceStart());
-    settings->setValue("sliceStop", sliceStop());
-    settings->setValue("extraParams", reconExtraParamValues());
-    settings->endGroup();
-    settings->endGroup();
-  }
-
-  void writeTestSettings()
-  {
-    auto settings = pqApplicationCore::instance()->settings();
-    settings->beginGroup("FxiWorkflowWidget");
-    settings->beginGroup("TestSettings");
+    settings->beginGroup("ShiftRotationCenterWidget");
     settings->setValue("steps", ui.steps->value());
-    settings->setValue("sli", ui.slice->value());
-    settings->setValue("extraParams", testRotationsExtraParamValues());
-    settings->endGroup();
+    settings->setValue("algorithm", algorithm());
+    settings->setValue("numIterations", ui.numIterations->value());
     settings->endGroup();
   }
 
   QList<QWidget*> inputWidgets()
   {
-    return { ui.denoiseFlag, ui.denoiseLevel, ui.darkScale, ui.start,
-             ui.stop,        ui.steps,        ui.slice,     ui.rotationCenter,
-             ui.sliceStart,  ui.sliceStop };
+    return { ui.start, ui.stop, ui.steps, ui.slice, ui.rotationCenter };
   }
 
   void startGeneratingTestImages()
   {
     progressDialog->show();
-    auto future = QtConcurrent::run(std::bind(&Internal::generateTestImages, this));
+    auto future =
+      QtConcurrent::run(std::bind(&Internal::generateTestImages, this));
     futureWatcher.setFuture(future);
   }
 
   void testImagesGenerated()
   {
-    updateImageViewSlider();
     if (!testRotationsSuccess) {
       auto msg = testRotationsErrorMessage;
       qCritical() << msg;
       QMessageBox::critical(parent, "Tomviz", msg);
       return;
     }
+
+    // Re-update the mapper on the main thread so bounds are current,
+    // then configure the camera. This must happen here (not in
+    // setRotationData) because that runs on a background thread.
+    mapper->Update();
+    setupRenderer();
+    renderer->ResetCameraClippingRange();
+    updateImageViewSlider();
 
     if (rotationDataValid()) {
       resetColorRange();
@@ -557,21 +317,17 @@ public:
 
       Python::Object data = Python::createDataset(image, *dataSource);
 
+      // Convert offsets to absolute values for Python
+      auto imgCenter = image->GetDimensions()[0] / 2.0;
+
       Python::Dict kwargs;
       kwargs.set("dataset", data);
-      kwargs.set("start", ui.start->value());
-      kwargs.set("stop", ui.stop->value());
+      kwargs.set("start", imgCenter + ui.start->value());
+      kwargs.set("stop", imgCenter + ui.stop->value());
       kwargs.set("steps", ui.steps->value());
       kwargs.set("sli", ui.slice->value());
-      kwargs.set("denoise_flag", denoiseFlag());
-      kwargs.set("denoise_level", denoiseLevel());
-      kwargs.set("dark_scale", darkScale());
-
-      // Add extra parameters
-      auto extraParams = testRotationsExtraParamValues();
-      for (const auto& k : extraParams.keys()) {
-        kwargs.set(k, toVariant(extraParams[k]));
-      }
+      kwargs.set("algorithm", algorithm());
+      kwargs.set("num_iter", ui.numIterations->value());
 
       auto ret = func.call(kwargs);
       auto result = ret.toDict();
@@ -604,17 +360,15 @@ public:
       }
 
       for (int i = 0; i < pyRotations.length(); ++i) {
-        rotations.append(pyRotations[i].toDouble());
+        // Convert absolute centers to offsets from the image midpoint
+        rotations.append(pyRotations[i].toDouble() - imgCenter);
       }
       setRotationData(imageData);
     }
 
     // If we made it this far, it was a success
-    // Make the axes visible.
-    axesActor->SetVisibility(true);
-
     // Save these settings in case the user wants to use them again...
-    writeTestSettings();
+    writeSettings();
     testRotationsSuccess = true;
   }
 
@@ -624,7 +378,6 @@ public:
     mapper->SetInputData(rotationImages);
     mapper->SetSliceNumber(0);
     mapper->Update();
-    setupRenderer();
   }
 
   void resetColorRange()
@@ -745,7 +498,7 @@ public:
     if (sliceNumber < rotations.size()) {
       ui.currentRotation->setValue(rotations[sliceNumber]);
 
-      // For convenience, also set the rotation center for reconstruction
+      // For convenience, also set the rotation center
       ui.rotationCenter->setValue(rotations[sliceNumber]);
     } else {
       qCritical() << sliceNumber
@@ -812,86 +565,62 @@ public:
     dialog.exec();
   }
 
-  void setDenoiseFlag(bool b) { ui.denoiseFlag->setChecked(b); }
-  bool denoiseFlag() const { return ui.denoiseFlag->isChecked(); }
-
-  void setDenoiseLevel(int i) { ui.denoiseLevel->setValue(i); }
-  int denoiseLevel() const { return ui.denoiseLevel->value(); }
-
-  void setDarkScale(double x) { ui.darkScale->setValue(x); }
-  double darkScale() const { return ui.darkScale->value(); }
-
   void setRotationCenter(double center) { ui.rotationCenter->setValue(center); }
   double rotationCenter() const { return ui.rotationCenter->value(); }
 
-  void setSliceStart(int i) { ui.sliceStart->setValue(i); }
-  int sliceStart() const { return ui.sliceStart->value(); }
+  QString algorithm() const { return ui.algorithm->currentText(); }
+  void setAlgorithm(const QString& alg)
+  {
+    int index = ui.algorithm->findText(alg);
+    if (index >= 0) {
+      ui.algorithm->setCurrentIndex(index);
+    }
+  }
 
-  void setSliceStop(int i) { ui.sliceStop->setValue(i); }
-  int sliceStop() const { return ui.sliceStop->value(); }
+  void updateAlgorithmUI()
+  {
+    bool iterative = (ui.algorithm->currentText() != "gridrec");
+    ui.numIterationsLabel->setVisible(iterative);
+    ui.numIterations->setVisible(iterative);
+  }
 };
 
-#include "FxiWorkflowWidget.moc"
+#include "ShiftRotationCenterWidget.moc"
 
-FxiWorkflowWidget::FxiWorkflowWidget(Operator* op,
-                                     vtkSmartPointer<vtkImageData> image,
-                                     QWidget* p)
+ShiftRotationCenterWidget::ShiftRotationCenterWidget(
+  Operator* op, vtkSmartPointer<vtkImageData> image, QWidget* p)
   : CustomPythonOperatorWidget(p)
 {
   m_internal.reset(new Internal(op, image, this));
 }
 
-FxiWorkflowWidget::~FxiWorkflowWidget() = default;
+ShiftRotationCenterWidget::~ShiftRotationCenterWidget() = default;
 
-void FxiWorkflowWidget::getValues(QVariantMap& map)
+void ShiftRotationCenterWidget::getValues(QVariantMap& map)
 {
-  map.insert("denoise_flag", m_internal->denoiseFlag());
-  map.insert("denoise_level", m_internal->denoiseLevel());
-  map.insert("dark_scale", m_internal->darkScale());
   map.insert("rotation_center", m_internal->rotationCenter());
-  map.insert("slice_start", m_internal->sliceStart());
-  map.insert("slice_stop", m_internal->sliceStop());
-
-  map = unite(map, m_internal->reconExtraParamValues());
 }
 
-void FxiWorkflowWidget::setValues(const QVariantMap& map)
+void ShiftRotationCenterWidget::setValues(const QVariantMap& map)
 {
-  if (map.contains("denoise_flag")) {
-    m_internal->setDenoiseFlag(map["denoise_flag"].toBool());
-  }
-  if (map.contains("denoise_level")) {
-    m_internal->setDenoiseLevel(map["denoise_level"].toInt());
-  }
-  if (map.contains("dark_scale")) {
-    m_internal->setDarkScale(map["dark_scale"].toDouble());
-  }
   if (map.contains("rotation_center")) {
     m_internal->setRotationCenter(map["rotation_center"].toDouble());
   }
-  if (map.contains("slice_start")) {
-    m_internal->setSliceStart(map["slice_start"].toInt());
+  if (map.contains("algorithm")) {
+    m_internal->setAlgorithm(map["algorithm"].toString());
   }
-  if (map.contains("slice_stop")) {
-    m_internal->setSliceStop(map["slice_stop"].toInt());
+  if (map.contains("num_iter")) {
+    m_internal->ui.numIterations->setValue(map["num_iter"].toInt());
   }
-
-  m_internal->setReconExtraParamValues(map);
 }
 
-void FxiWorkflowWidget::setScript(const QString& script)
+void ShiftRotationCenterWidget::setScript(const QString& script)
 {
   Superclass::setScript(script);
   m_internal->script = script;
 }
 
-void FxiWorkflowWidget::setupUI(OperatorPython* op)
-{
-  Superclass::setupUI(op);
-  m_internal->setupUI(op);
-}
-
-void FxiWorkflowWidget::writeSettings()
+void ShiftRotationCenterWidget::writeSettings()
 {
   Superclass::writeSettings();
   m_internal->writeSettings();
