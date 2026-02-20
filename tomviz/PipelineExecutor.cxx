@@ -255,11 +255,6 @@ void ExternalPipelineExecutor::operatorStarted(Operator* op)
 {
   op->setState(OperatorState::Running);
   emit op->transformingStarted();
-
-  auto pythonOp = qobject_cast<OperatorPython*>(op);
-  if (pythonOp != nullptr) {
-    pythonOp->createChildDataSource();
-  }
 }
 
 void ExternalPipelineExecutor::operatorFinished(Operator* op)
@@ -293,7 +288,8 @@ void ExternalPipelineExecutor::operatorFinished(Operator* op)
 
     auto pythonOp = qobject_cast<OperatorPython*>(op);
     Q_ASSERT(pythonOp != nullptr);
-    pythonOp->updateChildDataSource(childOutput);
+    pythonOp->updateChildDataSource(childOutput,
+                                    pipeline()->dataSource()->dataObject());
   }
 
   op->setState(OperatorState::Complete);
@@ -329,7 +325,7 @@ void ExternalPipelineExecutor::operatorProgressData(
 {
   auto pythonOperator = qobject_cast<OperatorPython*>(op);
   if (pythonOperator != nullptr) {
-    emit pythonOperator->childDataSourceUpdated(data);
+    emit pythonOperator->outputDataUpdated(data);
   }
 }
 

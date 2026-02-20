@@ -637,40 +637,16 @@ bool DataSource::deserialize(const QJsonObject& state)
   // Now check for operators on the data source.
   if (state.contains("operators") && state["operators"].isArray()) {
     pipeline()->pause();
-    Operator* op = nullptr;
-    QJsonObject operatorObj;
     auto operatorArray = state["operators"].toArray();
     for (int i = 0; i < operatorArray.size(); ++i) {
-      operatorObj = operatorArray[i].toObject();
-      op = OperatorFactory::instance().createOperator(
+      auto operatorObj = operatorArray[i].toObject();
+      auto* op = OperatorFactory::instance().createOperator(
         operatorObj["type"].toString(), this);
       if (op && op->deserialize(operatorObj)) {
         addOperator(op);
       }
-    }
-
-    // If we have a child data source we need to restore it once the data source
-    // has been create by the first execution of the pipeline.
-    if (op != nullptr && operatorObj.contains("dataSources")) {
-      // We currently support a single child data source.
-      auto dataSourcesState = operatorObj["dataSources"].toArray();
-      auto connection = new QMetaObject::Connection;
-      *connection = connect(pipeline(), &Pipeline::finished, op,
-                            [connection, dataSourcesState, op]() {
-                              auto childDataSource = op->childDataSource();
-                              if (childDataSource != nullptr) {
-                                childDataSource->deserialize(
-                                  dataSourcesState[0].toObject());
-                              }
-                              QObject::disconnect(*connection);
-                              delete connection;
-                            });
-      // If the child datasource has its own pipeline of operators increment the
-      // number of pipelineFinished signals to wait for before emitting
-      // stateLoaded()
-      if (dataSourcesState[0].toObject().contains("operators")) {
-        ModuleManager::instance().incrementPipelinesToWaitFor();
-      }
+      // For backward compatibility, silently ignore any "dataSources" nested
+      // under operators. Child data sources are no longer supported.
     }
 
     if (ModuleManager::instance().executePipelinesOnLoad()) {
@@ -1048,29 +1024,15 @@ bool DataSource::removeOperator(Operator* op)
 bool DataSource::removeAllOperators()
 {
   // TODO - return false if the pipeline is running
-  bool success = true;
 
   while (this->Internals->Operators.size() > 0) {
     Operator* lastOperator = this->Internals->Operators.takeLast();
-
-    if (lastOperator->childDataSource() != nullptr) {
-      DataSource* childDataSource = lastOperator->childDataSource();
-
-      // Recurse on the child data source
-      success = childDataSource->removeAllOperators();
-      if (!success) {
-        break;
-      }
-    }
-
     lastOperator->deleteLater();
   }
 
-  if (success) {
-    ModuleManager::instance().removeAllModules(this);
-  }
+  ModuleManager::instance().removeAllModules(this);
 
-  return success;
+  return true;
 }
 
 void DataSource::dataModified()

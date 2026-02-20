@@ -7,6 +7,7 @@
 #include "DataSource.h"
 #include "DoubleSpinBox.h"
 #include "InterfaceBuilder.h"
+#include "Pipeline.h"
 #include "SpinBox.h"
 
 #include <QCheckBox>
@@ -32,10 +33,11 @@ void OperatorWidget::setupUI(OperatorPython* op)
   QString json = op->JSONDescription();
   if (!json.isNull()) {
     DataSource* dataSource = nullptr;
-    if (op->hasChildDataSource())
-      dataSource = op->childDataSource();
+    auto parentDS = qobject_cast<DataSource*>(op->parent());
+    if (parentDS && parentDS->pipeline())
+      dataSource = parentDS->pipeline()->transformedDataSource();
     else
-      dataSource = qobject_cast<DataSource*>(op->parent());
+      dataSource = parentDS;
 
     if (!dataSource)
       dataSource = ActiveObjects::instance().activeDataSource();

@@ -130,36 +130,19 @@ OperatorResult* Operator::resultAt(int i) const
   return m_results[i];
 }
 
-void Operator::setHasChildDataSource(bool value)
+void Operator::setOutputDataSource(DataSource* source)
 {
-  m_hasChildDataSource = value;
+  m_outputDataSource = source;
 }
 
-bool Operator::hasChildDataSource() const
+DataSource* Operator::outputDataSource() const
 {
-  return m_hasChildDataSource;
-}
-
-void Operator::setChildDataSource(DataSource* source)
-{
-  ModuleManager::instance().addChildDataSource(source);
-  m_childDataSource = source;
-}
-
-DataSource* Operator::childDataSource() const
-{
-  return m_childDataSource;
+  return m_outputDataSource;
 }
 
 QJsonObject Operator::serialize() const
 {
   QJsonObject json;
-  if (childDataSource()) {
-    QJsonArray dataSources;
-    DataSource* ds = childDataSource();
-    dataSources.append(ds->serialize());
-    json["dataSources"] = dataSources;
-  }
   json["type"] = OperatorFactory::instance().operatorType(this);
   json["id"] = QString::asprintf("%p", static_cast<const void*>(this));
   if (m_breakpoint) {
@@ -192,29 +175,6 @@ void Operator::setCustomDialog(EditOperatorDialog* dialog)
   }
 
   m_customDialog = dialog;
-}
-
-void Operator::createNewChildDataSource(
-  const QString& label, vtkSmartPointer<vtkDataObject> childData,
-  DataSource::DataSourceType type, DataSource::PersistenceState state)
-{
-  if (this->childDataSource() == nullptr) {
-    DataSource* childDS =
-      new DataSource(vtkImageData::SafeDownCast(childData), type,
-                     this->dataSource()->pipeline(), state);
-    childDS->setLabel(label);
-    setChildDataSource(childDS);
-    setHasChildDataSource(true);
-    emit Operator::newChildDataSource(childDS);
-  }
-  // Reuse the existing "Output" data source.
-  else {
-    childDataSource()->setData(childData);
-    childDataSource()->setLabel(label);
-    childDataSource()->setForkable(true);
-    childDataSource()->dataModified();
-    setHasChildDataSource(true);
-  }
 }
 
 void Operator::setBreakpoint(bool enabled)

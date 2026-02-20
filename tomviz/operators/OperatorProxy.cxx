@@ -60,7 +60,7 @@ std::string OperatorProxy::progressMessage()
 void OperatorProxy::setProgressData(vtkImageData* imageData)
 {
   TemporarilyReleaseGil releaseMe;
-  emit m_op->childDataSourceUpdated(imageData);
+  emit m_op->outputDataUpdated(imageData);
 }
 
 OperatorProxyBase* OperatorProxyFactory::create(void* o)

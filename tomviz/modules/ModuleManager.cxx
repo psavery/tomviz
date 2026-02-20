@@ -74,7 +74,6 @@ public:
   // TODO Should only hold top level roots of pipeline
   QList<QPointer<DataSource>> DataSources;
   QList<QPointer<MoleculeSource>> MoleculeSources;
-  QList<QPointer<DataSource>> ChildDataSources;
   QList<QPointer<Module>> Modules;
   QMap<vtkSMProxy*, vtkSmartPointer<vtkCamera>> RenderViewCameras;
 
@@ -238,20 +237,6 @@ public:
     }
   }
 
-  void removeInvalidChildDataSources()
-  {
-    int i = 0;
-    while (i < ChildDataSources.size()) {
-      if (ChildDataSources[i]) {
-        // Valid
-        i += 1;
-        continue;
-      } else {
-        // Invalid. Remove.
-        ChildDataSources.removeAt(i);
-      }
-    }
-  }
 };
 
 ModuleManager::ModuleManager(QObject* parentObject)
@@ -299,44 +284,16 @@ QList<DataSource*> ModuleManager::dataSources()
   return ret;
 }
 
-QList<DataSource*> ModuleManager::childDataSources()
-{
-  // Somehow we have invalid data sources around. Make sure
-  // those are removed.
-  d->removeInvalidChildDataSources();
-  QList<DataSource*> ret;
-  std::copy(d->ChildDataSources.begin(), d->ChildDataSources.end(),
-            std::back_inserter(ret));
-  return ret;
-}
-
 QList<DataSource*> ModuleManager::allDataSources()
 {
-  return dataSources() + childDataSources();
+  return dataSources();
 }
 
 QList<DataSource*> ModuleManager::allDataSourcesDepthFirst()
 {
-  // Return the data sources in a Depth First Search (DFS) order,
-  // so that child data sources will come immediately after their
-  // parent data source in the list.
+  // Return the data sources in order.
   // This *should* match the order of data sources in the pipeline view.
-  QList<DataSource*> result;
-  for (auto* rootSource : dataSources()) {
-    result.append(rootSource);
-    if (rootSource->operators().isEmpty()) {
-      // If there are no operators, there are no child data sources...
-      continue;
-    }
-
-    auto* lastOperator = rootSource->operators().back();
-    auto* childSource = lastOperator->childDataSource();
-    if (childSource) {
-      result.append(childSource);
-    }
-  }
-
-  return result;
+  return dataSources();
 }
 
 QStringList ModuleManager::createUniqueLabels(const QList<DataSource*>& sources)
@@ -365,31 +322,11 @@ void ModuleManager::addDataSource(DataSource* dataSource)
   }
 }
 
-void ModuleManager::addChildDataSource(DataSource* dataSource)
-{
-  d->removeInvalidChildDataSources();
-  if (dataSource && !d->ChildDataSources.contains(dataSource)) {
-    d->ChildDataSources.push_back(dataSource);
-    emit childDataSourceAdded(dataSource);
-  }
-}
-
 void ModuleManager::removeDataSource(DataSource* dataSource)
 {
   d->removeInvalidDataSources();
-  d->removeInvalidChildDataSources();
-  if (d->DataSources.removeOne(dataSource) ||
-      d->ChildDataSources.removeOne(dataSource)) {
+  if (d->DataSources.removeOne(dataSource)) {
     emit dataSourceRemoved(dataSource);
-    dataSource->deleteLater();
-  }
-}
-
-void ModuleManager::removeChildDataSource(DataSource* dataSource)
-{
-  d->removeInvalidChildDataSources();
-  if (d->ChildDataSources.removeOne(dataSource)) {
-    emit childDataSourceRemoved(dataSource);
     dataSource->deleteLater();
   }
 }
@@ -433,12 +370,6 @@ void ModuleManager::removeOperator(Operator* op)
   if (op) {
     emit operatorRemoved(op);
   }
-}
-
-bool ModuleManager::isChild(DataSource* source) const
-{
-  d->removeInvalidChildDataSources();
-  return (d->ChildDataSources.indexOf(source) >= 0);
 }
 
 void ModuleManager::addModule(Module* module)
@@ -622,7 +553,6 @@ bool ModuleManager::serialize(QJsonObject& doc, const QDir& stateDir,
                               bool interactive) const
 {
   d->removeInvalidDataSources();
-  d->removeInvalidChildDataSources();
 
   QJsonObject tvObj;
   tvObj["version"] = QString(TOMVIZ_VERSION);
@@ -648,13 +578,6 @@ bool ModuleManager::serialize(QJsonObject& doc, const QDir& stateDir,
         ++modified;
       }
     }
-    foreach (const QPointer<DataSource>& ds, d->ChildDataSources) {
-      if (ds != nullptr &&
-          ds->persistenceState() == DataSource::PersistenceState::Modified) {
-        ++modified;
-      }
-    }
-
     if (modified > 0) {
       QMessageBox modifiedMessageBox;
       modifiedMessageBox.setIcon(QMessageBox::Warning);

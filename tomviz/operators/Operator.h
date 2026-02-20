@@ -82,17 +82,11 @@ public:
   /// Get output result at index.
   virtual OperatorResult* resultAt(int index) const;
 
-  /// Set whether the operator is expected to produce a child DataSource.
-  virtual void setHasChildDataSource(bool value);
-
-  /// Get whether the operator is expected to produce a child DataSource.
-  virtual bool hasChildDataSource() const;
-
   /// Set the child DataSource. Can be nullptr.
-  virtual void setChildDataSource(DataSource* source);
+  virtual void setOutputDataSource(DataSource* source);
 
   /// Get the child DataSource.
-  virtual DataSource* childDataSource() const;
+  virtual DataSource* outputDataSource() const;
 
   /// Save/Restore state.
   virtual QJsonObject serialize() const;
@@ -227,11 +221,7 @@ signals:
   void totalProgressStepsChanged(int steps);
 
   /// Emitted when a child data source is create by this operator.
-  void newChildDataSource(DataSource*);
-
-  // Signal used to request the creation of a new data source. Needed to
-  // ensure the initialization of the new DataSource is performed on UI thread
-  void newChildDataSource(const QString&, vtkSmartPointer<vtkDataObject>);
+  void newOutputDataSource(DataSource*);
 
   /// Emitted just prior to this object's destruction.
   void aboutToBeDestroyed(Operator* op);
@@ -283,14 +273,6 @@ public slots:
   void setEditing() { m_state = OperatorState::Edit; }
   void setComplete() { m_state = OperatorState::Complete; }
 
-protected slots:
-  // Create a new child datasource and set it on this operator
-  void createNewChildDataSource(
-    const QString& label, vtkSmartPointer<vtkDataObject>,
-    DataSource::DataSourceType type = DataSource::DataSourceType::Volume,
-    DataSource::PersistenceState state =
-      DataSource::PersistenceState::Transient);
-
 protected:
   /// Method to transform a dataset in-place.
   virtual bool applyTransform(vtkDataObject* data) = 0;
@@ -313,10 +295,9 @@ private:
   QList<OperatorResult*> m_results;
   bool m_supportsCancel = false;
   bool m_supportsCompletion = false;
-  bool m_hasChildDataSource = false;
   bool m_modified = true;
   bool m_new = true;
-  QPointer<DataSource> m_childDataSource;
+  QPointer<DataSource> m_outputDataSource;
   int m_totalProgressSteps = 0;
   int m_progressStep = 0;
   QString m_progressMessage;

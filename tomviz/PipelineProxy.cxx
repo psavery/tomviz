@@ -166,7 +166,7 @@ DataSource* findDataSource(QStringList& path, QString id = QString())
     return nullptr;
   }
 
-  auto dataSource = op->childDataSource();
+  auto dataSource = op->outputDataSource();
   QString currentId =
     QString::asprintf("%p", static_cast<const void*>(dataSource));
   if (!id.isEmpty() && currentId != id) {

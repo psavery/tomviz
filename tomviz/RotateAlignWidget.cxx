@@ -8,6 +8,7 @@
 #include "ColorMap.h"
 #include "DataSource.h"
 #include "LoadDataReaction.h"
+#include "Pipeline.h"
 #include "PresetDialog.h"
 #include "TomographyReconstruction.h"
 #include "TomographyTiltSeries.h"
@@ -545,10 +546,12 @@ RotateAlignWidget::RotateAlignWidget(Operator* op,
   this->Internals->mainSliceMapper->SetInputData(this->Internals->m_image);
   this->Internals->mainSliceMapper->Update();
 
-  // Use a child data source if one is available so the color map will match
+  // Use the pipeline's transformed data source if available so the color map
+  // will match
   DataSource* ds;
-  if (op->childDataSource())
-    ds = op->childDataSource();
+  if (op->dataSource() && op->dataSource()->pipeline() &&
+      op->dataSource()->pipeline()->transformedDataSource())
+    ds = op->dataSource()->pipeline()->transformedDataSource();
   else if (op->dataSource())
     ds = op->dataSource();
   else

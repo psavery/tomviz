@@ -69,17 +69,15 @@ public slots:
   void operatorRemoved(Operator* op);
   void operatorModified();
   void operatorTransformDone();
+  void outputDataSourceAdded(DataSource* dataSource);
+  void dataSourceMoved(DataSource* dataSource);
 
   void dataSourceRemoved(DataSource* dataSource);
   void moduleRemoved(Module* module);
   void moleculeSourceRemoved(MoleculeSource* moleculeSource);
-  void childDataSourceAdded(DataSource* dataSource);
-  void childDataSourceRemoved(DataSource* dataSource);
-  void dataSourceMoved(DataSource* dataSource);
 
 signals:
   void dataSourceItemAdded(DataSource* dataSource);
-  void childDataSourceItemAdded(DataSource* dataSource);
   void moleculeSourceItemAdded(MoleculeSource* dataSource);
   void moduleItemAdded(Module* module);
   void operatorItemAdded(Operator* op);
@@ -93,11 +91,12 @@ private:
 
   QList<TreeItem*> m_treeItems;
 
+  void moveDataSourceHelper(DataSource* dataSource, Operator* newParent);
+
   QModelIndex dataSourceIndexHelper(PipelineModel::TreeItem* treeItem,
                                     DataSource* source);
   QModelIndex operatorIndexHelper(PipelineModel::TreeItem* treeItem,
                                   Operator* op);
-  void moveDataSourceHelper(DataSource* dataSource, Operator* newParent);
 };
 
 } // namespace tomviz

@@ -272,17 +272,10 @@ OperatorPython::OperatorPython(DataSource* parentObject)
     connectionType = Qt::DirectConnection;
   }
   // Needed so the worker thread can update data in the UI thread.
-  connect(this, SIGNAL(childDataSourceUpdated(vtkSmartPointer<vtkDataObject>)),
+  connect(this, SIGNAL(outputDataUpdated(vtkSmartPointer<vtkDataObject>)),
           this, SLOT(updateChildDataSource(vtkSmartPointer<vtkDataObject>)),
           connectionType);
 
-  // This connection is needed so we can create new child data sources in the UI
-  // thread from a pipeline worker threads.
-  connect(this, SIGNAL(newChildDataSource(const QString&,
-                                          vtkSmartPointer<vtkDataObject>)),
-          this, SLOT(createNewChildDataSource(const QString&,
-                                              vtkSmartPointer<vtkDataObject>)),
-          connectionType);
   connect(
     this,
     SIGNAL(newOperatorResult(const QString&, vtkSmartPointer<vtkDataObject>)),
@@ -366,32 +359,6 @@ void OperatorPython::setJSONDescription(const QString& str)
     setNumberOfParameters(numParameters);
   }
 
-  // Get child dataset information
-  QJsonValueRef childDatasetNode = root["children"];
-  if (!childDatasetNode.isUndefined() && !childDatasetNode.isNull()) {
-    QJsonArray childDatasetArray = childDatasetNode.toArray();
-    QJsonObject::size_type size = childDatasetArray.size();
-    if (size != 1) {
-      qCritical() << "Only one child dataset is supported for now. Found"
-                  << size << " but only the first will be used";
-    }
-    if (size > 0) {
-      setHasChildDataSource(true);
-      QJsonObject dataSourceNode = childDatasetArray[0].toObject();
-      QJsonValueRef nameValue = dataSourceNode["name"];
-      QJsonValueRef labelValue = dataSourceNode["label"];
-      if (!nameValue.isUndefined() && !nameValue.isNull() &&
-          !labelValue.isUndefined() && !labelValue.isNull()) {
-        m_childDataSourceName = nameValue.toString();
-        m_childDataSourceLabel = labelValue.toString();
-      } else if (nameValue.isNull()) {
-        qCritical() << "No name given for child DataSet";
-      } else if (labelValue.isNull()) {
-        qCritical() << "No label given for child DataSet";
-      }
-    }
-  }
-
   setHelpFromJson(root);
 }
 
@@ -462,37 +429,37 @@ void OperatorPython::setScript(const QString& str)
   }
 }
 
-void OperatorPython::createChildDataSource()
+bool OperatorPython::updateChildDataSource(Python::Dict outputDict,
+                                           vtkDataObject* data)
 {
-  // Create child datasets in advance. Keep a map from DataSource to name
-  // so that we can match Python script return dictionary values containing
-  // child data after the script finishes.
-  if (hasChildDataSource() && !childDataSource()) {
-    // Create uninitialized data set as a placeholder for the data
-    vtkSmartPointer<vtkImageData> childData =
-      vtkSmartPointer<vtkImageData>::New();
-    childData->ShallowCopy(
-      vtkImageData::SafeDownCast(dataSource()->dataObject()));
-    emit newChildDataSource(m_childDataSourceLabel, childData);
-    }
-}
+  // Iterate the dict looking for a vtkDataObject that isn't a named result.
+  // Copy it onto the input data object so it flows through the pipeline.
+  Python::List keys(PyDict_Keys(outputDict));
+  if (!keys.isValid()) {
+    return true;
+  }
 
-bool OperatorPython::updateChildDataSource(Python::Dict outputDict)
-{
-  if (hasChildDataSource()) {
-    Python::Object pyDataObject;
-    pyDataObject = outputDict[m_childDataSourceName];
-    if (!pyDataObject.isValid()) {
-      qCritical() << "No child dataset named " << m_childDataSourceName
-                  << "defined in dictionary returned from Python script.\n";
-      return false;
-    } else {
-      vtkObjectBase* vtkobject = Python::VTK::convertToDataObject(pyDataObject);
-      vtkDataObject* dataObject = vtkDataObject::SafeDownCast(vtkobject);
-      if (dataObject) {
-        TemporarilyReleaseGil releaseMe;
-        emit childDataSourceUpdated(dataObject);
-      }
+  for (int i = 0; i < keys.length(); ++i) {
+    Python::Object key = keys[i];
+    QString keyStr = key.toString();
+
+    // Skip entries that are named results
+    if (m_resultNames.contains(keyStr)) {
+      continue;
+    }
+
+    Python::Object value = outputDict[key];
+    if (!value.isValid()) {
+      continue;
+    }
+
+    vtkObjectBase* vtkobject = Python::VTK::convertToDataObject(value);
+    vtkDataObject* dataObj = vtkDataObject::SafeDownCast(vtkobject);
+    if (dataObj) {
+      data->DeepCopy(dataObj);
+      TemporarilyReleaseGil releaseMe;
+      emit outputDataUpdated(dataObj);
+      return true;
     }
   }
 
@@ -500,21 +467,15 @@ bool OperatorPython::updateChildDataSource(Python::Dict outputDict)
 }
 
 bool OperatorPython::updateChildDataSource(
-  QMap<QString, vtkSmartPointer<vtkDataObject>> output)
+  QMap<QString, vtkSmartPointer<vtkDataObject>> output, vtkDataObject* data)
 {
-  if (hasChildDataSource()) {
-    for (QMap<QString, vtkSmartPointer<vtkDataObject>>::const_iterator iter =
-           output.begin();
-         iter != output.end(); ++iter) {
-
-      if (iter.key() != m_childDataSourceName) {
-        qCritical() << "No child dataset named " << m_childDataSourceName
-                    << "defined in dictionary returned from Python script.\n";
-        return false;
-      }
-
-      emit childDataSourceUpdated(iter.value());
+  for (auto iter = output.begin(); iter != output.end(); ++iter) {
+    // Skip entries that are named results
+    if (m_resultNames.contains(iter.key())) {
+      continue;
     }
+    data->DeepCopy(iter.value());
+    emit outputDataUpdated(iter.value());
   }
 
   return true;
@@ -531,8 +492,6 @@ bool OperatorPython::applyTransform(vtkDataObject* data)
   }
 
   Q_ASSERT(data);
-
-  createChildDataSource();
 
   Python::Object result;
   {
@@ -605,7 +564,7 @@ bool OperatorPython::applyTransform(vtkDataObject* data)
     Python::Dict outputDict = result.toDict();
 
     // Support setting child data from the output dictionary
-    errorEncountered = !updateChildDataSource(outputDict);
+    errorEncountered = !updateChildDataSource(outputDict, data);
 
     // Results (tables, etc.)
     for (int i = 0; i < m_resultNames.size(); ++i) {
@@ -820,27 +779,17 @@ EditOperatorWidget* OperatorPython::getEditorContentsWithData(
 
 void OperatorPython::updateChildDataSource(vtkSmartPointer<vtkDataObject> data)
 {
-  // Check to see if a child data source has already been created. If not,
-  // create it here.
-  auto dataSource = childDataSource();
-  Q_ASSERT(dataSource);
-
-  if (!dataSource->volumeModuleAutoAdded()) {
-    // Automatically add a volume so that users can see live updates
-    // This also fixes some strange issue where the application will
-    // crash after this function if no visualization module was ever
-    // created for this child data source, before the new data was
-    // copied over.
-    ModuleManager::instance().createAndAddModule("Volume", dataSource,
-      ActiveObjects::instance().activeView());
-    dataSource->setVolumeModuleAutoAdded(true);
+  auto ds = dataSource();
+  if (!ds || !ds->pipeline()) {
+    return;
   }
-
-  // Now deep copy the new data to the child source data if needed
-  dataSource->copyData(data);
-  emit dataSource->dataChanged();
-  emit dataSource->dataPropertiesChanged();
-  ActiveObjects::instance().renderAllViews();
+  auto transformedDS = ds->pipeline()->transformedDataSource();
+  if (transformedDS && transformedDS != ds) {
+    transformedDS->copyData(data);
+    emit transformedDS->dataChanged();
+    emit transformedDS->dataPropertiesChanged();
+    ActiveObjects::instance().renderAllViews();
+  }
 }
 
 void OperatorPython::setOperatorResult(const QString& name,
@@ -890,12 +839,9 @@ void OperatorPython::setHelpFromJson(const QJsonObject& json)
   }
 }
 
-void OperatorPython::setChildDataSource(DataSource* source)
+void OperatorPython::setOutputDataSource(DataSource* source)
 {
-  if (source != nullptr) {
-    source->setLabel(m_childDataSourceLabel);
-  }
-  Operator::setChildDataSource(source);
+  Operator::setOutputDataSource(source);
 }
 
 } // namespace tomviz

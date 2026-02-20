@@ -8,13 +8,6 @@ The tilt series data should be aligned prior to reconstruction and the tilt axis
 The size of reconstruction will be (Nx,Ny,Ny). The number of iterations can be specified below.
 
 Reconstrucing a 256x256x256 tomogram typically takes more than 65 mins with 5 iterations.",
-  "children": [
-    {
-      "name": "reconstruction",
-      "label": "Reconstruction",
-      "type": "reconstruction"
-    }
-  ],
   "parameters" : [
     {
       "name" : "Niter",

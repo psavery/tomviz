@@ -27,13 +27,6 @@
       "visible_if" : "algorithm == 'mlem' or algorithm == 'ospml_hybrid'"
     }
   ],
-  "children": [
-    {
-      "name": "reconstruction",
-      "label": "Reconstruction",
-      "type": "reconstruction"
-    }
-  ],
   "help" : {
     "url": "reconstruction/#tomopy"
   }

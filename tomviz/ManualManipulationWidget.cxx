@@ -47,19 +47,19 @@ public:
     ui.setupUi(p);
     setParent(p);
 
-    if (op->childDataSource() && !op->isEditing()) {
-      dataSource = op->childDataSource();
+    if (op->outputDataSource() && !op->isEditing()) {
+      dataSource = op->outputDataSource();
     } else if (op->dataSource()) {
       dataSource = op->dataSource();
     } else {
       dataSource = ActiveObjects::instance().activeDataSource();
     }
 
-    if (op->isEditing() && op->childDataSource()) {
+    if (op->isEditing() && op->outputDataSource()) {
       // Mark the units of the child data source as modified so that when
       // this widget modifies the spacing of the parent data source, it won't
       // propagate down to the child.
-      auto* cds = op->childDataSource();
+      auto* cds = op->outputDataSource();
       cds->setSpacing(cds->getSpacing(), true);
     }
 

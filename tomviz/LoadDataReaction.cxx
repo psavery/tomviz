@@ -501,17 +501,13 @@ void LoadDataReaction::dataSourceAdded(DataSource* dataSource,
   }
   DataSource* previousActiveDataSource =
     ActiveObjects::instance().activeDataSource();
-  if (child) {
-    ModuleManager::instance().addChildDataSource(dataSource);
-  } else {
-    auto pipeline = new Pipeline(dataSource);
-    PipelineManager::instance().addPipeline(pipeline);
-    // TODO Eventually we shouldn't need to keep track of the data sources,
-    // the pipeline should do that for us.
-    ModuleManager::instance().addDataSource(dataSource);
-    if (defaultModules) {
-      pipeline->addDefaultModules(dataSource);
-    }
+  auto pipeline = new Pipeline(dataSource);
+  PipelineManager::instance().addPipeline(pipeline);
+  // TODO Eventually we shouldn't need to keep track of the data sources,
+  // the pipeline should do that for us.
+  ModuleManager::instance().addDataSource(dataSource);
+  if (defaultModules) {
+    pipeline->addDefaultModules(dataSource);
   }
 
   // Work through pathological cases as necessary, prefer active view.

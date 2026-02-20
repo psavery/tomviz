@@ -58,7 +58,6 @@ public:
   }
 
   QList<DataSource*> dataSources();
-  QList<DataSource*> childDataSources();
   QList<DataSource*> allDataSources();
 
   // Return the data sources in a Depth First Search (DFS) order,
@@ -92,9 +91,6 @@ public:
 
   /// Test if any data source has running operators
   bool hasRunningOperators();
-
-  /// Return whether a DataSource is a child DataSource
-  bool isChild(DataSource*) const;
 
   /// Used to lookup a view by id, only intended for use during deserialization.
   vtkSMViewProxy* lookupView(int id);
@@ -149,10 +145,8 @@ public slots:
   /// Register/Unregister data sources with the ModuleManager.
   void addDataSource(DataSource*);
   void addMoleculeSource(MoleculeSource*);
-  void addChildDataSource(DataSource*);
   void removeDataSource(DataSource*);
   void removeMoleculeSource(MoleculeSource*);
-  void removeChildDataSource(DataSource*);
   void removeAllDataSources();
   void removeAllMoleculeSources();
   void removeOperator(Operator*);
@@ -177,10 +171,8 @@ signals:
   void moduleRemoved(Module*);
 
   void dataSourceAdded(DataSource*);
-  void childDataSourceAdded(DataSource*);
   void dataSourceRemoved(DataSource*);
   void moleculeSourceRemoved(MoleculeSource*);
-  void childDataSourceRemoved(DataSource*);
 
   void moleculeSourceAdded(MoleculeSource*);
 

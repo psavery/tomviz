@@ -23,17 +23,6 @@ SnapshotOperator::SnapshotOperator(DataSource* source, QObject* p)
   : Operator(p), m_dataSource(source)
 {
   setSupportsCancel(false);
-  setHasChildDataSource(true);
-  connect(
-    this,
-    static_cast<void (Operator::*)(const QString&,
-                                   vtkSmartPointer<vtkDataObject>)>(
-      &Operator::newChildDataSource),
-    this,
-    [this](const QString& label, vtkSmartPointer<vtkDataObject> childData) {
-      this->createNewChildDataSource(label, childData, DataSource::Volume,
-                                     DataSource::PersistenceState::Modified);
-    });
 }
 
 QIcon SnapshotOperator::icon() const
@@ -49,13 +38,6 @@ Operator* SnapshotOperator::clone() const
 QJsonObject SnapshotOperator::serialize() const
 {
   auto json = Operator::serialize();
-
-  if (hasChildDataSource() && childDataSource() != nullptr &&
-      childDataSource()->persistenceState() ==
-        DataSource::PersistenceState::Saved) {
-    json["update"] = false;
-  }
-
   return json;
 }
 
@@ -89,7 +71,7 @@ bool SnapshotOperator::applyTransform(vtkDataObject* dataObject)
   vtkNew<vtkImageData> cacheImage;
   cacheImage->DeepCopy(imageData);
 
-  emit newChildDataSource("Snapshot", cacheImage.Get());
+  dataObject->DeepCopy(cacheImage);
   return true;
 }
 } // namespace tomviz

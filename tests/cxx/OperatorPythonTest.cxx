@@ -191,13 +191,13 @@ TEST_F(OperatorPythonTest, update_data)
   pythonOperator->setLabel("update_data");
   // Disconnect these signals as they will cause us to reach into
   // part of ParaView that aren't available in the test executable.
-  // We only need to test that the childDataSourceUpdated signal is
+  // We only need to test that the outputDataUpdated signal is
   // fired, not the data source creation.
   QObject::disconnect(pythonOperator,
                       static_cast<void (Operator::*)(DataSource*)>(
-                        &OperatorPython::newChildDataSource),
+                        &OperatorPython::newOutputDataSource),
                       nullptr, nullptr);
-  QObject::disconnect(pythonOperator, &OperatorPython::childDataSourceUpdated,
+  QObject::disconnect(pythonOperator, &OperatorPython::outputDataUpdated,
                       nullptr, nullptr);
   QFile file(QString("%1/fixtures/update_data.py").arg(SOURCE_DIR));
   if (file.open(QIODevice::ReadOnly)) {
@@ -206,7 +206,7 @@ TEST_F(OperatorPythonTest, update_data)
     file.close();
     pythonOperator->setScript(script);
 
-    QSignalSpy spy(pythonOperator, SIGNAL(childDataSourceUpdated(
+    QSignalSpy spy(pythonOperator, SIGNAL(outputDataUpdated(
                                      vtkSmartPointer<vtkDataObject>)));
     TransformResult result = pythonOperator->transform(dataObject);
     ASSERT_EQ(result, TransformResult::Complete);

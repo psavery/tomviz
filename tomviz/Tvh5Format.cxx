@@ -8,7 +8,6 @@
 #include "EmdFormat.h"
 #include "LoadDataReaction.h"
 #include "ModuleManager.h"
-#include "Pipeline.h"
 
 #include <h5cpp/h5readwrite.h>
 
@@ -153,7 +152,7 @@ bool Tvh5Format::read(const std::string& fileName)
 
 bool Tvh5Format::loadDataSource(h5::H5ReadWrite& reader,
                                 const QJsonObject& dsObject,
-                                DataSource** active, Operator* parent)
+                                DataSource** active)
 {
   auto id = dsObject.value("id").toString().toStdString();
   if (id.empty()) {
@@ -175,56 +174,27 @@ bool Tvh5Format::loadDataSource(h5::H5ReadWrite& reader,
                                       ? DataSource::TiltSeries
                                       : DataSource::Volume;
 
-  auto* pipeline = parent ? parent->dataSource()->pipeline() : nullptr;
-  auto* dataSource = new DataSource(image, type, pipeline);
+  auto* dataSource = new DataSource(image, type);
 
   // Save this info in case we write the data source in the future
   dataSource->setFileName(reader.fileName().c_str());
   dataSource->setTvh5NodePath(path.c_str());
 
-  if (parent) {
-    // This is a child data source. Hook it up to the operator parent.
-    parent->setChildDataSource(dataSource);
-    parent->setHasChildDataSource(true);
-    parent->newChildDataSource(dataSource);
-    // If it has a parent, it will be deserialized later.
-  } else {
-    // This is a root data source
-    LoadDataReaction::dataSourceAdded(dataSource, false, false);
-    dataSource->deserialize(dsObject);
-  }
+  // This is a root data source
+  LoadDataReaction::dataSourceAdded(dataSource, false, false);
+  dataSource->deserialize(dsObject);
 
   // Set the active data source
   if (dsObject.value("active").toBool()) {
     *active = dataSource;
   }
 
-  // If there are operators, load child data sources too
-  if (dsObject["operators"].isArray()) {
-    auto opPtrs = dataSource->operators();
-    auto operators = dsObject["operators"].toArray();
-    for (int i = 0; i < operators.size() && i < opPtrs.size(); ++i) {
-      auto op = operators.at(i).toObject();
-      if (op["dataSources"].isArray()) {
-        auto sources = op["dataSources"].toArray();
-        foreach (auto s, sources) {
-          loadDataSource(reader, s.toObject(), active, opPtrs[i]);
-        }
-      }
-    }
-  }
+  // For backward compatibility, silently ignore any "dataSources" nested
+  // under operators. Child data sources are no longer supported.
 
-  // Mark all parent operators as complete
+  // Mark all operators as complete
   for (auto* op : dataSource->operators())
     op->setComplete();
-
-  if (pipeline) {
-    // Make sure the pipeline is not paused in case the user wishes to
-    // re-run some operators.
-    pipeline->resume();
-    // This will deserialize all children.
-    pipeline->finished();
-  }
 
   return true;
 }

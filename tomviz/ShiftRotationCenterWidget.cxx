@@ -8,6 +8,7 @@
 #include "ColorMap.h"
 #include "DataSource.h"
 #include "InternalPythonHelper.h"
+#include "Pipeline.h"
 #include "PresetDialog.h"
 #include "Utilities.h"
 
@@ -163,9 +164,11 @@ public:
     ui.sliceView->interactor()->SetInteractorStyle(interactorStyle);
     setRotationData(vtkImageData::New());
 
-    // Use a child data source if one is available so the color map will match
-    if (op->childDataSource()) {
-      dataSource = op->childDataSource();
+    // Use the pipeline's transformed data source if available so the color map
+    // will match
+    if (op->dataSource() && op->dataSource()->pipeline() &&
+        op->dataSource()->pipeline()->transformedDataSource()) {
+      dataSource = op->dataSource()->pipeline()->transformedDataSource();
     } else if (op->dataSource()) {
       dataSource = op->dataSource();
     } else {

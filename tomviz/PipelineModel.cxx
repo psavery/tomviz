@@ -245,15 +245,8 @@ bool PipelineModel::TreeItem::remove(Operator* o)
   foreach (auto childItem, m_children) {
     if (childItem->op() == o) {
       foreach (auto resultItem, childItem->children()) {
-        auto dataSource = resultItem->dataSource();
-        if (ModuleManager::instance().isChild(dataSource)) {
-          // if the result is a child datasource, allow it to remove its
-          // children
-          resultItem->remove(dataSource);
-        } else {
-          // Remove results
-          childItem->removeChild(resultItem->childIndex());
-        }
+        // Remove results
+        childItem->removeChild(resultItem->childIndex());
       }
       removeChild(childItem->childIndex());
       return true;
@@ -319,8 +312,6 @@ PipelineModel::PipelineModel(QObject* p) : QAbstractItemModel(p)
 {
   connect(&ModuleManager::instance(), SIGNAL(dataSourceAdded(DataSource*)),
           SLOT(dataSourceAdded(DataSource*)));
-  connect(&ModuleManager::instance(), SIGNAL(childDataSourceAdded(DataSource*)),
-          SLOT(childDataSourceAdded(DataSource*)));
   connect(&ModuleManager::instance(), SIGNAL(moduleAdded(Module*)),
           SLOT(moduleAdded(Module*)));
   connect(&ModuleManager::instance(),
@@ -336,10 +327,6 @@ PipelineModel::PipelineModel(QObject* p) : QAbstractItemModel(p)
           SLOT(moleculeSourceRemoved(MoleculeSource*)));
   connect(&ModuleManager::instance(), SIGNAL(moduleRemoved(Module*)),
           SLOT(moduleRemoved(Module*)));
-  connect(&ModuleManager::instance(),
-          SIGNAL(childDataSourceRemoved(DataSource*)),
-          SLOT(childDataSourceRemoved(DataSource*)));
-
   connect(&ModuleManager::instance(), SIGNAL(operatorRemoved(Operator*)),
           SLOT(operatorRemoved(Operator*)));
   // Need to register this for cross thread dataChanged signal
@@ -777,7 +764,7 @@ void PipelineModel::dataSourceAdded(DataSource* dataSource)
   endInsertRows();
   auto pipeline = dataSource->pipeline();
   connect(pipeline, &Pipeline::operatorAdded, this,
-          &PipelineModel::operatorAdded, Qt::UniqueConnection);
+          [this](Operator* op, DataSource* ds) { operatorAdded(op, ds); });
 
   // Fire signal to indicate that the transformed data source has been modified
   // when the pipeline has been executed.
@@ -865,10 +852,10 @@ void PipelineModel::operatorAdded(Operator* op,
   connect(op, &Operator::labelModified, this, &PipelineModel::operatorModified);
   connect(op, &Operator::transformingDone, this,
           &PipelineModel::operatorTransformDone);
-  connect(
-    op,
-    static_cast<void (Operator::*)(DataSource*)>(&Operator::newChildDataSource),
-    this, &PipelineModel::childDataSourceAdded);
+  connect(op, &Operator::newOutputDataSource, this,
+          &PipelineModel::outputDataSourceAdded);
+  connect(op, &Operator::dataSourceMoved, this,
+          &PipelineModel::dataSourceMoved);
   // Make sure dataChange signal is emitted when operator is complete
   connect(op, &Operator::transformingDone, [this, op]() {
     auto opIndex = operatorIndex(op);
@@ -880,8 +867,6 @@ void PipelineModel::operatorAdded(Operator* op,
     auto opIndex = operatorIndex(op);
     emit dataChanged(opIndex, opIndex);
   });
-  connect(op, &Operator::dataSourceMoved, this,
-          &PipelineModel::dataSourceMoved);
 
   auto index = dataSourceIndex(dataSource);
   auto dataSourceItem = treeItem(index);
@@ -919,8 +904,6 @@ void PipelineModel::operatorAdded(Operator* op,
     endInsertRows();
   }
 
-  // If there is a transformed data output to move, move it to be a child
-  // of this operator
   if (transformedDataSource) {
     moveDataSourceHelper(transformedDataSource, op);
   }
@@ -946,30 +929,6 @@ void PipelineModel::operatorTransformDone()
 {
   auto op = qobject_cast<Operator*>(sender());
   Q_ASSERT(op);
-
-  // Find tree item for the operator
-  TreeItem* operatorItem = nullptr;
-  foreach (auto child, m_treeItems) {
-    auto foundChild = child->find(op);
-    if (foundChild) {
-      operatorItem = foundChild;
-      break;
-    }
-  }
-
-  if (op->hasChildDataSource() || op->childDataSource() != nullptr) {
-    auto childDataSource = op->childDataSource();
-    if (childDataSource) {
-      // The Operator's child data set is null initially. We need to set it
-      // after the Operator has been run. We also assume that the operator item
-      // has a single child, the child DataSource, and it is the last child of
-      // the operator tree item.
-      auto childItem = operatorItem->lastChild();
-      if (childItem) {
-        childItem->setItem(PipelineModel::Item(childDataSource));
-      }
-    }
-  }
 }
 
 void PipelineModel::dataSourceRemoved(DataSource* source)
@@ -983,37 +942,6 @@ void PipelineModel::dataSourceRemoved(DataSource* source)
     m_treeItems.removeAll(item);
     delete item;
     endRemoveRows();
-  }
-}
-
-void PipelineModel::childDataSourceRemoved(DataSource* source)
-{
-  auto index = dataSourceIndex(source);
-
-  if (index.isValid()) {
-    auto operatorIndex = parent(index);
-    auto operatorTreeItem = treeItem(operatorIndex);
-    auto op = operatorTreeItem->op();
-
-    auto item = treeItem(index);
-    beginRemoveRows(parent(index), index.row(), index.row());
-    // Since the item has a parent (it is a child data source), calling remove()
-    // will delete the item object.  No need to delete it again here.
-    item->remove(source);
-    m_treeItems.removeAll(item);
-    endRemoveRows();
-
-    op->setModified();
-    int numResults = op->numberOfResults();
-    if (numResults) {
-
-      beginInsertRows(operatorIndex, 0, numResults - 1);
-      for (int j = 0; j < numResults; ++j) {
-        OperatorResult* result = op->resultAt(j);
-        operatorTreeItem->appendChild(PipelineModel::Item(result));
-      }
-      endInsertRows();
-    }
   }
 }
 
@@ -1045,13 +973,8 @@ void PipelineModel::moduleRemoved(Module* module)
 
 bool PipelineModel::removeDataSource(DataSource* source)
 {
-  if (ModuleManager::instance().isChild(source)) {
-    childDataSourceRemoved(source);
-    ModuleManager::instance().removeChildDataSource(source);
-  } else {
-    dataSourceRemoved(source);
-    ModuleManager::instance().removeDataSource(source);
-  }
+  dataSourceRemoved(source);
+  ModuleManager::instance().removeDataSource(source);
   return true;
 }
 
@@ -1073,8 +996,7 @@ bool PipelineModel::removeOp(Operator* o)
 {
   auto index = operatorIndex(o);
   if (index.isValid()) {
-    // This will trigger the move of the "transformed" data source
-    // so we need todo this outside the beginRemoveRow(...), otherwise
+    // We need to do this outside the beginRemoveRow(...), otherwise
     // the model is not correctly invalidated.
     o->dataSource()->removeOperator(o);
     beginRemoveRows(parent(index), index.row(), index.row());
@@ -1097,59 +1019,92 @@ PipelineModel::TreeItem* PipelineModel::treeItem(const QModelIndex& index) const
   return static_cast<PipelineModel::TreeItem*>(index.internalPointer());
 }
 
-void PipelineModel::childDataSourceAdded(DataSource* dataSource)
+void PipelineModel::outputDataSourceAdded(DataSource* dataSource)
 {
-  if (Operator* op = qobject_cast<Operator*>(sender())) {
-
-    auto index = dataSourceIndex(op->dataSource());
-    auto dataSourceItem = treeItem(index);
-    auto operatorTreeItem = dataSourceItem->find(op);
-    auto numResults = op->numberOfResults();
-    auto operatorIndex = this->operatorIndex(op);
-
-    // If the last child is already a data source when we just want to set the
-    // item rather than inserting a new row.
-    auto last = operatorTreeItem->lastChild();
-    if (last && last->dataSource()) {
-      last->setItem(PipelineModel::Item(dataSource));
-    } else {
-      beginInsertRows(operatorIndex, numResults, numResults);
-      operatorTreeItem->appendChild(PipelineModel::Item(dataSource));
-      endInsertRows();
-    }
+  // Find the operator that owns this output data source.
+  auto op = qobject_cast<Operator*>(sender());
+  if (!op) {
+    return;
   }
 
-  // When restoring a data source from a state file it will have its operators
-  // before we can listen to the signal above. Display those operators.
-  foreach (auto op, dataSource->operators()) {
-    operatorAdded(op);
+  auto opIdx = operatorIndex(op);
+  if (!opIdx.isValid()) {
+    return;
   }
 
-  emit childDataSourceItemAdded(dataSource);
+  auto opItem = treeItem(opIdx);
+  int insertionRow = opItem->childCount();
+  beginInsertRows(opIdx, insertionRow, insertionRow);
+  opItem->appendChild(PipelineModel::Item(dataSource));
+  endInsertRows();
+
+  emit dataSourceItemAdded(dataSource);
 }
 
 void PipelineModel::moveDataSourceHelper(DataSource* dataSource,
                                          Operator* newParent)
 {
-  auto index = dataSourceIndex(dataSource);
-  auto dataSourceItem = treeItem(index);
-  auto oldParent = dataSourceItem->parent()->op();
-  auto oldParentIndex = this->operatorIndex(oldParent);
-  auto operatorIndex = this->operatorIndex(newParent);
-  auto operatorTreeItem = this->treeItem(operatorIndex);
+  if (!dataSource || !newParent) {
+    return;
+  }
 
-  beginMoveRows(oldParentIndex, index.row(), index.row(), operatorIndex,
-                operatorTreeItem->childCount());
-  dataSourceItem = dataSourceItem->detach();
-  operatorTreeItem->attach(dataSourceItem);
-  endMoveRows();
+  // Find the data source's current tree item by scanning operator children.
+  TreeItem* dsItem = nullptr;
+  QModelIndex oldParentIdx;
+
+  foreach (auto topItem, m_treeItems) {
+    // Scan all operators under each top-level data source
+    for (int i = 0; i < topItem->childCount(); ++i) {
+      auto child = topItem->child(i);
+      if (!child->op()) {
+        continue;
+      }
+      for (int j = 0; j < child->childCount(); ++j) {
+        if (child->child(j)->dataSource() == dataSource) {
+          oldParentIdx = createIndex(child->childIndex(), 0, child);
+          int pos = j;
+          beginRemoveRows(oldParentIdx, pos, pos);
+          dsItem = child->detachChild(pos);
+          endRemoveRows();
+          break;
+        }
+      }
+      if (dsItem) {
+        break;
+      }
+    }
+    if (dsItem) {
+      break;
+    }
+  }
+
+  if (!dsItem) {
+    return;
+  }
+
+  // Now attach it to the new parent operator.
+  auto newParentIdx = operatorIndex(newParent);
+  if (!newParentIdx.isValid()) {
+    delete dsItem;
+    return;
+  }
+
+  auto newParentItem = treeItem(newParentIdx);
+  int newRow = newParentItem->childCount();
+  beginInsertRows(newParentIdx, newRow, newRow);
+  newParentItem->attach(dsItem);
+  endInsertRows();
 }
 
 void PipelineModel::dataSourceMoved(DataSource* dataSource)
 {
-  if (Operator* newParent = qobject_cast<Operator*>(sender())) {
-    moveDataSourceHelper(dataSource, newParent);
+  // Find the operator that now owns this data source.
+  auto op = qobject_cast<Operator*>(sender());
+  if (!op) {
+    return;
   }
+
+  moveDataSourceHelper(dataSource, op);
 }
 
 } // namespace tomviz

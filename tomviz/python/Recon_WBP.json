@@ -8,14 +8,6 @@ The tilt series data should be aligned prior to reconstruction and the tilt axis
 The size of reconstruction will be (Nx,N,N), where Nx is the number of pixels in x-direction and N can be specified below.\nThe maximum N allowed is 4096. 
 
 Reconstrucing a 512x512x512 tomogram typically takes 7-10 mins.",
-
-  "children": [
-    {
-      "name": "reconstruction",
-      "label": "Reconstruction",
-      "type": "reconstruction"
-    }
-  ],
   "parameters" : [
     {
       "name" : "Nrecon",

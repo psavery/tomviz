@@ -15,7 +15,6 @@ class H5ReadWrite;
 namespace tomviz {
 
 class DataSource;
-class Operator;
 
 class Tvh5Format
 {
@@ -27,8 +26,8 @@ private:
   // Load a data source from data in a Tvh5 file
   // If the active data source is found, it is set to @param active
   static bool loadDataSource(h5::H5ReadWrite& reader,
-                             const QJsonObject& dsObject, DataSource** active,
-                             Operator* parent = nullptr);
+                             const QJsonObject& dsObject,
+                             DataSource** active);
 };
 } // namespace tomviz
 

@@ -20,8 +20,6 @@
 #include <vtkSMSourceProxy.h>
 #include <vtkSMViewProxy.h>
 
-#include <functional>
-
 namespace tomviz {
 
 ActiveObjects::ActiveObjects() : QObject()
@@ -248,7 +246,6 @@ DataSource* ActiveObjects::activeParentDataSource()
 {
 
   if (m_activeParentDataSource == nullptr) {
-    auto pipeline = activePipeline();
     auto dataSource = activeDataSource();
 
     if (dataSource == nullptr) {
@@ -259,37 +256,13 @@ DataSource* ActiveObjects::activeParentDataSource()
       return dataSource;
     }
 
-    std::function<QList<DataSource*>(DataSource*, DataSource*,
-                                     QList<DataSource*>)>
-      dfs = [&dfs](DataSource* currentDataSource, DataSource* targetDataSource,
-                   QList<DataSource*> path) {
-        path.append(currentDataSource);
-        if (currentDataSource == targetDataSource) {
-          return path;
-        }
-
-        foreach (Operator* op, currentDataSource->operators()) {
-          if (op->childDataSource() != nullptr) {
-            QList<DataSource*> p =
-              dfs(op->childDataSource(), targetDataSource, path);
-            if (!p.isEmpty()) {
-              return p;
-            }
-          }
-        }
-
-        return QList<DataSource*>();
-      };
-
-    // Find path to the active datasource
-    auto path = dfs(pipeline->dataSource(), dataSource, QList<DataSource*>());
-
-    // Return the first non output data source
-    for (auto itr = path.rbegin(); itr != path.rend(); ++itr) {
-      auto ds = *itr;
-      if (ds->forkable()) {
-        m_activeParentDataSource = ds;
-        break;
+    // Walk up to find the first forkable (non-output) data source in the
+    // pipeline.
+    auto pipeline = activePipeline();
+    if (pipeline) {
+      auto rootDS = pipeline->dataSource();
+      if (rootDS && rootDS->forkable()) {
+        m_activeParentDataSource = rootDS;
       }
     }
   }

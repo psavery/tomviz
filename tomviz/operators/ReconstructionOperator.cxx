@@ -36,17 +36,6 @@ ReconstructionOperator::ReconstructionOperator(DataSource* source, QObject* p)
   }
   setSupportsCancel(true);
   setTotalProgressSteps(m_extent[1] - m_extent[0] + 1);
-  setHasChildDataSource(true);
-  connect(
-    this,
-    static_cast<void (Operator::*)(const QString&,
-                                   vtkSmartPointer<vtkDataObject>)>(
-      &Operator::newChildDataSource),
-    this,
-    [this](const QString& label, vtkSmartPointer<vtkDataObject> childData) {
-      this->createNewChildDataSource(label, childData, DataSource::Volume,
-                                     DataSource::PersistenceState::Transient);
-    });
 }
 
 QIcon ReconstructionOperator::icon() const
@@ -144,7 +133,7 @@ bool ReconstructionOperator::applyTransform(vtkDataObject* dataObject)
   if (isCanceled()) {
     return false;
   }
-  emit newChildDataSource("Reconstruction", reconstructionImage);
+  dataObject->DeepCopy(reconstructionImage);
   return true;
 }
 } // namespace tomviz

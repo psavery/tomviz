@@ -145,10 +145,6 @@ void ProgressDialogManager::operatorAdded(Operator* op)
             connectTransformingStarted();
           });
 
-  connect(
-    op,
-    static_cast<void (Operator::*)(DataSource*)>(&Operator::newChildDataSource),
-    this, &ProgressDialogManager::dataSourceAdded);
 }
 
 void ProgressDialogManager::dataSourceAdded(DataSource* ds)

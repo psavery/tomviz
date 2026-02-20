@@ -237,8 +237,6 @@ void PipelineView::setModel(QAbstractItemModel* model)
   // we listen to the model and respond after it does its update.
   connect(pipelineModel, SIGNAL(dataSourceItemAdded(DataSource*)),
           SLOT(setCurrent(DataSource*)));
-  connect(pipelineModel, SIGNAL(childDataSourceItemAdded(DataSource*)),
-          SLOT(setCurrent(DataSource*)));
   connect(pipelineModel, SIGNAL(moleculeSourceItemAdded(MoleculeSource*)),
           SLOT(setCurrent(MoleculeSource*)));
   connect(pipelineModel, SIGNAL(moleculeSourceItemAdded(MoleculeSource*)),
@@ -278,9 +276,6 @@ void PipelineView::contextMenuEvent(QContextMenuEvent* e)
   auto dataSource = pipelineModel->dataSource(idx);
   auto result = pipelineModel->result(idx);
 
-  bool childDataSource =
-    (dataSource && ModuleManager::instance().isChild(dataSource));
-
   QMenu contextMenu;
   QAction* cloneAction = nullptr;
   QAction* duplicateModuleAction = nullptr;
@@ -292,7 +287,6 @@ void PipelineView::contextMenuEvent(QContextMenuEvent* e)
   QAction* executeAction = nullptr;
   QAction* hideAction = nullptr;
   QAction* showAction = nullptr;
-  QAction* cloneChildAction = nullptr;
   QAction* snapshotAction = nullptr;
   QAction* showInterfaceAction = nullptr;
   QAction* exportTableResultAction = nullptr;
@@ -309,36 +303,30 @@ void PipelineView::contextMenuEvent(QContextMenuEvent* e)
       return;
     }
   } else if (dataSource != nullptr) {
-    if (!childDataSource) {
-      // Data source ( non child )
-      cloneAction = contextMenu.addAction("Clone");
-      cloneReaction = new CloneDataReaction(cloneAction);
-      if (dataSource->type() == DataSource::Volume) {
-        markAsTiltAction = contextMenu.addAction("Mark as Tilt Series");
-        // markAsFibAction = contextMenu.addAction("Mark as Focused Ion Beam");
-      } else if (dataSource->type() == DataSource::TiltSeries) {
-        markAsVolumeAction = contextMenu.addAction("Mark as Volume");
-        // markAsFibAction = contextMenu.addAction("Mark as Focused Ion Beam");
-      } else if (dataSource->type() == DataSource::FIB) {
-        markAsVolumeAction = contextMenu.addAction("Mark as Volume");
-        markAsTiltAction = contextMenu.addAction("Mark as Tilt Series");
-      }
+    cloneAction = contextMenu.addAction("Clone");
+    cloneReaction = new CloneDataReaction(cloneAction);
+    if (dataSource->type() == DataSource::Volume) {
+      markAsTiltAction = contextMenu.addAction("Mark as Tilt Series");
+      // markAsFibAction = contextMenu.addAction("Mark as Focused Ion Beam");
+    } else if (dataSource->type() == DataSource::TiltSeries) {
+      markAsVolumeAction = contextMenu.addAction("Mark as Volume");
+      // markAsFibAction = contextMenu.addAction("Mark as Focused Ion Beam");
+    } else if (dataSource->type() == DataSource::FIB) {
+      markAsVolumeAction = contextMenu.addAction("Mark as Volume");
+      markAsTiltAction = contextMenu.addAction("Mark as Tilt Series");
+    }
 
-      if (dataSource->canReloadAndResample()) {
-        reloadAndResampleAction = contextMenu.addAction("Reload and Resample");
-      }
+    if (dataSource->canReloadAndResample()) {
+      reloadAndResampleAction = contextMenu.addAction("Reload and Resample");
+    }
 
-      // Add option to re-execute the pipeline is we have a canceled operator
-      // in our pipeline.
-      foreach (Operator* op, dataSource->operators()) {
-        if (op->isCanceled() || op->isModified()) {
-          allowReExecute = true;
-          break;
-        }
+    // Add option to re-execute the pipeline is we have a canceled operator
+    // in our pipeline.
+    foreach (Operator* op, dataSource->operators()) {
+      if (op->isCanceled() || op->isModified()) {
+        allowReExecute = true;
+        break;
       }
-    } else if (childDataSource) {
-      // Child data source
-      cloneChildAction = contextMenu.addAction("Clone");
     }
 
     saveDataAction = contextMenu.addAction("Save Data");
@@ -469,8 +457,6 @@ void PipelineView::contextMenuEvent(QContextMenuEvent* e)
     setModuleVisibility(selectedIndexes(), false);
   } else if (showAction && selectedItem == showAction) {
     setModuleVisibility(selectedIndexes(), true);
-  } else if (cloneChildAction && selectedItem == cloneChildAction) {
-    cloneReaction->clone(dataSource);
   } else if (snapshotAction && selectedItem == snapshotAction) {
     op->dataSource()->addOperator(new SnapshotOperator(op->dataSource()));
   } else if (showInterfaceAction && selectedItem == showInterfaceAction) {

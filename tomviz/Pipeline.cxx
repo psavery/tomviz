@@ -116,13 +116,12 @@ class PipelineFutureInternal : public Pipeline::Future
   Q_OBJECT
 public:
   PipelineFutureInternal(Pipeline* pipeline, QList<Operator*> operators,
-                         Pipeline::Future* future, bool recurse = true,
+                         Pipeline::Future* future,
                          QObject* parent = nullptr);
 
 private:
   Pipeline* m_pipeline;
   QScopedPointer<Pipeline::Future> m_currentBranchFuture;
-  bool m_recurse = false;
 
   void setCurrentFuture(Pipeline::Future* future);
 };
@@ -130,45 +129,26 @@ private:
 PipelineFutureInternal::PipelineFutureInternal(Pipeline* pipeline,
                                                QList<Operator*> operators,
                                                Pipeline::Future* future,
-                                               bool recurse, QObject* parent)
-  : Pipeline::Future(operators, parent), m_pipeline(pipeline),
-    m_recurse(recurse)
+                                               QObject* parent)
+  : Pipeline::Future(operators, parent), m_pipeline(pipeline)
 {
   setCurrentFuture(future);
 }
 
 void PipelineFutureInternal::setCurrentFuture(Pipeline::Future* future)
 {
-
   m_currentBranchFuture.reset(future);
 
   connect(future, &Pipeline::Future::finished, future, [future, this]() {
     auto operators = future->operators();
-    // operators will be empty if we are returning the original data set ( i.e
-    // no operators have been run.
     if (operators.isEmpty()) {
       setResult(future->result());
       emit finished();
       return;
     }
 
-    auto lastOp = future->operators().last();
-
-    // Do we have another branch to execute
-    if (m_recurse && lastOp->childDataSource() != nullptr &&
-        !lastOp->childDataSource()->operators().isEmpty()) {
-      auto child = lastOp->childDataSource();
-      auto newFuture = m_pipeline->executor()->execute(child->dataObject(),
-                                                       child->operators());
-      this->setCurrentFuture(newFuture);
-      // Ensure the pipeline has ownership of the transformed data source.
-      lastOp->childDataSource()->setParent(m_pipeline);
-    }
-    // The pipeline execution is finished
-    else {
-      setResult(future->result());
-      emit finished();
-    }
+    setResult(future->result());
+    emit finished();
   });
 }
 
@@ -338,7 +318,7 @@ Pipeline::Future* Pipeline::execute(DataSource* ds, Operator* start,
           &Pipeline::branchFinished);
 
   auto pipelineFuture = new PipelineFutureInternal(
-    this, branchFuture->operators(), branchFuture, operators.last() == end);
+    this, branchFuture->operators(), branchFuture);
   connect(pipelineFuture, &Pipeline::Future::finished, this,
           &Pipeline::finished);
 
@@ -380,10 +360,6 @@ bool Pipeline::beingEdited(DataSource* ds) const
     if (currentOp->isEditing()) {
       return true;
     }
-    // Also check if the operators in a branch are being edited.
-    if (beingEdited(currentOp->childDataSource())) {
-      return true;
-    }
   }
   return false;
 }
@@ -406,10 +382,6 @@ bool Pipeline::isModified(DataSource* datasource, Operator** start) const
     auto currentOp = *itr;
     if (currentOp->isModified()) {
       *start = currentOp;
-      return true;
-    }
-    // Also check if the operators in a branch are being edited.
-    if (isModified(currentOp->childDataSource(), start)) {
       return true;
     }
   }
@@ -441,50 +413,38 @@ void Pipeline::branchFinished()
     }
   }
 
-  if (!lastOp->hasChildDataSource()) {
-    DataSource* newChildDataSource = nullptr;
-    if (lastOp->childDataSource() == nullptr) {
-      newChildDataSource = new DataSource("Output");
-      newChildDataSource->setPersistenceState(
-        tomviz::DataSource::PersistenceState::Transient);
-      newChildDataSource->setForkable(false);
-      newChildDataSource->setParent(this);
-      lastOp->setChildDataSource(newChildDataSource);
-      auto rootDataSource = dataSource();
-      // connect signal to flow units and spacing to child data source.
-      connect(rootDataSource, &DataSource::dataPropertiesChanged,
-              newChildDataSource,
-              [rootDataSource, newChildDataSource]() {
-                // Only flow the properties if no user modifications have been
-                // made.
-                if (!newChildDataSource->unitsModified()) {
-                  newChildDataSource->setUnits(rootDataSource->getUnits(),
-                                               false);
-                  double spacing[3];
-                  rootDataSource->getSpacing(spacing);
-                  newChildDataSource->setSpacing(spacing, false);
-                }
-              });
-    }
-
-    // Update the type if necessary
-    DataSource::DataSourceType type = DataSource::hasTiltAngles(newData)
-                                        ? DataSource::TiltSeries
-                                        : DataSource::Volume;
-    lastOp->childDataSource()->setData(newData);
-    lastOp->childDataSource()->setType(type);
-    lastOp->childDataSource()->dataModified();
-
-    if (newChildDataSource != nullptr) {
-      emit lastOp->newChildDataSource(newChildDataSource);
-      // Move modules from root data source.
-      moveModulesDown(newChildDataSource);
-    }
+  DataSource* newOutputDataSource = nullptr;
+  if (lastOp->outputDataSource() == nullptr) {
+    newOutputDataSource = new DataSource("Output");
+    newOutputDataSource->setPersistenceState(
+      tomviz::DataSource::PersistenceState::Transient);
+    newOutputDataSource->setForkable(false);
+    newOutputDataSource->setParent(this);
+    lastOp->setOutputDataSource(newOutputDataSource);
+    auto rootDataSource = dataSource();
+    connect(rootDataSource, &DataSource::dataPropertiesChanged,
+            newOutputDataSource,
+            [rootDataSource, newOutputDataSource]() {
+              if (!newOutputDataSource->unitsModified()) {
+                newOutputDataSource->setUnits(rootDataSource->getUnits(),
+                                             false);
+                double spacing[3];
+                rootDataSource->getSpacing(spacing);
+                newOutputDataSource->setSpacing(spacing, false);
+              }
+            });
   }
-  else {
-    // If this is the only operator, make sure the modules are moved down.
-    if (start->operators().size() == 1)
-      moveModulesDown(lastOp->childDataSource());
+
+  DataSource::DataSourceType type = DataSource::hasTiltAngles(newData)
+                                      ? DataSource::TiltSeries
+                                      : DataSource::Volume;
+  lastOp->outputDataSource()->setData(newData);
+  lastOp->outputDataSource()->setType(type);
+  lastOp->outputDataSource()->dataModified();
+
+  if (newOutputDataSource != nullptr) {
+    emit lastOp->newOutputDataSource(newOutputDataSource);
+    moveModulesDown(newOutputDataSource);
   }
 }
 
@@ -517,7 +477,7 @@ DataSource* Pipeline::findTransformedDataSource(DataSource* dataSource)
 {
   auto op = findTransformedDataSourceOperator(dataSource);
   if (op != nullptr) {
-    return op->childDataSource();
+    return op->outputDataSource();
   }
 
   return nullptr;
@@ -532,13 +492,7 @@ Operator* Pipeline::findTransformedDataSourceOperator(DataSource* dataSource)
   auto operators = dataSource->operators();
   for (auto itr = operators.rbegin(); itr != operators.rend(); ++itr) {
     auto op = *itr;
-    if (op->childDataSource() != nullptr) {
-      auto child = op->childDataSource();
-      // If the child has operators we need to go deeper
-      if (!child->operators().isEmpty()) {
-        return findTransformedDataSourceOperator(child);
-      }
-
+    if (op->outputDataSource() != nullptr) {
       return op;
     }
   }
@@ -557,12 +511,6 @@ void Pipeline::addDataSource(DataSource* dataSource)
     connect(op, &Operator::transformModified, this,
             [this]() { execute()->deleteWhenFinished(); });
 
-    // Ensure that new child data source signals are correctly wired up.
-    connect(op,
-            static_cast<void (Operator::*)(DataSource*)>(
-              &Operator::newChildDataSource),
-            [this](DataSource* ds) { addDataSource(ds); });
-
     // We need to ensure we move add datasource to the end of the branch,
     // but only if the new operator is the last one (appended). For mid-chain
     // insertions, the child DataSource should stay where it is.
@@ -571,9 +519,9 @@ void Pipeline::addDataSource(DataSource* dataSource)
       auto transformedDataSourceOp =
         findTransformedDataSourceOperator(op->dataSource());
       if (transformedDataSourceOp != nullptr) {
-        auto transformedDataSource = transformedDataSourceOp->childDataSource();
-        transformedDataSourceOp->setChildDataSource(nullptr);
-        op->setChildDataSource(transformedDataSource);
+        auto transformedDataSource = transformedDataSourceOp->outputDataSource();
+        transformedDataSourceOp->setOutputDataSource(nullptr);
+        op->setOutputDataSource(transformedDataSource);
         emit operatorAdded(op, transformedDataSource);
       } else {
         emit operatorAdded(op);
@@ -591,14 +539,14 @@ void Pipeline::addDataSource(DataSource* dataSource)
     if (!op->isNew()) {
       m_operatorsDeleted = true;
     }
-    if (op->childDataSource() != nullptr) {
-      auto transformedDataSource = op->childDataSource();
+    if (op->outputDataSource() != nullptr) {
+      auto transformedDataSource = op->outputDataSource();
       auto operators = op->dataSource()->operators();
       // We have an operator to move it to.
       if (!operators.isEmpty()) {
         auto newOp = operators.last();
-        op->setChildDataSource(nullptr);
-        newOp->setChildDataSource(transformedDataSource);
+        op->setOutputDataSource(nullptr);
+        newOp->setOutputDataSource(transformedDataSource);
         emit newOp->dataSourceMoved(transformedDataSource);
       }
       // Clean it up
@@ -687,13 +635,13 @@ Pipeline::Future* Pipeline::emptyFuture()
   return future;
 }
 
-void Pipeline::moveModulesDown(DataSource* newChildDataSource)
+void Pipeline::moveModulesDown(DataSource* newOutputDataSource)
 {
   foreach (Module* module, ModuleManager::instance().findModules<Module*>(
            dataSource(), nullptr)) {
     // TODO: We should really copy the module properties as well.
     auto newModule = ModuleManager::instance().createAndAddModule(
-      module->label(), newChildDataSource, module->view());
+      module->label(), newOutputDataSource, module->view());
     // Copy over properties using the serialization code.
     newModule->deserialize(module->serialize());
     ModuleManager::instance().removeModule(module);
