@@ -6,6 +6,7 @@ include_directories(SYSTEM
   ${PROJECT_SOURCE_DIR}/thirdparty/pybind11/include)
 
 add_subdirectory(core)
+add_subdirectory(pipeline)
 add_subdirectory(pvextensions)
 
 set(SOURCES

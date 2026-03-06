@@ -74,3 +74,14 @@ set_tests_properties(PyXRFWorkflow PROPERTIES TIMEOUT 1800)
 create_test_executable(tomvizTests)
 
 target_link_libraries(tomvizTests Qt6::Test)
+
+# Pipeline library tests (standalone, no tomvizlib dependency)
+# Use BEFORE to ensure pipeline headers are found before tomviz/ headers
+# (which contain a different Pipeline.h).
+add_executable(pipelineLibTests PipelineLibTest.cxx)
+target_include_directories(pipelineLibTests BEFORE PRIVATE
+  ${PROJECT_SOURCE_DIR}/tomviz/pipeline
+  ${PROJECT_BINARY_DIR}/tomviz/pipeline)
+target_link_libraries(pipelineLibTests
+  tomviz_pipeline GTest::gtest GTest::gtest_main ${EXTRA_LINK_LIB})
+add_test(NAME "PipelineLib" COMMAND pipelineLibTests)
