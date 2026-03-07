@@ -18,6 +18,8 @@ set(SOURCES
   DefaultExecutor.cxx
   data/VolumeData.cxx
   sources/SphereSource.cxx
+  sources/DataReader.cxx
+  sources/ReaderSourceNode.cxx
   transforms/ThresholdTransform.cxx
   transforms/LegacyPythonTransform.cxx
   sinks/VolumeStatsSink.cxx)
@@ -39,6 +41,8 @@ set(HEADERS
   DefaultExecutor.h
   data/VolumeData.h
   sources/SphereSource.h
+  sources/DataReader.h
+  sources/ReaderSourceNode.h
   transforms/ThresholdTransform.h
   transforms/LegacyPythonTransform.h
   pybind11/PybindVTKTypeCaster.h
@@ -49,7 +53,8 @@ target_compile_definitions(tomviz_pipeline PRIVATE tomviz_pipeline_EXPORTS)
 generate_export_header(tomviz_pipeline)
 target_link_libraries(tomviz_pipeline
   PUBLIC Qt6::Core VTK::CommonCore VTK::CommonDataModel
-  PRIVATE Python3::Python pybind11::embed VTK::WrappingPythonCore)
+  PRIVATE Python3::Python pybind11::embed VTK::WrappingPythonCore
+          VTK::IOImage VTK::IOXML VTK::IOLegacy)
 target_include_directories(tomviz_pipeline
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>

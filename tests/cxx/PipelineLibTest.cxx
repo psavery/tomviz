@@ -19,10 +19,13 @@
 #include "data/VolumeData.h"
 #include "sinks/VolumeStatsSink.h"
 #include "sources/SphereSource.h"
+#include "sources/DataReader.h"
+#include "sources/ReaderSourceNode.h"
 #include "transforms/ThresholdTransform.h"
 #include "transforms/LegacyPythonTransform.h"
 
 #include <QFile>
+#include <QTemporaryFile>
 #include <QTextStream>
 
 // Qt defines 'slots' as a macro which conflicts with Python's object.h
@@ -34,6 +37,7 @@
 #include <vtkFloatArray.h>
 #include <vtkImageData.h>
 #include <vtkPointData.h>
+#include <vtkXMLImageDataWriter.h>
 
 namespace py = pybind11;
 using namespace tomviz::pipeline;
@@ -890,4 +894,165 @@ TEST_F(PipelinePythonTest, JSONResultsPorts)
   EXPECT_NE(transform->outputPort("molecule_result"), nullptr);
 
   delete transform;
+}
+
+// --- ReaderSourceNode tests ---
+
+TEST_F(PipelineLibTest, ReaderSourceNodeVTIRoundTrip)
+{
+  // Create a sphere source and execute to get volume data
+  auto* sphereSource = new SphereSource();
+  sphereSource->setDimensions(8, 8, 8);
+  pipeline->addNode(sphereSource);
+  ASSERT_TRUE(sphereSource->execute());
+
+  auto originalVolume =
+    sphereSource->outputPort("volume")->data().value<VolumeDataPtr>();
+  ASSERT_TRUE(originalVolume && originalVolume->isValid());
+
+  auto originalDims = originalVolume->dimensions();
+  auto originalRange = originalVolume->scalarRange();
+
+  // Write to a temp VTI file
+  QTemporaryFile tmpFile("XXXXXX.vti");
+  tmpFile.setAutoRemove(true);
+  ASSERT_TRUE(tmpFile.open());
+  QString tmpPath = tmpFile.fileName();
+  tmpFile.close();
+
+  auto writer = vtkSmartPointer<vtkXMLImageDataWriter>::New();
+  writer->SetFileName(tmpPath.toStdString().c_str());
+  writer->SetInputData(originalVolume->imageData());
+  writer->Write();
+
+  // Create ReaderSourceNode and read the VTI file
+  auto* readerNode = new ReaderSourceNode();
+  pipeline->addNode(readerNode);
+  readerNode->setFileNames({ tmpPath });
+
+  // Verify reader was auto-selected
+  ASSERT_NE(readerNode->reader(), nullptr);
+
+  // Execute
+  ASSERT_TRUE(readerNode->execute());
+  EXPECT_EQ(readerNode->state(), NodeState::Current);
+
+  // Verify output
+  auto portData = readerNode->outputPort("volume")->data();
+  EXPECT_TRUE(portData.isValid());
+  EXPECT_EQ(portData.type(), PortType::Volume);
+
+  auto readVolume = portData.value<VolumeDataPtr>();
+  ASSERT_TRUE(readVolume && readVolume->isValid());
+
+  auto readDims = readVolume->dimensions();
+  EXPECT_EQ(readDims[0], originalDims[0]);
+  EXPECT_EQ(readDims[1], originalDims[1]);
+  EXPECT_EQ(readDims[2], originalDims[2]);
+
+  auto readRange = readVolume->scalarRange();
+  EXPECT_NEAR(readRange[0], originalRange[0], 0.01);
+  EXPECT_NEAR(readRange[1], originalRange[1], 0.01);
+}
+
+TEST_F(PipelineLibTest, CreateReaderUnknownExtension)
+{
+  auto reader = createReader({ "foo.xyz" });
+  EXPECT_EQ(reader, nullptr);
+}
+
+TEST_F(PipelineLibTest, CreateReaderVTKFormats)
+{
+  // VTK-supported extensions should return a reader
+  EXPECT_NE(createReader({ "test.vti" }), nullptr);
+  EXPECT_NE(createReader({ "test.tif" }), nullptr);
+  EXPECT_NE(createReader({ "test.tiff" }), nullptr);
+  EXPECT_NE(createReader({ "test.png" }), nullptr);
+  EXPECT_NE(createReader({ "test.jpg" }), nullptr);
+  EXPECT_NE(createReader({ "test.jpeg" }), nullptr);
+  EXPECT_NE(createReader({ "test.mrc" }), nullptr);
+}
+
+TEST_F(PipelineLibTest, ReaderSourceNodeNoReaderFails)
+{
+  auto* readerNode = new ReaderSourceNode();
+  pipeline->addNode(readerNode);
+
+  // No files set, no reader — execute should fail
+  EXPECT_FALSE(readerNode->execute());
+}
+
+TEST_F(PipelineLibTest, ReaderSourceNodeLabelFromFileName)
+{
+  auto* readerNode = new ReaderSourceNode();
+  pipeline->addNode(readerNode);
+  readerNode->setFileNames({ "/path/to/my_data.vti" });
+
+  EXPECT_EQ(readerNode->label(), "my_data.vti");
+}
+
+TEST_F(PipelinePythonTest, ReaderSourceNodePythonReader)
+{
+  // Write a VTI file via VTK (since NumpyReader depends on tomviz internals
+  // that aren't available in standalone tests, we create a custom Python
+  // reader module that wraps vtkXMLImageDataReader).
+
+  // First create a VTI file to read
+  vtkNew<vtkImageData> imageData;
+  imageData->SetDimensions(4, 5, 6);
+  imageData->AllocateScalars(VTK_FLOAT, 1);
+
+  QTemporaryFile tmpFile("XXXXXX.vti");
+  tmpFile.setAutoRemove(true);
+  ASSERT_TRUE(tmpFile.open());
+  QString tmpPath = tmpFile.fileName();
+  tmpFile.close();
+
+  auto writer = vtkSmartPointer<vtkXMLImageDataWriter>::New();
+  writer->SetFileName(tmpPath.toStdString().c_str());
+  writer->SetInputData(imageData.Get());
+  writer->Write();
+
+  // Register a Python reader module that reads VTI files
+  {
+    py::gil_scoped_acquire gil;
+    py::exec(R"(
+import types, sys
+mod = types.ModuleType("test_vti_reader")
+mod.__dict__['__file__'] = '<test>'
+
+exec('''
+from vtk import vtkXMLImageDataReader
+
+class TestVTIReader:
+    def read(self, path):
+        reader = vtkXMLImageDataReader()
+        reader.SetFileName(path)
+        reader.Update()
+        return reader.GetOutput()
+''', mod.__dict__)
+
+sys.modules["test_vti_reader"] = mod
+)");
+  }
+
+  // Create ReaderSourceNode with our custom Python reader
+  auto* readerNode = new ReaderSourceNode();
+  readerNode->setFileNames({ tmpPath });
+  readerNode->setReader(std::make_unique<PythonDataReader>(
+    "test_vti_reader.TestVTIReader"));
+  pipeline->addNode(readerNode);
+
+  ASSERT_TRUE(readerNode->execute());
+
+  auto portData = readerNode->outputPort("volume")->data();
+  EXPECT_TRUE(portData.isValid());
+
+  auto volume = portData.value<VolumeDataPtr>();
+  ASSERT_TRUE(volume && volume->isValid());
+
+  auto dims = volume->dimensions();
+  EXPECT_EQ(dims[0], 4);
+  EXPECT_EQ(dims[1], 5);
+  EXPECT_EQ(dims[2], 6);
 }
