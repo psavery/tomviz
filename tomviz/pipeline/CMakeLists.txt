@@ -1,6 +1,8 @@
 include(GenerateExportHeader)
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
+find_package(Python3 COMPONENTS Interpreter Development REQUIRED)
+
 set(SOURCES
   PortData.cxx
   Port.cxx
@@ -13,7 +15,12 @@ set(SOURCES
   SinkNode.cxx
   Pipeline.cxx
   PipelineExecutor.cxx
-  DefaultExecutor.cxx)
+  DefaultExecutor.cxx
+  data/VolumeData.cxx
+  sources/SphereSource.cxx
+  transforms/ThresholdTransform.cxx
+  transforms/LegacyPythonTransform.cxx
+  sinks/VolumeStatsSink.cxx)
 
 set(HEADERS
   PortType.h
@@ -29,12 +36,20 @@ set(HEADERS
   SinkNode.h
   Pipeline.h
   PipelineExecutor.h
-  DefaultExecutor.h)
+  DefaultExecutor.h
+  data/VolumeData.h
+  sources/SphereSource.h
+  transforms/ThresholdTransform.h
+  transforms/LegacyPythonTransform.h
+  pybind11/PybindVTKTypeCaster.h
+  sinks/VolumeStatsSink.h)
 
 add_library(tomviz_pipeline SHARED ${SOURCES} ${HEADERS})
 target_compile_definitions(tomviz_pipeline PRIVATE tomviz_pipeline_EXPORTS)
 generate_export_header(tomviz_pipeline)
-target_link_libraries(tomviz_pipeline PUBLIC Qt6::Core)
+target_link_libraries(tomviz_pipeline
+  PUBLIC Qt6::Core VTK::CommonCore VTK::CommonDataModel
+  PRIVATE Python3::Python pybind11::embed VTK::WrappingPythonCore)
 target_include_directories(tomviz_pipeline
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>

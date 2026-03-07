@@ -78,10 +78,16 @@ target_link_libraries(tomvizTests Qt6::Test)
 # Pipeline library tests (standalone, no tomvizlib dependency)
 # Use BEFORE to ensure pipeline headers are found before tomviz/ headers
 # (which contain a different Pipeline.h).
+set(_pipeline_pythonpath
+  "${PROJECT_SOURCE_DIR}/tomviz/python${_separator}${_pythonpath}")
 add_executable(pipelineLibTests PipelineLibTest.cxx)
 target_include_directories(pipelineLibTests BEFORE PRIVATE
   ${PROJECT_SOURCE_DIR}/tomviz/pipeline
   ${PROJECT_BINARY_DIR}/tomviz/pipeline)
 target_link_libraries(pipelineLibTests
-  tomviz_pipeline GTest::gtest GTest::gtest_main ${EXTRA_LINK_LIB})
+  tomviz_pipeline pybind11::embed GTest::gtest GTest::gtest_main ${EXTRA_LINK_LIB})
+target_compile_definitions(pipelineLibTests PRIVATE
+  "TOMVIZ_PYTHON_DIR=\"${PROJECT_SOURCE_DIR}/tomviz/python\"")
 add_test(NAME "PipelineLib" COMMAND pipelineLibTests)
+set_tests_properties("PipelineLib" PROPERTIES
+  ENVIRONMENT "PYTHONPATH=${_pipeline_pythonpath}")

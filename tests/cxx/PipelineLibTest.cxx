@@ -16,6 +16,26 @@
 #include "SourceNode.h"
 #include "TransformNode.h"
 
+#include "data/VolumeData.h"
+#include "sinks/VolumeStatsSink.h"
+#include "sources/SphereSource.h"
+#include "transforms/ThresholdTransform.h"
+#include "transforms/LegacyPythonTransform.h"
+
+#include <QFile>
+#include <QTextStream>
+
+// Qt defines 'slots' as a macro which conflicts with Python's object.h
+#pragma push_macro("slots")
+#undef slots
+#include <pybind11/embed.h>
+#pragma pop_macro("slots")
+
+#include <vtkFloatArray.h>
+#include <vtkImageData.h>
+#include <vtkPointData.h>
+
+namespace py = pybind11;
 using namespace tomviz::pipeline;
 
 // Test helpers
@@ -566,4 +586,308 @@ TEST_F(PipelineLibTest, ReplaceLinkOnInput)
   EXPECT_NE(link2, nullptr);
   EXPECT_EQ(pipeline->links().size(), 1);
   EXPECT_EQ(transform->inputPort("in")->link(), link2);
+}
+
+// --- VolumeData tests ---
+
+TEST_F(PipelineLibTest, VolumeDataBasics)
+{
+  VolumeData vol;
+  EXPECT_FALSE(vol.isValid());
+  EXPECT_EQ(vol.numberOfComponents(), 0);
+
+  auto dims = vol.dimensions();
+  EXPECT_EQ(dims[0], 0);
+}
+
+TEST_F(PipelineLibTest, VolumeDataMetadata)
+{
+  VolumeData vol;
+  vol.setLabel("Test Volume");
+  vol.setUnits("nm");
+  EXPECT_EQ(vol.label(), "Test Volume");
+  EXPECT_EQ(vol.units(), "nm");
+}
+
+// --- SphereSource tests ---
+
+TEST_F(PipelineLibTest, SphereSourceGeneratesVolume)
+{
+  auto* source = new SphereSource();
+  pipeline->addNode(source);
+
+  EXPECT_TRUE(source->execute());
+  EXPECT_EQ(source->state(), NodeState::Current);
+
+  auto portData = source->outputPort("volume")->data();
+  EXPECT_TRUE(portData.isValid());
+  EXPECT_EQ(portData.type(), PortType::Volume);
+
+  auto volume = portData.value<VolumeDataPtr>();
+  EXPECT_TRUE(volume->isValid());
+
+  auto dims = volume->dimensions();
+  EXPECT_EQ(dims[0], 32);
+  EXPECT_EQ(dims[1], 32);
+  EXPECT_EQ(dims[2], 32);
+  EXPECT_EQ(volume->label(), "Sphere");
+}
+
+TEST_F(PipelineLibTest, SphereSourceCustomDimensions)
+{
+  auto* source = new SphereSource();
+  source->setDimensions(16, 16, 16);
+  pipeline->addNode(source);
+
+  source->execute();
+
+  auto volume = source->outputPort("volume")->data().value<VolumeDataPtr>();
+  auto dims = volume->dimensions();
+  EXPECT_EQ(dims[0], 16);
+  EXPECT_EQ(dims[1], 16);
+  EXPECT_EQ(dims[2], 16);
+}
+
+TEST_F(PipelineLibTest, SphereSourceScalarRange)
+{
+  auto* source = new SphereSource();
+  source->setDimensions(16, 16, 16);
+  pipeline->addNode(source);
+
+  source->execute();
+
+  auto volume = source->outputPort("volume")->data().value<VolumeDataPtr>();
+  auto range = volume->scalarRange();
+  // Signed distance: negative inside, positive outside
+  EXPECT_LT(range[0], 0.0);
+  EXPECT_GT(range[1], 0.0);
+}
+
+// --- ThresholdTransform tests ---
+
+TEST_F(PipelineLibTest, ThresholdTransformBinaryMask)
+{
+  auto* source = new SphereSource();
+  source->setDimensions(16, 16, 16);
+  pipeline->addNode(source);
+
+  auto* threshold = new ThresholdTransform();
+  // Inside the sphere: signed distance <= 0
+  threshold->setMinValue(-100.0);
+  threshold->setMaxValue(0.0);
+  pipeline->addNode(threshold);
+
+  pipeline->createLink(source->outputPort("volume"),
+                       threshold->inputPort("volume"));
+
+  source->execute();
+  pipeline->execute();
+
+  EXPECT_EQ(threshold->state(), NodeState::Current);
+
+  auto maskData = threshold->outputPort("mask")->data().value<VolumeDataPtr>();
+  EXPECT_TRUE(maskData->isValid());
+
+  auto range = maskData->scalarRange();
+  EXPECT_EQ(range[0], 0.0);
+  EXPECT_EQ(range[1], 1.0);
+}
+
+// --- VolumeStatsSink tests ---
+
+TEST_F(PipelineLibTest, VolumeStatsSinkComputesStats)
+{
+  auto* source = new SphereSource();
+  source->setDimensions(16, 16, 16);
+  pipeline->addNode(source);
+
+  auto* stats = new VolumeStatsSink();
+  pipeline->addNode(stats);
+
+  pipeline->createLink(source->outputPort("volume"),
+                       stats->inputPort("volume"));
+
+  source->execute();
+  pipeline->execute();
+
+  EXPECT_TRUE(stats->hasResults());
+  EXPECT_EQ(stats->voxelCount(), 16 * 16 * 16);
+  EXPECT_LT(stats->min(), 0.0);
+  EXPECT_GT(stats->max(), 0.0);
+  EXPECT_EQ(stats->state(), NodeState::Current);
+}
+
+// --- End-to-end: SphereSource → ThresholdTransform → VolumeStatsSink ---
+
+TEST_F(PipelineLibTest, EndToEndSphereThresholdStats)
+{
+  auto* source = new SphereSource();
+  source->setDimensions(16, 16, 16);
+  pipeline->addNode(source);
+
+  auto* threshold = new ThresholdTransform();
+  threshold->setMinValue(-100.0);
+  threshold->setMaxValue(0.0);
+  pipeline->addNode(threshold);
+
+  auto* stats = new VolumeStatsSink();
+  pipeline->addNode(stats);
+
+  pipeline->createLink(source->outputPort("volume"),
+                       threshold->inputPort("volume"));
+  pipeline->createLink(threshold->outputPort("mask"),
+                       stats->inputPort("volume"));
+
+  pipeline->execute();
+
+  EXPECT_EQ(source->state(), NodeState::Current);
+  EXPECT_EQ(threshold->state(), NodeState::Current);
+  EXPECT_EQ(stats->state(), NodeState::Current);
+
+  EXPECT_TRUE(stats->hasResults());
+  // Mask is binary: min=0, max=1
+  EXPECT_EQ(stats->min(), 0.0);
+  EXPECT_EQ(stats->max(), 1.0);
+  // Mean should be between 0 and 1 (fraction of voxels inside sphere)
+  EXPECT_GT(stats->mean(), 0.0);
+  EXPECT_LT(stats->mean(), 1.0);
+}
+
+// --- LegacyPythonTransform tests ---
+
+class PipelinePythonTest : public ::testing::Test
+{
+protected:
+  static void SetUpTestSuite()
+  {
+    if (!Py_IsInitialized()) {
+      py::initialize_interpreter();
+      s_ownInterpreter = true;
+    }
+  }
+
+  static void TearDownTestSuite()
+  {
+    if (s_ownInterpreter) {
+      py::finalize_interpreter();
+      s_ownInterpreter = false;
+    }
+  }
+
+  void SetUp() override { pipeline = new Pipeline(); }
+  void TearDown() override { delete pipeline; }
+
+  static QString readFile(const QString& path)
+  {
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+      return {};
+    }
+    QTextStream stream(&file);
+    return stream.readAll();
+  }
+
+  Pipeline* pipeline;
+  static bool s_ownInterpreter;
+};
+
+bool PipelinePythonTest::s_ownInterpreter = false;
+
+TEST_F(PipelinePythonTest, AddConstantOperator)
+{
+  // Load AddConstant JSON and Python script
+  QString pythonDir = TOMVIZ_PYTHON_DIR;
+  QString jsonStr = readFile(pythonDir + "/AddConstant.json");
+  QString scriptStr = readFile(pythonDir + "/AddConstant.py");
+  ASSERT_FALSE(jsonStr.isEmpty());
+  ASSERT_FALSE(scriptStr.isEmpty());
+
+  // Create a 4x4x4 volume with all voxels set to 5.0
+  auto* source = new SphereSource();
+  source->setDimensions(4, 4, 4);
+  pipeline->addNode(source);
+  source->execute();
+
+  // Get the source volume and record its scalar range
+  auto inputVolume =
+    source->outputPort("volume")->data().value<VolumeDataPtr>();
+  auto inputRange = inputVolume->scalarRange();
+
+  // Create the legacy Python transform
+  auto* transform = new LegacyPythonTransform();
+  transform->setJSONDescription(jsonStr);
+  transform->setScript(scriptStr);
+  transform->setParameter("constant", 10.0);
+  pipeline->addNode(transform);
+
+  EXPECT_EQ(transform->label(), "Add Constant");
+  EXPECT_EQ(transform->operatorName(), "AddConstant");
+  EXPECT_EQ(transform->parameter("constant").toDouble(), 10.0);
+
+  pipeline->createLink(source->outputPort("volume"),
+                       transform->inputPort("volume"));
+
+  pipeline->execute();
+
+  EXPECT_EQ(transform->state(), NodeState::Current);
+
+  auto outputData =
+    transform->outputPort("volume")->data().value<VolumeDataPtr>();
+  ASSERT_TRUE(outputData && outputData->isValid());
+
+  auto outputRange = outputData->scalarRange();
+
+  // The output range should be shifted by +10.0
+  EXPECT_NEAR(outputRange[0], inputRange[0] + 10.0, 0.01);
+  EXPECT_NEAR(outputRange[1], inputRange[1] + 10.0, 0.01);
+}
+
+TEST_F(PipelinePythonTest, JSONParameterDefaults)
+{
+  QString jsonStr = R"({
+    "name": "TestOp",
+    "label": "Test Operator",
+    "parameters": [
+      { "name": "threshold", "type": "double", "default": 0.5 },
+      { "name": "iterations", "type": "int", "default": 10 },
+      { "name": "verbose", "type": "bool", "default": true }
+    ]
+  })";
+
+  auto* transform = new LegacyPythonTransform();
+  transform->setJSONDescription(jsonStr);
+
+  EXPECT_EQ(transform->label(), "Test Operator");
+  EXPECT_EQ(transform->operatorName(), "TestOp");
+  EXPECT_EQ(transform->parameter("threshold").toDouble(), 0.5);
+  EXPECT_EQ(transform->parameter("iterations").toInt(), 10);
+  EXPECT_EQ(transform->parameter("verbose").toBool(), true);
+
+  // Override a parameter
+  transform->setParameter("threshold", 1.5);
+  EXPECT_EQ(transform->parameter("threshold").toDouble(), 1.5);
+
+  delete transform;
+}
+
+TEST_F(PipelinePythonTest, JSONResultsPorts)
+{
+  QString jsonStr = R"({
+    "name": "SegOp",
+    "label": "Segment",
+    "results": [
+      { "name": "segmentation_table", "type": "table" },
+      { "name": "molecule_result", "type": "molecule" }
+    ]
+  })";
+
+  auto* transform = new LegacyPythonTransform();
+  transform->setJSONDescription(jsonStr);
+
+  // Should have volume output plus two result ports
+  EXPECT_NE(transform->outputPort("volume"), nullptr);
+  EXPECT_NE(transform->outputPort("segmentation_table"), nullptr);
+  EXPECT_NE(transform->outputPort("molecule_result"), nullptr);
+
+  delete transform;
 }
