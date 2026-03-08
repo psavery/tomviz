@@ -22,12 +22,14 @@ void DefaultExecutor::execute(const QList<Node*>& nodes, Pipeline* pipeline)
     if (m_cancelRequested) {
       m_running = false;
       emit canceled();
+      emit executionComplete(false);
       return;
     }
 
     if (node->hasBreakpoint()) {
       emit pipeline->breakpointReached(node);
       m_running = false;
+      emit executionComplete(false);
       return;
     }
 
@@ -41,12 +43,14 @@ void DefaultExecutor::execute(const QList<Node*>& nodes, Pipeline* pipeline)
 
     if (!success) {
       m_running = false;
+      emit executionComplete(false);
       return;
     }
   }
 
   pipeline->releaseTransientData();
   m_running = false;
+  emit executionComplete(true);
 }
 
 void DefaultExecutor::cancel()

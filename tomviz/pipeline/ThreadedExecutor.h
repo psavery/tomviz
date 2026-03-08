@@ -1,8 +1,8 @@
 /* This source file is part of the Tomviz project, https://tomviz.org/.
    It is released under the 3-Clause BSD License, see "LICENSE". */
 
-#ifndef tomvizPipelineDefaultExecutor_h
-#define tomvizPipelineDefaultExecutor_h
+#ifndef tomvizPipelineThreadedExecutor_h
+#define tomvizPipelineThreadedExecutor_h
 
 #include "tomviz_pipeline_export.h"
 
@@ -10,24 +10,31 @@
 
 #include <atomic>
 
+class QThread;
+
 namespace tomviz {
 namespace pipeline {
 
-class TOMVIZ_PIPELINE_EXPORT DefaultExecutor : public PipelineExecutor
+class ExecutionWorker;
+
+class TOMVIZ_PIPELINE_EXPORT ThreadedExecutor : public PipelineExecutor
 {
   Q_OBJECT
 
 public:
-  DefaultExecutor(QObject* parent = nullptr);
-  ~DefaultExecutor() override = default;
+  ThreadedExecutor(QObject* parent = nullptr);
+  ~ThreadedExecutor() override;
 
   void execute(const QList<Node*>& nodes, Pipeline* pipeline) override;
   void cancel() override;
   bool isRunning() const override;
 
 private:
+  QThread* m_thread = nullptr;
+  ExecutionWorker* m_worker = nullptr;
   std::atomic<bool> m_cancelRequested{ false };
-  bool m_running = false;
+  std::atomic<bool> m_running{ false };
+  QMetaObject::Connection m_breakpointConnection;
 };
 
 } // namespace pipeline

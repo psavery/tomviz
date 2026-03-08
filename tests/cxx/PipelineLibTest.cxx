@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include "DefaultExecutor.h"
+#include "ExecutionFuture.h"
 #include "InputPort.h"
 #include "Link.h"
 #include "Node.h"
@@ -14,6 +15,7 @@
 #include "PortType.h"
 #include "SinkNode.h"
 #include "SourceNode.h"
+#include "ThreadedExecutor.h"
 #include "TransformNode.h"
 
 #include "data/VolumeData.h"
@@ -27,6 +29,7 @@
 
 #include <QApplication>
 #include <QFile>
+#include <QSignalSpy>
 #include <QTemporaryFile>
 #include <QTextStream>
 
@@ -304,8 +307,10 @@ TEST_F(PipelineLibTest, SimpleExecution)
 
   source->setOutputData("out", PortData(std::any(7), PortType::Volume));
 
-  pipeline->execute();
+  auto* future = pipeline->execute();
 
+  EXPECT_TRUE(future->isFinished());
+  EXPECT_TRUE(future->succeeded());
   EXPECT_TRUE(sink->consumed);
   EXPECT_EQ(sink->lastValue, 14);
   EXPECT_EQ(transform->state(), NodeState::Current);
@@ -329,8 +334,10 @@ TEST_F(PipelineLibTest, ExecutionFromTarget)
   source->setOutputData("out", PortData(std::any(3), PortType::Volume));
 
   // Execute only up to t1
-  pipeline->execute(t1);
+  auto* future = pipeline->execute(t1);
 
+  EXPECT_TRUE(future->isFinished());
+  EXPECT_TRUE(future->succeeded());
   EXPECT_EQ(t1->state(), NodeState::Current);
   // t2 should still be stale since we only executed up to t1
   EXPECT_EQ(t2->state(), NodeState::Stale);
@@ -386,8 +393,10 @@ TEST_F(PipelineLibTest, BreakpointStopsExecution)
   QObject::connect(pipeline, &Pipeline::breakpointReached,
                    [&reachedNode](Node* n) { reachedNode = n; });
 
-  pipeline->execute();
+  auto* future = pipeline->execute();
 
+  EXPECT_TRUE(future->isFinished());
+  EXPECT_FALSE(future->succeeded());
   EXPECT_EQ(reachedNode, t1);
   // t1 should not have been executed
   EXPECT_NE(t1->state(), NodeState::Current);
@@ -412,8 +421,10 @@ TEST_F(PipelineLibTest, TransientDataRelease)
 
   source->setOutputData("out", PortData(std::any(4), PortType::Volume));
 
-  pipeline->execute();
+  auto* future = pipeline->execute();
 
+  EXPECT_TRUE(future->isFinished());
+  EXPECT_TRUE(future->succeeded());
   // After execution, transient data should be released since sink is Current
   EXPECT_FALSE(transform->outputPort("out")->hasData());
   EXPECT_TRUE(sink->consumed);
@@ -439,8 +450,10 @@ TEST_F(PipelineLibTest, FanInMultipleInputs)
   source1->setOutputData("out", PortData(std::any(10), PortType::Volume));
   source2->setOutputData("out", PortData(std::any(20), PortType::Volume));
 
-  pipeline->execute();
+  auto* future = pipeline->execute();
 
+  EXPECT_TRUE(future->isFinished());
+  EXPECT_TRUE(future->succeeded());
   EXPECT_EQ(add->state(), NodeState::Current);
   EXPECT_EQ(add->outputPort("out")->data().value<int>(), 30);
 }
@@ -687,8 +700,9 @@ TEST_F(PipelineLibTest, ThresholdTransformBinaryMask)
                        threshold->inputPort("volume"));
 
   source->execute();
-  pipeline->execute();
+  auto* future = pipeline->execute();
 
+  EXPECT_TRUE(future->isFinished());
   EXPECT_EQ(threshold->state(), NodeState::Current);
 
   auto maskData = threshold->outputPort("mask")->data().value<VolumeDataPtr>();
@@ -714,8 +728,9 @@ TEST_F(PipelineLibTest, VolumeStatsSinkComputesStats)
                        stats->inputPort("volume"));
 
   source->execute();
-  pipeline->execute();
+  auto* future = pipeline->execute();
 
+  EXPECT_TRUE(future->isFinished());
   EXPECT_TRUE(stats->hasResults());
   EXPECT_EQ(stats->voxelCount(), 16 * 16 * 16);
   EXPECT_LT(stats->min(), 0.0);
@@ -744,8 +759,10 @@ TEST_F(PipelineLibTest, EndToEndSphereThresholdStats)
   pipeline->createLink(threshold->outputPort("mask"),
                        stats->inputPort("volume"));
 
-  pipeline->execute();
+  auto* future = pipeline->execute();
 
+  EXPECT_TRUE(future->isFinished());
+  EXPECT_TRUE(future->succeeded());
   EXPECT_EQ(source->state(), NodeState::Current);
   EXPECT_EQ(threshold->state(), NodeState::Current);
   EXPECT_EQ(stats->state(), NodeState::Current);
@@ -973,8 +990,9 @@ TEST_F(PipelinePythonTest, AddConstantOperator)
   pipeline->createLink(source->outputPort("volume"),
                        transform->inputPort("volume"));
 
-  pipeline->execute();
+  auto* future = pipeline->execute();
 
+  EXPECT_TRUE(future->isFinished());
   EXPECT_EQ(transform->state(), NodeState::Current);
 
   auto outputData =
@@ -1197,6 +1215,131 @@ sys.modules["test_vti_reader"] = mod
   EXPECT_EQ(dims[0], 4);
   EXPECT_EQ(dims[1], 5);
   EXPECT_EQ(dims[2], 6);
+}
+
+// --- ThreadedExecutor tests ---
+
+class SlowTransform : public TransformNode
+{
+public:
+  SlowTransform() : TransformNode()
+  {
+    addInput("in", PortType::Volume);
+    addOutput("out", PortType::Volume);
+  }
+
+protected:
+  QMap<QString, PortData> transform(
+    const QMap<QString, PortData>& inputs) override
+  {
+    QThread::msleep(50);
+    int val = inputs["in"].value<int>();
+    QMap<QString, PortData> result;
+    result["out"] = PortData(std::any(val * 2), PortType::Volume);
+    return result;
+  }
+};
+
+TEST_F(PipelineLibTest, ThreadedExecutorBasic)
+{
+  pipeline->setExecutor(new ThreadedExecutor(pipeline));
+
+  auto* source = new SourceNode();
+  source->addOutput("out", PortType::Volume);
+  pipeline->addNode(source);
+
+  auto* transform = new SlowTransform();
+  pipeline->addNode(transform);
+
+  auto* sink = new CollectorSink();
+  pipeline->addNode(sink);
+
+  pipeline->createLink(source->outputPort("out"), transform->inputPort("in"));
+  pipeline->createLink(transform->outputPort("out"), sink->inputPort("in"));
+
+  source->setOutputData("out", PortData(std::any(7), PortType::Volume));
+
+  auto* future = pipeline->execute();
+
+  // With threaded executor, future should not be immediately finished
+  QSignalSpy spy(future, &ExecutionFuture::finished);
+  ASSERT_TRUE(spy.wait(5000));
+
+  EXPECT_TRUE(future->isFinished());
+  EXPECT_TRUE(future->succeeded());
+  EXPECT_TRUE(sink->consumed);
+  EXPECT_EQ(sink->lastValue, 14);
+  EXPECT_EQ(transform->state(), NodeState::Current);
+}
+
+TEST_F(PipelineLibTest, ThreadedExecutorCancellation)
+{
+  auto* executor = new ThreadedExecutor(pipeline);
+  pipeline->setExecutor(executor);
+
+  auto* source = new SourceNode();
+  source->addOutput("out", PortType::Volume);
+  pipeline->addNode(source);
+
+  // Chain of slow transforms — cancel should stop before all complete
+  auto* t1 = new SlowTransform();
+  auto* t2 = new SlowTransform();
+  auto* t3 = new SlowTransform();
+  pipeline->addNode(t1);
+  pipeline->addNode(t2);
+  pipeline->addNode(t3);
+
+  pipeline->createLink(source->outputPort("out"), t1->inputPort("in"));
+  pipeline->createLink(t1->outputPort("out"), t2->inputPort("in"));
+  pipeline->createLink(t2->outputPort("out"), t3->inputPort("in"));
+
+  source->setOutputData("out", PortData(std::any(1), PortType::Volume));
+
+  auto* future = pipeline->execute();
+  executor->cancel();
+
+  QSignalSpy spy(future, &ExecutionFuture::finished);
+  ASSERT_TRUE(spy.wait(5000));
+
+  EXPECT_TRUE(future->isFinished());
+  EXPECT_FALSE(future->succeeded());
+  // t3 should not have finished
+  EXPECT_NE(t3->state(), NodeState::Current);
+}
+
+TEST_F(PipelineLibTest, ThreadedExecutorBreakpoint)
+{
+  pipeline->setExecutor(new ThreadedExecutor(pipeline));
+
+  auto* source = new SourceNode();
+  source->addOutput("out", PortType::Volume);
+  pipeline->addNode(source);
+
+  auto* t1 = new SlowTransform();
+  auto* t2 = new SlowTransform();
+  pipeline->addNode(t1);
+  pipeline->addNode(t2);
+
+  pipeline->createLink(source->outputPort("out"), t1->inputPort("in"));
+  pipeline->createLink(t1->outputPort("out"), t2->inputPort("in"));
+
+  source->setOutputData("out", PortData(std::any(5), PortType::Volume));
+
+  t1->setBreakpoint(true);
+
+  Node* reachedNode = nullptr;
+  QObject::connect(pipeline, &Pipeline::breakpointReached,
+                   [&reachedNode](Node* n) { reachedNode = n; });
+
+  auto* future = pipeline->execute();
+
+  QSignalSpy spy(future, &ExecutionFuture::finished);
+  ASSERT_TRUE(spy.wait(5000));
+
+  EXPECT_TRUE(future->isFinished());
+  EXPECT_FALSE(future->succeeded());
+  EXPECT_EQ(reachedNode, t1);
+  EXPECT_NE(t1->state(), NodeState::Current);
 }
 
 int main(int argc, char** argv)

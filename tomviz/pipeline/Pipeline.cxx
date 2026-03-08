@@ -4,6 +4,7 @@
 #include "Pipeline.h"
 
 #include "DefaultExecutor.h"
+#include "ExecutionFuture.h"
 #include "InputPort.h"
 #include "Link.h"
 #include "Node.h"
@@ -328,20 +329,35 @@ PipelineExecutor* Pipeline::executor() const
   return m_executor;
 }
 
-void Pipeline::execute()
+ExecutionFuture* Pipeline::execute()
 {
   if (!m_executor) {
     auto* defaultExec = new DefaultExecutor(this);
     setExecutor(defaultExec);
   }
 
+  if (m_executor->isRunning()) {
+    m_executor->cancel();
+  }
+
+  auto* future = new ExecutionFuture(this);
   auto order = topologicalSort();
+
+  connect(m_executor, &PipelineExecutor::executionComplete, future,
+          [this, future](bool success) {
+            future->setFinished(success);
+            emit executionFinished();
+          },
+          static_cast<Qt::ConnectionType>(Qt::AutoConnection |
+                                          Qt::SingleShotConnection));
+
   emit executionStarted();
   m_executor->execute(order, this);
-  emit executionFinished();
+
+  return future;
 }
 
-void Pipeline::execute(Node* target)
+ExecutionFuture* Pipeline::execute(Node* target)
 {
   if (!m_executor) {
     auto* defaultExec = new DefaultExecutor(this);
@@ -350,12 +366,29 @@ void Pipeline::execute(Node* target)
 
   auto order = executionOrder(target);
   if (order.isEmpty()) {
-    return;
+    auto* future = new ExecutionFuture(this);
+    future->setFinished(true);
+    return future;
   }
+
+  if (m_executor->isRunning()) {
+    m_executor->cancel();
+  }
+
+  auto* future = new ExecutionFuture(this);
+
+  connect(m_executor, &PipelineExecutor::executionComplete, future,
+          [this, future](bool success) {
+            future->setFinished(success);
+            emit executionFinished();
+          },
+          static_cast<Qt::ConnectionType>(Qt::AutoConnection |
+                                          Qt::SingleShotConnection));
 
   emit executionStarted();
   m_executor->execute(order, this);
-  emit executionFinished();
+
+  return future;
 }
 
 QList<Node*> Pipeline::executionOrder(Node* target)

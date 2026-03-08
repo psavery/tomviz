@@ -16,6 +16,8 @@ set(SOURCES
   Pipeline.cxx
   PipelineExecutor.cxx
   DefaultExecutor.cxx
+  ExecutionFuture.cxx
+  ThreadedExecutor.cxx
   data/VolumeData.cxx
   sources/SphereSource.cxx
   sources/DataReader.cxx
@@ -40,6 +42,8 @@ set(HEADERS
   Pipeline.h
   PipelineExecutor.h
   DefaultExecutor.h
+  ExecutionFuture.h
+  ThreadedExecutor.h
   data/VolumeData.h
   sources/SphereSource.h
   sources/DataReader.h

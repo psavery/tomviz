@@ -30,6 +30,7 @@ public:
 signals:
   void nodeExecutionStarted(Node* node);
   void nodeExecutionFinished(Node* node, bool success);
+  void executionComplete(bool success);
   void canceled();
 };
 

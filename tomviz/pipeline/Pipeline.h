@@ -14,6 +14,7 @@
 namespace tomviz {
 namespace pipeline {
 
+class ExecutionFuture;
 class InputPort;
 class Link;
 class Node;
@@ -51,8 +52,8 @@ public:
   // Execution
   void setExecutor(PipelineExecutor* executor);
   PipelineExecutor* executor() const;
-  void execute();
-  void execute(Node* target);
+  ExecutionFuture* execute();
+  ExecutionFuture* execute(Node* target);
   QList<Node*> executionOrder(Node* target);
 
   // Transient cleanup

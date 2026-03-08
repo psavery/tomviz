@@ -86,7 +86,7 @@ target_include_directories(pipelineLibTests BEFORE PRIVATE
   ${PROJECT_BINARY_DIR}/tomviz/pipeline)
 target_link_libraries(pipelineLibTests
   tomviz_pipeline pybind11::embed GTest::gtest
-  Qt6::Widgets VTK::IOXML ${EXTRA_LINK_LIB})
+  Qt6::Widgets Qt6::Test VTK::IOXML ${EXTRA_LINK_LIB})
 target_compile_definitions(pipelineLibTests PRIVATE
   "TOMVIZ_PYTHON_DIR=\"${PROJECT_SOURCE_DIR}/tomviz/python\"")
 add_test(NAME "PipelineLib" COMMAND pipelineLibTests)
