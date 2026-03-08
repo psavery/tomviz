@@ -85,10 +85,17 @@ target_include_directories(pipelineLibTests BEFORE PRIVATE
   ${PROJECT_SOURCE_DIR}/tomviz/pipeline
   ${PROJECT_BINARY_DIR}/tomviz/pipeline)
 target_link_libraries(pipelineLibTests
-  tomviz_pipeline pybind11::embed GTest::gtest GTest::gtest_main
-  VTK::IOXML ${EXTRA_LINK_LIB})
+  tomviz_pipeline pybind11::embed GTest::gtest
+  Qt6::Widgets VTK::IOXML ${EXTRA_LINK_LIB})
 target_compile_definitions(pipelineLibTests PRIVATE
   "TOMVIZ_PYTHON_DIR=\"${PROJECT_SOURCE_DIR}/tomviz/python\"")
 add_test(NAME "PipelineLib" COMMAND pipelineLibTests)
 set_tests_properties("PipelineLib" PROPERTIES
   ENVIRONMENT "PYTHONPATH=${_pipeline_pythonpath}")
+
+# Manual demo app for visually testing PipelineStripWidget
+add_executable(pipelineStripDemo PipelineStripWidgetDemo.cxx)
+target_include_directories(pipelineStripDemo BEFORE PRIVATE
+  ${PROJECT_SOURCE_DIR}/tomviz/pipeline
+  ${PROJECT_BINARY_DIR}/tomviz/pipeline)
+target_link_libraries(pipelineStripDemo tomviz_pipeline Qt6::Widgets)

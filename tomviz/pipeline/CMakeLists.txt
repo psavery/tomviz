@@ -22,7 +22,8 @@ set(SOURCES
   sources/ReaderSourceNode.cxx
   transforms/ThresholdTransform.cxx
   transforms/LegacyPythonTransform.cxx
-  sinks/VolumeStatsSink.cxx)
+  sinks/VolumeStatsSink.cxx
+  PipelineStripWidget.cxx)
 
 set(HEADERS
   PortType.h
@@ -46,13 +47,14 @@ set(HEADERS
   transforms/ThresholdTransform.h
   transforms/LegacyPythonTransform.h
   pybind11/PybindVTKTypeCaster.h
-  sinks/VolumeStatsSink.h)
+  sinks/VolumeStatsSink.h
+  PipelineStripWidget.h)
 
 add_library(tomviz_pipeline SHARED ${SOURCES} ${HEADERS})
 target_compile_definitions(tomviz_pipeline PRIVATE tomviz_pipeline_EXPORTS)
 generate_export_header(tomviz_pipeline)
 target_link_libraries(tomviz_pipeline
-  PUBLIC Qt6::Core VTK::CommonCore VTK::CommonDataModel
+  PUBLIC Qt6::Core Qt6::Widgets VTK::CommonCore VTK::CommonDataModel
   PRIVATE Python3::Python pybind11::embed VTK::WrappingPythonCore
           VTK::IOImage VTK::IOXML VTK::IOLegacy)
 target_include_directories(tomviz_pipeline

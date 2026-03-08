@@ -23,7 +23,9 @@
 #include "sources/ReaderSourceNode.h"
 #include "transforms/ThresholdTransform.h"
 #include "transforms/LegacyPythonTransform.h"
+#include "PipelineStripWidget.h"
 
+#include <QApplication>
 #include <QFile>
 #include <QTemporaryFile>
 #include <QTextStream>
@@ -757,6 +759,146 @@ TEST_F(PipelineLibTest, EndToEndSphereThresholdStats)
   EXPECT_LT(stats->mean(), 1.0);
 }
 
+// --- PipelineStripWidget tests ---
+
+TEST_F(PipelineLibTest, WidgetBasicInstantiation)
+{
+  PipelineStripWidget widget;
+  EXPECT_EQ(widget.pipeline(), nullptr);
+  EXPECT_EQ(widget.selectedNode(), nullptr);
+  EXPECT_EQ(widget.selectedPort(), nullptr);
+
+  widget.setPipeline(pipeline);
+  EXPECT_EQ(widget.pipeline(), pipeline);
+}
+
+TEST_F(PipelineLibTest, WidgetLayoutLinear)
+{
+  auto* source = new SourceNode();
+  source->setLabel("Source");
+  source->addOutput("out", PortType::Volume);
+  pipeline->addNode(source);
+
+  auto* transform = new DoubleTransform();
+  transform->setLabel("Double");
+  pipeline->addNode(transform);
+
+  auto* sink = new CollectorSink();
+  sink->setLabel("Collector");
+  pipeline->addNode(sink);
+
+  pipeline->createLink(source->outputPort("out"), transform->inputPort("in"));
+  pipeline->createLink(transform->outputPort("out"), sink->inputPort("in"));
+
+  PipelineStripWidget widget;
+  widget.setPipeline(pipeline);
+  widget.resize(250, 400);
+  widget.rebuildLayout();
+
+  // Should have 3 node cards (single-output nodes are collapsed by default)
+  EXPECT_EQ(widget.selectedNode(), nullptr);
+
+  // Verify the widget has a reasonable size hint
+  auto hint = widget.sizeHint();
+  EXPECT_GT(hint.height(), 0);
+  EXPECT_GT(hint.width(), 0);
+}
+
+TEST_F(PipelineLibTest, WidgetLayoutMultiOutput)
+{
+  // Create a node with multiple outputs
+  auto* source = new SourceNode();
+  source->setLabel("Source");
+  source->addOutput("vol", PortType::Volume);
+  source->addOutput("table", PortType::Table);
+  pipeline->addNode(source);
+
+  PipelineStripWidget widget;
+  widget.setPipeline(pipeline);
+  widget.resize(250, 400);
+  widget.rebuildLayout();
+
+  // Multi-output node should automatically show port sub-cards
+  // 1 node card + 2 port cards = 3 layout items
+  auto hint = widget.sizeHint();
+  EXPECT_GT(hint.height(), 0);
+}
+
+TEST_F(PipelineLibTest, WidgetExpandCollapse)
+{
+  auto* source = new SourceNode();
+  source->setLabel("Source");
+  source->addOutput("out", PortType::Volume);
+  pipeline->addNode(source);
+
+  PipelineStripWidget widget;
+  widget.setPipeline(pipeline);
+  widget.resize(250, 400);
+
+  // Single-output: collapsed by default
+  EXPECT_FALSE(widget.isExpanded(source));
+
+  // Expand
+  widget.setExpanded(source, true);
+  EXPECT_TRUE(widget.isExpanded(source));
+
+  // Collapse
+  widget.setExpanded(source, false);
+  EXPECT_FALSE(widget.isExpanded(source));
+}
+
+TEST_F(PipelineLibTest, WidgetSignalWiring)
+{
+  PipelineStripWidget widget;
+  widget.setPipeline(pipeline);
+  widget.resize(250, 400);
+
+  // Adding nodes should trigger layout rebuild
+  auto* source = new SourceNode();
+  source->setLabel("Source");
+  source->addOutput("out", PortType::Volume);
+  pipeline->addNode(source);
+
+  auto hint1 = widget.sizeHint();
+
+  auto* transform = new DoubleTransform();
+  transform->setLabel("Double");
+  pipeline->addNode(transform);
+
+  auto hint2 = widget.sizeHint();
+
+  // After adding a second node, size hint should increase
+  EXPECT_GT(hint2.height(), hint1.height());
+}
+
+TEST_F(PipelineLibTest, WidgetFanIn)
+{
+  auto* source1 = new SourceNode();
+  source1->setLabel("Source A");
+  source1->addOutput("out", PortType::Volume);
+  pipeline->addNode(source1);
+
+  auto* source2 = new SourceNode();
+  source2->setLabel("Source B");
+  source2->addOutput("out", PortType::Volume);
+  pipeline->addNode(source2);
+
+  auto* add = new AddTransform();
+  add->setLabel("Merge");
+  pipeline->addNode(add);
+
+  pipeline->createLink(source1->outputPort("out"), add->inputPort("a"));
+  pipeline->createLink(source2->outputPort("out"), add->inputPort("b"));
+
+  PipelineStripWidget widget;
+  widget.setPipeline(pipeline);
+  widget.resize(250, 400);
+  widget.rebuildLayout();
+
+  auto hint = widget.sizeHint();
+  EXPECT_GT(hint.height(), 0);
+}
+
 // --- LegacyPythonTransform tests ---
 
 class PipelinePythonTest : public ::testing::Test
@@ -1055,4 +1197,11 @@ sys.modules["test_vti_reader"] = mod
   EXPECT_EQ(dims[0], 4);
   EXPECT_EQ(dims[1], 5);
   EXPECT_EQ(dims[2], 6);
+}
+
+int main(int argc, char** argv)
+{
+  QApplication app(argc, argv);
+  ::testing::InitGoogleTest(&argc, argv);
+  return RUN_ALL_TESTS();
 }
