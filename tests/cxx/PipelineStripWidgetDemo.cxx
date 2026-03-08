@@ -282,6 +282,68 @@ static Pipeline* buildComplexPipeline()
   return p;
 }
 
+// Source -> Reconstruction -> Pad -> Align -> Denoise (vol, table)
+//   Denoise.vol -> Outline, Slice, Volume (fan-out to 3 sinks)
+//   Denoise.table -> Plot
+static Pipeline* buildTomographyPipeline()
+{
+  auto* p = new Pipeline();
+
+  auto* src = new SourceNode();
+  src->setLabel("experiment.tiff");
+  src->addOutput("Tilt Series", PortType::Volume);
+  src->setOutputData("Tilt Series",
+                     PortData(std::any(1), PortType::Volume));
+  p->addNode(src);
+
+  auto* recon = new DemoTransform(
+    "Reconstruction",
+    {{"in", PortType::Volume}},
+    {{"Volume", PortType::Volume}});
+  p->addNode(recon);
+  p->createLink(src->outputPort("Tilt Series"), recon->inputPort("in"));
+
+  auto* pad = new DemoTransform(
+    "Pad",
+    {{"in", PortType::Volume}},
+    {{"Volume", PortType::Volume}});
+  p->addNode(pad);
+  p->createLink(recon->outputPort("Volume"), pad->inputPort("in"));
+
+  auto* align = new DemoTransform(
+    "Align",
+    {{"in", PortType::Volume}},
+    {{"Volume", PortType::Volume}});
+  p->addNode(align);
+  p->createLink(pad->outputPort("Volume"), align->inputPort("in"));
+
+  auto* denoise = new DemoTransform(
+    "Denoise",
+    {{"in", PortType::Volume}},
+    {{"Volume", PortType::Volume}, {"Metrics", PortType::Table}});
+  p->addNode(denoise);
+  p->createLink(align->outputPort("Volume"), denoise->inputPort("in"));
+
+  auto* plot = new DemoSink("Plot",
+                            {{"table", PortType::Table}});
+  p->addNode(plot);
+  p->createLink(denoise->outputPort("Metrics"), plot->inputPort("table"));
+
+  auto* outline = new DemoSink("Outline");
+  p->addNode(outline);
+  p->createLink(denoise->outputPort("Volume"), outline->inputPort("in"));
+
+  auto* slice = new DemoSink("Slice");
+  p->addNode(slice);
+  p->createLink(denoise->outputPort("Volume"), slice->inputPort("in"));
+
+  auto* volume = new DemoSink("Volume");
+  p->addNode(volume);
+  p->createLink(denoise->outputPort("Volume"), volume->inputPort("in"));
+
+  return p;
+}
+
 int main(int argc, char** argv)
 {
   QApplication app(argc, argv);
@@ -299,6 +361,7 @@ int main(int argc, char** argv)
   combo->addItem("Fan-In");
   combo->addItem("Fan-Out");
   combo->addItem("Complex");
+  combo->addItem("Tomography");
   centralLayout->addWidget(combo);
   centralLayout->addStretch();
   window.setCentralWidget(central);
@@ -317,9 +380,10 @@ int main(int argc, char** argv)
   window.addDockWidget(Qt::LeftDockWidgetArea, dock);
 
   // Pipeline instances
-  Pipeline* pipelines[5] = { buildLinearPipeline(), buildMultiOutputPipeline(),
+  Pipeline* pipelines[6] = { buildLinearPipeline(), buildMultiOutputPipeline(),
                               buildFanInPipeline(), buildFanOutPipeline(),
-                              buildComplexPipeline() };
+                              buildComplexPipeline(),
+                              buildTomographyPipeline() };
 
   strip->setPipeline(pipelines[0]);
 

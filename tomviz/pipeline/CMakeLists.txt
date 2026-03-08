@@ -50,7 +50,9 @@ set(HEADERS
   sinks/VolumeStatsSink.h
   PipelineStripWidget.h)
 
-add_library(tomviz_pipeline SHARED ${SOURCES} ${HEADERS})
+qt_add_resources(PIPELINE_RESOURCES pipeline_icons.qrc)
+
+add_library(tomviz_pipeline SHARED ${SOURCES} ${HEADERS} ${PIPELINE_RESOURCES})
 target_compile_definitions(tomviz_pipeline PRIVATE tomviz_pipeline_EXPORTS)
 generate_export_header(tomviz_pipeline)
 target_link_libraries(tomviz_pipeline

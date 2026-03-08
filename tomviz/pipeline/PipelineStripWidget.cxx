@@ -29,6 +29,7 @@ PipelineStripWidget::PipelineStripWidget(QWidget* parent) : QWidget(parent)
 {
   setFocusPolicy(Qt::StrongFocus);
   setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
+  setMouseTracking(true);
 
   m_spinnerTimer.setInterval(50);
   connect(&m_spinnerTimer, &QTimer::timeout, this, [this]() {
@@ -416,7 +417,7 @@ void PipelineStripWidget::paintEvent(QPaintEvent* event)
   // Paint cards
   for (int i = 0; i < m_layout.size(); ++i) {
     bool selected = (i == m_selectedIndex);
-    bool hovered = false; // TODO: track hover state
+    bool hovered = (i == m_hoveredIndex);
     auto& item = m_layout[i];
 
     if (item.type == LayoutItem::NodeCard) {
@@ -434,7 +435,6 @@ void PipelineStripWidget::paintNodeCard(QPainter& painter,
                                         const LayoutItem& item, bool selected,
                                         bool hovered)
 {
-  Q_UNUSED(hovered);
   auto r = item.rect;
   auto* node = item.node;
 
@@ -458,6 +458,7 @@ void PipelineStripWidget::paintNodeCard(QPainter& painter,
 
   int x = r.left() + 6;
   int cy = r.top() + NodeCardHeight / 2; // header row center
+  int headerHeight = NodeCardHeight;
 
   // Badge
   QColor badge = badgeColor(node);
@@ -484,23 +485,58 @@ void PipelineStripWidget::paintNodeCard(QPainter& painter,
   painter.setPen(fg);
   QFontMetrics fm(labelFont);
 
-  // Calculate available width for label
-  int rightReserved = 40; // space for expand toggle + state
-  int labelWidth = r.right() - rightReserved - x;
+  // Right side layout: [breakpoint] [state] [expand]
+  // Expand toggle is rightmost (only for nodes with outputs), but state
+  // icon is always at the same X so it stays aligned across all nodes.
+  int iconSize = 14;
+  int rightPad = 4;
+  auto outputs = node->outputPorts();
+  int expandWidth = 16; // reserved for expand toggle (always reserved)
+  int toggleX = r.right() - expandWidth - rightPad;
+  int stateX = toggleX - iconSize;
+  int bpX = stateX - iconSize;
+
+  int labelWidth = bpX - x - 2;
   QString elidedLabel =
     fm.elidedText(node->label(), Qt::ElideRight, labelWidth);
-  int headerHeight = NodeCardHeight;
   painter.drawText(QRect(x, r.top(), labelWidth, headerHeight),
                    Qt::AlignVCenter | Qt::AlignLeft, elidedLabel);
 
+  // Breakpoint indicator / hover hint
+  QRect bpRect = breakpointRect(r);
+  QIcon bpIcon(QStringLiteral(":/pipeline/breakpoint.png"));
+  if (node->hasBreakpoint()) {
+    bpIcon.paint(&painter, bpRect);
+  } else if (hovered) {
+    painter.setOpacity(0.25);
+    bpIcon.paint(&painter, bpRect);
+    painter.setOpacity(1.0);
+  }
+
+  // State indicator icon
+  int stateY = r.top() + (headerHeight - iconSize) / 2;
+  QRect stateRect(stateX, stateY, iconSize, iconSize);
+
+  if (m_spinnerTimer.isActive() && node->state() == NodeState::Stale) {
+    // Draw rotating spinner icon
+    QPixmap spinner(QStringLiteral(":/pipeline/spinner.png"));
+    painter.save();
+    painter.translate(stateRect.center());
+    painter.rotate(m_spinnerAngle);
+    painter.drawPixmap(-iconSize / 2, -iconSize / 2, iconSize, iconSize,
+                       spinner);
+    painter.restore();
+  } else {
+    QIcon icon = stateIcon(node);
+    icon.paint(&painter, stateRect);
+  }
+
   // Expand toggle for nodes with output ports (uses native style arrows)
-  auto outputs = node->outputPorts();
-  int toggleX = r.right() - 36;
   if (!outputs.isEmpty()) {
     bool expanded = m_expandedNodes.contains(node);
     QStyleOption opt;
     opt.initFrom(this);
-    opt.rect = QRect(toggleX, r.top() + (headerHeight - 12) / 2, 12, 12);
+    opt.rect = QRect(toggleX + 2, r.top() + (headerHeight - 12) / 2, 12, 12);
     opt.state |= QStyle::State_Children;
     if (expanded) {
       opt.state |= QStyle::State_Open;
@@ -509,32 +545,6 @@ void PipelineStripWidget::paintNodeCard(QPainter& painter,
       opt.state |= QStyle::State_Selected;
     }
     style()->drawPrimitive(QStyle::PE_IndicatorBranch, &opt, &painter, this);
-  }
-
-  // State indicator
-  int stateX = r.right() - 18;
-  QString st = stateText(node);
-  QFont stateFont = font();
-  stateFont.setPixelSize(10);
-  painter.setFont(stateFont);
-
-  if (m_spinnerTimer.isActive() && node->state() == NodeState::Stale) {
-    // Draw spinner arc
-    painter.setPen(QPen(fg, 1.5));
-    painter.setBrush(Qt::NoBrush);
-    painter.drawArc(QRect(stateX, cy - 5, 10, 10), m_spinnerAngle * 16,
-                    270 * 16);
-  } else {
-    painter.setPen(fg);
-    painter.drawText(QRect(stateX - 2, r.top(), 16, headerHeight),
-                     Qt::AlignCenter, st);
-  }
-
-  // Breakpoint indicator
-  if (node->hasBreakpoint()) {
-    painter.setBrush(QColor(220, 50, 50));
-    painter.setPen(Qt::NoPen);
-    painter.drawEllipse(QPoint(r.left() - 8, cy), 4, 4);
   }
 
   // Reset brush so it doesn't leak into subsequent paint calls
@@ -719,17 +729,103 @@ void PipelineStripWidget::paintConnections(QPainter& painter)
     return true;
   };
 
-  // Assign gutter lanes per unique output port (links from the same port share
-  // a lane). First pass: assign lane indices to each gutter-routed output port.
-  QMap<OutputPort*, int> portLaneIndex;
-  int gutterLaneCount = 0;
+  // Assign gutter lanes using interval coloring: ports whose vertical spans
+  // don't overlap can share the same lane.
+  // First, compute the vertical span [minY, maxY] each port occupies in the
+  // gutter.
+  struct GutterSpan
+  {
+    OutputPort* port;
+    int minY;
+    int maxY;
+  };
+  QList<GutterSpan> spans;
+  QMap<OutputPort*, int> spanIndex; // port -> index in spans
+
   for (auto* link : links) {
-    if (!isDirect(link) && !portLaneIndex.contains(link->from())) {
-      portLaneIndex[link->from()] = gutterLaneCount++;
+    if (isDirect(link)) {
+      continue;
+    }
+    auto* outPort = link->from();
+    auto* srcNode = outPort->node();
+    auto* dstNode = link->to()->node();
+
+    if (!nodeCardIndex.contains(srcNode) ||
+        !nodeCardIndex.contains(dstNode)) {
+      continue;
+    }
+
+    auto& srcNodeItem = m_layout[nodeCardIndex[srcNode]];
+    auto& dstNodeItem = m_layout[nodeCardIndex[dstNode]];
+
+    // Compute departure Y for this port
+    QPoint srcPt;
+    if (portCardIndex.contains(outPort)) {
+      auto& portItem = m_layout[portCardIndex[outPort]];
+      srcPt = QPoint(portItem.rect.left(), portItem.rect.center().y());
+    } else {
+      int portIdx = srcNode->outputPorts().indexOf(outPort);
+      srcPt = outputDotPos(srcNode, portIdx, srcNodeItem.rect);
+    }
+    int outIdx = srcNode->outputPorts().indexOf(outPort);
+    int departY = srcPt.y() + DotClearance + outIdx * LaneSpacing;
+    if (portCardIndex.contains(outPort)) {
+      departY = srcPt.y();
+    }
+
+    // Compute approach Y for this link's destination
+    int inIdx = dstNode->inputPorts().indexOf(link->to());
+    QPoint dstPt = inputDotPos(dstNode, inIdx, dstNodeItem.rect);
+    int approachY = dstPt.y() - DotClearance - inIdx * LaneSpacing;
+
+    int segMinY = qMin(departY, approachY);
+    int segMaxY = qMax(departY, approachY);
+
+    if (spanIndex.contains(outPort)) {
+      auto& span = spans[spanIndex[outPort]];
+      span.minY = qMin(span.minY, segMinY);
+      span.maxY = qMax(span.maxY, segMaxY);
+    } else {
+      spanIndex[outPort] = spans.size();
+      spans.append({ outPort, segMinY, segMaxY });
     }
   }
 
-  int gutterCenter = GutterWidth / 2;
+  // Sort spans by minY for greedy interval coloring
+  std::sort(spans.begin(), spans.end(),
+            [](const GutterSpan& a, const GutterSpan& b) {
+              return a.minY < b.minY;
+            });
+
+  // Greedy lane assignment: assign each span to the lowest lane that doesn't
+  // overlap with any existing span in that lane.
+  QMap<OutputPort*, int> portLaneIndex;
+  QList<QList<GutterSpan>> lanes; // lanes[i] = list of spans in lane i
+
+  for (auto& span : spans) {
+    int assignedLane = -1;
+    for (int lane = 0; lane < lanes.size(); ++lane) {
+      bool conflict = false;
+      for (auto& existing : lanes[lane]) {
+        if (span.minY <= existing.maxY && span.maxY >= existing.minY) {
+          conflict = true;
+          break;
+        }
+      }
+      if (!conflict) {
+        assignedLane = lane;
+        break;
+      }
+    }
+    if (assignedLane < 0) {
+      assignedLane = lanes.size();
+      lanes.append(QList<GutterSpan>());
+    }
+    lanes[assignedLane].append(span);
+    portLaneIndex[span.port] = assignedLane;
+  }
+
+  int gutterLaneCount = lanes.size();
 
   for (auto* link : links) {
     auto* outPort = link->from();
@@ -760,7 +856,7 @@ void PipelineStripWidget::paintConnections(QPainter& painter)
     QPoint dstPt = inputDotPos(dstNode, inIdx, dstNodeItem.rect);
 
     QColor lineColor = portTypeColor(outPort);
-    painter.setPen(QPen(lineColor, 1.5));
+    painter.setPen(QPen(lineColor, 3.0));
     painter.setBrush(Qt::NoBrush);
 
     if (isDirect(link)) {
@@ -772,8 +868,9 @@ void PipelineStripWidget::paintConnections(QPainter& painter)
     } else {
       // Route through gutter — lane shared by all links from the same port
       int laneIdx = portLaneIndex[outPort];
-      int gutterX = gutterCenter +
-        (2 * laneIdx - gutterLaneCount + 1) * LaneSpacing / 2;
+      // Lane 0 is closest to the node cards (right side of gutter),
+      // higher lanes move leftward.
+      int gutterX = GutterWidth - LaneSpacing / 2 - laneIdx * LaneSpacing;
 
       // Departure Y: offset below the output dot
       int outIdx = srcNode->outputPorts().indexOf(outPort);
@@ -852,18 +949,31 @@ QColor PipelineStripWidget::portTypeColor(OutputPort* port) const
   }
 }
 
-QString PipelineStripWidget::stateText(Node* node) const
+QIcon PipelineStripWidget::stateIcon(Node* node) const
 {
   switch (node->state()) {
     case NodeState::Current:
-      return QStringLiteral("\u2713"); // checkmark
+      return QIcon(QStringLiteral(":/pipeline/check.png"));
     case NodeState::Stale:
-      return QStringLiteral("\u25CF"); // filled circle (yellow conceptually)
+      return QIcon(QStringLiteral(":/pipeline/question.png"));
     case NodeState::New:
-      return QStringLiteral("\u25CB"); // empty circle
+      return QIcon(QStringLiteral(":/pipeline/edit.png"));
     default:
-      return QStringLiteral("?");
+      return QIcon();
   }
+}
+
+QRect PipelineStripWidget::breakpointRect(const QRect& cardRect) const
+{
+  // Layout: [breakpoint] [state] [expand]
+  int iconSize = 14;
+  int rightPad = 4;
+  int expandWidth = 16;
+  int toggleX = cardRect.right() - expandWidth - rightPad;
+  int stateX = toggleX - iconSize;
+  int bpX = stateX - iconSize;
+  int bpY = cardRect.top() + (NodeCardHeight - iconSize) / 2;
+  return QRect(bpX, bpY, iconSize, iconSize);
 }
 
 // --- Interaction ---
@@ -873,51 +983,44 @@ void PipelineStripWidget::mousePressEvent(QMouseEvent* event)
   if (event->button() == Qt::LeftButton) {
     int idx = hitTest(event->pos());
 
-    // Check for expand toggle click on node cards with output ports
+    // Check clicks on node card action areas
     if (idx >= 0 && m_layout[idx].type == LayoutItem::NodeCard) {
       auto* node = m_layout[idx].node;
+      auto& cardRect = m_layout[idx].rect;
+
+      // Breakpoint area
+      QRect bpRect = breakpointRect(cardRect);
+      if (bpRect.contains(event->pos())) {
+        node->setBreakpoint(!node->hasBreakpoint());
+        update();
+        return;
+      }
+
+      // Expand toggle (rightmost area)
       auto outputs = node->outputPorts();
       if (!outputs.isEmpty()) {
-        // Toggle area is near right side of card
-        int toggleX = m_layout[idx].rect.right() - 36;
+        int expandWidth = 16;
+        int rightPad = 4;
+        int toggleX = cardRect.right() - expandWidth - rightPad;
         if (event->pos().x() >= toggleX &&
-            event->pos().x() <= toggleX + 16) {
+            event->pos().x() <= cardRect.right() - rightPad) {
           setExpanded(node, !isExpanded(node));
           return;
         }
       }
-    }
 
-    // Check for output dot click on collapsed node cards
-    if (idx >= 0 && m_layout[idx].type == LayoutItem::NodeCard) {
-      auto* node = m_layout[idx].node;
+      // Output dot click on collapsed nodes
       if (!m_expandedNodes.contains(node)) {
-        auto outputs = node->outputPorts();
-        for (int i = 0; i < outputs.size(); ++i) {
-          QPoint dotPos = outputDotPos(node, i, m_layout[idx].rect);
+        auto outs = node->outputPorts();
+        for (int i = 0; i < outs.size(); ++i) {
+          QPoint dotPos = outputDotPos(node, i, cardRect);
           int dx = event->pos().x() - dotPos.x();
           int dy = event->pos().y() - dotPos.y();
           if (dx * dx + dy * dy <= (DotRadius + 2) * (DotRadius + 2)) {
             m_selectedIndex = -1;
-            m_selectedPort = outputs[i];
+            m_selectedPort = outs[i];
             update();
-            emit portSelected(outputs[i]);
-            return;
-          }
-        }
-      }
-    }
-
-    // Check for breakpoint click in gutter area
-    if (event->pos().x() < GutterWidth && idx < 0) {
-      // Find closest node card
-      for (int i = 0; i < m_layout.size(); ++i) {
-        if (m_layout[i].type == LayoutItem::NodeCard) {
-          auto r = m_layout[i].rect;
-          if (event->pos().y() >= r.top() && event->pos().y() <= r.bottom()) {
-            auto* node = m_layout[i].node;
-            node->setBreakpoint(!node->hasBreakpoint());
-            update();
+            emit portSelected(outs[i]);
             return;
           }
         }
@@ -976,6 +1079,41 @@ void PipelineStripWidget::contextMenuEvent(QContextMenuEvent* event)
   if (idx >= 0) {
     emit contextMenuRequested(m_layout[idx].node, event->globalPos());
   }
+}
+
+void PipelineStripWidget::resizeEvent(QResizeEvent* event)
+{
+  QWidget::resizeEvent(event);
+  rebuildLayout();
+}
+
+void PipelineStripWidget::mouseMoveEvent(QMouseEvent* event)
+{
+  int idx = hitTest(event->pos());
+  // Only track hover on node cards (for breakpoint hint)
+  if (idx >= 0 && m_layout[idx].type != LayoutItem::NodeCard) {
+    // Find the parent node card for port cards
+    for (int i = idx - 1; i >= 0; --i) {
+      if (m_layout[i].type == LayoutItem::NodeCard) {
+        idx = i;
+        break;
+      }
+    }
+  }
+  if (idx != m_hoveredIndex) {
+    m_hoveredIndex = idx;
+    update();
+  }
+  QWidget::mouseMoveEvent(event);
+}
+
+void PipelineStripWidget::leaveEvent(QEvent* event)
+{
+  if (m_hoveredIndex >= 0) {
+    m_hoveredIndex = -1;
+    update();
+  }
+  QWidget::leaveEvent(event);
 }
 
 } // namespace pipeline

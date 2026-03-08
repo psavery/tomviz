@@ -6,6 +6,7 @@
 
 #include "tomviz_pipeline_export.h"
 
+#include <QIcon>
 #include <QList>
 #include <QPoint>
 #include <QRect>
@@ -69,6 +70,9 @@ protected:
   void mouseDoubleClickEvent(QMouseEvent* event) override;
   void keyPressEvent(QKeyEvent* event) override;
   void contextMenuEvent(QContextMenuEvent* event) override;
+  void resizeEvent(QResizeEvent* event) override;
+  void mouseMoveEvent(QMouseEvent* event) override;
+  void leaveEvent(QEvent* event) override;
 
 private:
   void connectPipeline();
@@ -90,14 +94,16 @@ private:
   QPoint outputDotPos(Node* node, int portIndex, const QRect& nodeRect) const;
   QColor badgeColor(Node* node) const;
   QColor portTypeColor(OutputPort* port) const;
-  QString stateText(Node* node) const;
+  QIcon stateIcon(Node* node) const;
   QString badgeText(Node* node) const;
+  QRect breakpointRect(const QRect& cardRect) const;
 
   Pipeline* m_pipeline = nullptr;
   QList<LayoutItem> m_layout;
   int m_selectedIndex = -1;
   OutputPort* m_selectedPort = nullptr; // selected output dot (collapsed nodes)
   QSet<Node*> m_expandedNodes;
+  int m_hoveredIndex = -1;
   QTimer m_spinnerTimer;
   int m_spinnerAngle = 0;
 
@@ -114,7 +120,7 @@ private:
   static constexpr int DotRadius = 4;
   static constexpr int DotSpacing = 10; // center-to-center between adjacent dots
   static constexpr int DotMargin = 6;   // left margin for dots on node cards
-  static constexpr int LaneSpacing = 4;              // spacing between parallel lines
+  static constexpr int LaneSpacing = 6;              // spacing between parallel lines
   static constexpr int DotClearance = DotRadius * 2; // initial offset from dot before first lane
   static constexpr int Padding = 4;
 };

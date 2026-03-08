@@ -1,0 +1,14 @@
+<RCC>
+  <qresource prefix="/pipeline">
+    <file alias="check.png">../icons/check.png</file>
+    <file alias="check@2x.png">../icons/check@2x.png</file>
+    <file alias="edit.png">../icons/edit.png</file>
+    <file alias="edit@2x.png">../icons/edit@2x.png</file>
+    <file alias="question.png">../icons/question.png</file>
+    <file alias="question@2x.png">../icons/question@2x.png</file>
+    <file alias="spinner.png">../icons/spinner.png</file>
+    <file alias="spinner@2x.png">../icons/spinner@2x.png</file>
+    <file alias="breakpoint.png">../icons/breakpoint.png</file>
+    <file alias="breakpoint@2x.png">../icons/breakpoint@2x.png</file>
+  </qresource>
+</RCC>
