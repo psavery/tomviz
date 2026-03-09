@@ -59,7 +59,13 @@ public:
   void setRepresentation(int rep);
 
   /// Solid color (used when mapScalars is false).
+  void color(double rgb[3]) const;
   void setColor(double r, double g, double b);
+
+  /// Cached scalar range from the last consume().
+  void scalarRange(double range[2]) const;
+
+  QWidget* createPropertiesWidget(QWidget* parent) override;
 
   /// Toggle scalar color mapping on the surface.
   bool mapScalars() const;
@@ -79,6 +85,7 @@ private:
   double m_isoValue = 0.0;
   bool m_isoValueSet = false;
   bool m_mapScalars = true;
+  double m_scalarRange[2] = { 0.0, 1.0 };
 };
 
 } // namespace pipeline

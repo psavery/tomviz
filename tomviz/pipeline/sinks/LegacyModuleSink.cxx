@@ -81,6 +81,11 @@ bool LegacyModuleSink::deserialize(const QJsonObject& json)
   return true;
 }
 
+QWidget* LegacyModuleSink::createPropertiesWidget(QWidget* /*parent*/)
+{
+  return nullptr;
+}
+
 bool LegacyModuleSink::validateInput(const QMap<QString, PortData>& inputs,
                                      const QString& portName) const
 {

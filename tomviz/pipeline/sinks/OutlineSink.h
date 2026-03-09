@@ -36,7 +36,10 @@ public:
   QJsonObject serialize() const override;
   bool deserialize(const QJsonObject& json) override;
 
+  void color(double rgb[3]) const;
   void setColor(double r, double g, double b);
+
+  QWidget* createPropertiesWidget(QWidget* parent) override;
 
   /// Grid axes visibility.
   bool showGridAxes() const;

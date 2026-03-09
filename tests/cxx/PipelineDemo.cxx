@@ -16,6 +16,8 @@
 #include "sources/SphereSource.h"
 #include "transforms/LegacyPythonTransform.h"
 
+#include "sinks/ContourSink.h"
+#include "sinks/LegacyModuleSink.h"
 #include "sinks/OutlineSink.h"
 #include "sinks/SliceSink.h"
 #include "sinks/VolumeSink.h"
@@ -129,6 +131,11 @@ int main(int argc, char** argv)
   pipeline->createLink(addConst->outputPort("volume"),
                        volumeSink->inputPort("volume"));
 
+  auto* contourSink = new ContourSink();
+  pipeline->addNode(contourSink);
+  pipeline->createLink(addConst->outputPort("volume"),
+                       contourSink->inputPort("volume"));
+
   // Execute the source and full pipeline
   source->execute();
   pipeline->execute();
@@ -137,6 +144,7 @@ int main(int argc, char** argv)
   outlineSink->initialize(viewProxy);
   sliceSink->initialize(viewProxy);
   volumeSink->initialize(viewProxy);
+  contourSink->initialize(viewProxy);
 
   // Re-execute so sinks create VTK actors now that the view is set up
   pipeline->execute();
@@ -200,8 +208,16 @@ int main(int argc, char** argv)
   propsScroll->setWidget(propsWidget);
   dockLayout->addWidget(propsScroll, 1);
 
-  // Hide properties panel initially (shown when a Volume port is selected)
+  // Bottom: sink properties widget in a scroll area
+  auto* sinkPropsScroll = new QScrollArea();
+  sinkPropsScroll->setWidgetResizable(true);
+  sinkPropsScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+  sinkPropsScroll->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+  dockLayout->addWidget(sinkPropsScroll, 1);
+
+  // Hide properties panels initially
   propsScroll->hide();
+  sinkPropsScroll->hide();
 
   dock->setWidget(dockContainer);
   window.addDockWidget(Qt::LeftDockWidgetArea, dock);
@@ -215,6 +231,7 @@ int main(int argc, char** argv)
 
   // Helper: show properties only for Volume-type output ports
   auto showPropsForPort = [&](OutputPort* port) {
+    sinkPropsScroll->hide();
     if (port && port->type() == PortType::Volume) {
       propsWidget->setOutputPort(port);
       propsScroll->show();
@@ -222,6 +239,22 @@ int main(int argc, char** argv)
       propsWidget->setOutputPort(nullptr);
       propsScroll->hide();
     }
+  };
+
+  // Helper: show sink properties when a sink node is selected
+  auto showSinkProps = [&](Node* node) {
+    propsWidget->setOutputPort(nullptr);
+    propsScroll->hide();
+    auto* sink = qobject_cast<LegacyModuleSink*>(node);
+    if (sink) {
+      auto* w = sink->createPropertiesWidget(nullptr);
+      if (w) {
+        sinkPropsScroll->setWidget(w);
+        sinkPropsScroll->show();
+        return;
+      }
+    }
+    sinkPropsScroll->hide();
   };
 
   // When a port is explicitly selected in the strip, show its properties
@@ -234,14 +267,13 @@ int main(int argc, char** argv)
                      }
                    });
 
-  // When a node is selected (not a port), hide the properties panel
+  // When a node is selected (not a port), show sink properties or hide
   QObject::connect(strip, &PipelineStripWidget::nodeSelected, [&](Node* node) {
     if (node) {
       window.statusBar()->showMessage(
         QString("Selected: %1").arg(node->label()));
     }
-    propsWidget->setOutputPort(nullptr);
-    propsScroll->hide();
+    showSinkProps(node);
   });
 
   // Execute button re-runs the pipeline
@@ -257,6 +289,7 @@ int main(int argc, char** argv)
   QObject::connect(outlineSink, &LegacyModuleSink::renderNeeded, renderSlot);
   QObject::connect(sliceSink, &LegacyModuleSink::renderNeeded, renderSlot);
   QObject::connect(volumeSink, &LegacyModuleSink::renderNeeded, renderSlot);
+  QObject::connect(contourSink, &LegacyModuleSink::renderNeeded, renderSlot);
 
   // When volume data is modified via properties widget, re-execute and render
   QObject::connect(propsWidget, &VolumePropertiesWidget::volumeDataModified,

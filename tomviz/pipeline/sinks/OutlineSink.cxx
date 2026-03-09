@@ -5,6 +5,14 @@
 
 #include "data/VolumeData.h"
 
+#include <QCheckBox>
+#include <QFormLayout>
+#include <QGroupBox>
+#include <QHBoxLayout>
+#include <QLineEdit>
+#include <QSignalBlocker>
+#include <QWidget>
+
 #include <vtkActor.h>
 #include <vtkGridAxesActor3D.h>
 #include <vtkImageData.h>
@@ -104,10 +112,75 @@ bool OutlineSink::consume(const QMap<QString, PortData>& inputs)
   return true;
 }
 
+void OutlineSink::color(double rgb[3]) const
+{
+  m_property->GetColor(rgb);
+}
+
 void OutlineSink::setColor(double r, double g, double b)
 {
   m_property->SetColor(r, g, b);
   emit renderNeeded();
+}
+
+QWidget* OutlineSink::createPropertiesWidget(QWidget* parent)
+{
+  auto* widget = new QWidget(parent);
+  auto* layout = new QFormLayout(widget);
+
+  // --- Color ---
+  auto* colorLayout = new QHBoxLayout();
+  double rgb[3];
+  color(rgb);
+  auto* rEdit = new QLineEdit(QString::number(rgb[0], 'f', 3), widget);
+  auto* gEdit = new QLineEdit(QString::number(rgb[1], 'f', 3), widget);
+  auto* bEdit = new QLineEdit(QString::number(rgb[2], 'f', 3), widget);
+  colorLayout->addWidget(rEdit);
+  colorLayout->addWidget(gEdit);
+  colorLayout->addWidget(bEdit);
+  layout->addRow("Color", colorLayout);
+
+  auto updateColor = [this, rEdit, gEdit, bEdit]() {
+    setColor(rEdit->text().toDouble(), gEdit->text().toDouble(),
+             bEdit->text().toDouble());
+  };
+  QObject::connect(rEdit, &QLineEdit::editingFinished, updateColor);
+  QObject::connect(gEdit, &QLineEdit::editingFinished, updateColor);
+  QObject::connect(bEdit, &QLineEdit::editingFinished, updateColor);
+
+  // --- Show Grid Axes ---
+  auto* gridCheck = new QCheckBox(widget);
+  {
+    QSignalBlocker blocker(gridCheck);
+    gridCheck->setChecked(showGridAxes());
+  }
+  layout->addRow("Show Grid Axes", gridCheck);
+
+  // --- Axis Titles ---
+  auto* titleGroup = new QGroupBox("Axis Titles", widget);
+  auto* titleLayout = new QFormLayout(titleGroup);
+
+  auto* xTitleEdit = new QLineEdit(xTitle(), widget);
+  auto* yTitleEdit = new QLineEdit(yTitle(), widget);
+  auto* zTitleEdit = new QLineEdit(zTitle(), widget);
+  titleLayout->addRow("X Title", xTitleEdit);
+  titleLayout->addRow("Y Title", yTitleEdit);
+  titleLayout->addRow("Z Title", zTitleEdit);
+  titleGroup->setVisible(showGridAxes());
+  layout->addRow(titleGroup);
+
+  QObject::connect(gridCheck, &QCheckBox::toggled, [this, titleGroup](bool on) {
+    setShowGridAxes(on);
+    titleGroup->setVisible(on);
+  });
+  QObject::connect(xTitleEdit, &QLineEdit::editingFinished,
+                   [this, xTitleEdit]() { setXTitle(xTitleEdit->text()); });
+  QObject::connect(yTitleEdit, &QLineEdit::editingFinished,
+                   [this, yTitleEdit]() { setYTitle(yTitleEdit->text()); });
+  QObject::connect(zTitleEdit, &QLineEdit::editingFinished,
+                   [this, zTitleEdit]() { setZTitle(zTitleEdit->text()); });
+
+  return widget;
 }
 
 bool OutlineSink::showGridAxes() const

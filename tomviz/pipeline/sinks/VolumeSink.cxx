@@ -5,6 +5,15 @@
 
 #include "data/VolumeData.h"
 
+#include <QCheckBox>
+#include <QComboBox>
+#include <QDoubleSpinBox>
+#include <QFormLayout>
+#include <QGroupBox>
+#include <QSignalBlocker>
+#include <QSlider>
+#include <QWidget>
+
 #include <vtkColorTransferFunction.h>
 #include <vtkImageData.h>
 #include <vtkPVRenderView.h>
@@ -12,6 +21,7 @@
 #include <vtkPlane.h>
 #include <vtkSmartVolumeMapper.h>
 #include <vtkVolume.h>
+#include <vtkVolumeMapper.h>
 #include <vtkVolumeProperty.h>
 
 namespace tomviz {
@@ -283,6 +293,121 @@ void VolumeSink::removeAllClippingPlanes()
 {
   m_volumeMapper->RemoveAllClippingPlanes();
   emit renderNeeded();
+}
+
+// --- Properties widget ---
+
+QWidget* VolumeSink::createPropertiesWidget(QWidget* parent)
+{
+  auto* widget = new QWidget(parent);
+  auto* layout = new QFormLayout(widget);
+
+  // --- Lighting checkbox ---
+  auto* lightCheck = new QCheckBox(widget);
+  {
+    QSignalBlocker blocker(lightCheck);
+    lightCheck->setChecked(lighting());
+  }
+  layout->addRow("Lighting", lightCheck);
+
+  // --- Lighting group ---
+  auto* lightGroup = new QGroupBox("Lighting", widget);
+  auto* lightLayout = new QFormLayout(lightGroup);
+  lightGroup->setEnabled(lighting());
+
+  auto addSlider = [&](const QString& label, double initial, int minVal,
+                       int maxVal, auto setter,
+                       bool directValue = false) -> QSlider* {
+    auto* slider = new QSlider(Qt::Horizontal, widget);
+    slider->setRange(minVal, maxVal);
+    {
+      QSignalBlocker blocker(slider);
+      slider->setValue(
+        static_cast<int>(directValue ? initial : initial * 100));
+    }
+    lightLayout->addRow(label, slider);
+    if (directValue) {
+      QObject::connect(slider, &QSlider::valueChanged,
+                       [this, setter](int v) { (this->*setter)(v); });
+    } else {
+      QObject::connect(slider, &QSlider::valueChanged,
+                       [this, setter](int v) { (this->*setter)(v / 100.0); });
+    }
+    return slider;
+  };
+
+  addSlider("Ambient", ambient(), 0, 100, &VolumeSink::setAmbient);
+  addSlider("Diffuse", diffuse(), 0, 100, &VolumeSink::setDiffuse);
+  addSlider("Specular", specular(), 0, 100, &VolumeSink::setSpecular);
+  addSlider("Specular Power", specularPower(), 1, 150,
+            &VolumeSink::setSpecularPower, true);
+  layout->addRow(lightGroup);
+
+  QObject::connect(lightCheck, &QCheckBox::toggled,
+                   [this, lightGroup](bool on) {
+                     setLighting(on);
+                     lightGroup->setEnabled(on);
+                   });
+
+  // --- Jittering ---
+  auto* jitterCheck = new QCheckBox(widget);
+  {
+    QSignalBlocker blocker(jitterCheck);
+    jitterCheck->setChecked(jittering());
+  }
+  layout->addRow("Jittering", jitterCheck);
+  QObject::connect(jitterCheck, &QCheckBox::toggled,
+                   [this](bool on) { setJittering(on); });
+
+  // --- Blending ---
+  auto* blendCombo = new QComboBox(widget);
+  blendCombo->addItem("Composite", vtkVolumeMapper::COMPOSITE_BLEND);
+  blendCombo->addItem("Max", vtkVolumeMapper::MAXIMUM_INTENSITY_BLEND);
+  blendCombo->addItem("Min", vtkVolumeMapper::MINIMUM_INTENSITY_BLEND);
+  blendCombo->addItem("Average", vtkVolumeMapper::AVERAGE_INTENSITY_BLEND);
+  {
+    QSignalBlocker blocker(blendCombo);
+    int idx = blendCombo->findData(blendingMode());
+    blendCombo->setCurrentIndex(idx >= 0 ? idx : 0);
+  }
+  layout->addRow("Blending", blendCombo);
+  QObject::connect(
+    blendCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+    [this, blendCombo](int idx) {
+      setBlendingMode(blendCombo->itemData(idx).toInt());
+    });
+
+  // --- Interpolation ---
+  auto* interpCombo = new QComboBox(widget);
+  interpCombo->addItem("Linear", VTK_LINEAR_INTERPOLATION);
+  interpCombo->addItem("Nearest", VTK_NEAREST_INTERPOLATION);
+  {
+    QSignalBlocker blocker(interpCombo);
+    int idx = interpCombo->findData(interpolationType());
+    interpCombo->setCurrentIndex(idx >= 0 ? idx : 0);
+  }
+  layout->addRow("Interpolation", interpCombo);
+  QObject::connect(
+    interpCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+    [this, interpCombo](int idx) {
+      setInterpolationType(interpCombo->itemData(idx).toInt());
+    });
+
+  // --- Solidity ---
+  auto* soliditySpin = new QDoubleSpinBox(widget);
+  soliditySpin->setRange(0.001, 100.0);
+  soliditySpin->setDecimals(3);
+  soliditySpin->setSingleStep(0.1);
+  {
+    QSignalBlocker blocker(soliditySpin);
+    soliditySpin->setValue(solidity());
+  }
+  layout->addRow("Solidity", soliditySpin);
+  QObject::connect(
+    soliditySpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
+    [this](double v) { setSolidity(v); });
+
+  return widget;
 }
 
 // --- Serialization ---

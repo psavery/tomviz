@@ -6,7 +6,16 @@
 #include "data/VolumeData.h"
 #include "vtkNonOrthoImagePlaneWidget.h"
 
+#include <QCheckBox>
+#include <QComboBox>
+#include <QFormLayout>
+#include <QGroupBox>
 #include <QJsonArray>
+#include <QLineEdit>
+#include <QSignalBlocker>
+#include <QSlider>
+#include <QSpinBox>
+#include <QWidget>
 
 #include <vtkAlgorithmOutput.h>
 #include <vtkImageData.h>
@@ -378,6 +387,196 @@ void SliceSink::planeNormal(double xyz[3]) const
     xyz[1] = m_planeNormal[1];
     xyz[2] = m_planeNormal[2];
   }
+}
+
+QWidget* SliceSink::createPropertiesWidget(QWidget* parent)
+{
+  auto* widget = new QWidget(parent);
+  auto* layout = new QFormLayout(widget);
+
+  // --- Direction ---
+  auto* dirCombo = new QComboBox(widget);
+  dirCombo->addItem("XY", static_cast<int>(XY));
+  dirCombo->addItem("YZ", static_cast<int>(YZ));
+  dirCombo->addItem("XZ", static_cast<int>(XZ));
+  dirCombo->addItem("Custom", static_cast<int>(Custom));
+  {
+    QSignalBlocker blocker(dirCombo);
+    dirCombo->setCurrentIndex(static_cast<int>(direction()));
+  }
+  layout->addRow("Direction", dirCombo);
+
+  // --- Slice slider ---
+  auto* sliceSlider = new QSlider(Qt::Horizontal, widget);
+  {
+    int ms = maxSlice();
+    sliceSlider->setRange(0, ms >= 0 ? ms : 0);
+    QSignalBlocker blocker(sliceSlider);
+    sliceSlider->setValue(slice() >= 0 ? slice() : 0);
+  }
+  sliceSlider->setVisible(isOrtho());
+  layout->addRow("Slice", sliceSlider);
+  QObject::connect(sliceSlider, &QSlider::valueChanged,
+                   [this](int v) { setSlice(v); });
+
+  // --- Opacity ---
+  auto* opacitySlider = new QSlider(Qt::Horizontal, widget);
+  opacitySlider->setRange(0, 100);
+  {
+    QSignalBlocker blocker(opacitySlider);
+    opacitySlider->setValue(static_cast<int>(opacity() * 100));
+  }
+  layout->addRow("Opacity", opacitySlider);
+  QObject::connect(opacitySlider, &QSlider::valueChanged,
+                   [this](int v) { setOpacity(v / 100.0); });
+
+  // --- Interpolate ---
+  auto* interpCheck = new QCheckBox(widget);
+  {
+    QSignalBlocker blocker(interpCheck);
+    interpCheck->setChecked(textureInterpolate());
+  }
+  layout->addRow("Interpolate", interpCheck);
+  QObject::connect(interpCheck, &QCheckBox::toggled,
+                   [this](bool on) { setTextureInterpolate(on); });
+
+  // --- Show Arrow ---
+  auto* arrowCheck = new QCheckBox(widget);
+  {
+    QSignalBlocker blocker(arrowCheck);
+    arrowCheck->setChecked(showArrow());
+  }
+  layout->addRow("Show Arrow", arrowCheck);
+  QObject::connect(arrowCheck, &QCheckBox::toggled,
+                   [this](bool on) { setShowArrow(on); });
+
+  // --- Thickness ---
+  auto* thickSpin = new QSpinBox(widget);
+  thickSpin->setMinimum(1);
+  thickSpin->setMaximum(999);
+  {
+    QSignalBlocker blocker(thickSpin);
+    thickSpin->setValue(sliceThickness());
+  }
+  layout->addRow("Thickness", thickSpin);
+
+  // --- Aggregation ---
+  auto* aggCombo = new QComboBox(widget);
+  aggCombo->addItem("Min", static_cast<int>(Min));
+  aggCombo->addItem("Max", static_cast<int>(Max));
+  aggCombo->addItem("Mean", static_cast<int>(Mean));
+  aggCombo->addItem("Sum", static_cast<int>(Sum));
+  {
+    QSignalBlocker blocker(aggCombo);
+    aggCombo->setCurrentIndex(static_cast<int>(thickSliceMode()));
+  }
+  aggCombo->setVisible(sliceThickness() > 1);
+  layout->addRow("Aggregation", aggCombo);
+
+  QObject::connect(thickSpin, QOverload<int>::of(&QSpinBox::valueChanged),
+                   [this, aggCombo](int v) {
+                     setSliceThickness(v);
+                     aggCombo->setVisible(v > 1);
+                   });
+  QObject::connect(
+    aggCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+    [this, aggCombo](int idx) {
+      setThickSliceMode(
+        static_cast<ThickSliceMode>(aggCombo->itemData(idx).toInt()));
+    });
+
+  // --- Map Scalars ---
+  auto* mapCheck = new QCheckBox(widget);
+  {
+    QSignalBlocker blocker(mapCheck);
+    mapCheck->setChecked(mapScalars());
+  }
+  layout->addRow("Map Scalars", mapCheck);
+  QObject::connect(mapCheck, &QCheckBox::toggled,
+                   [this](bool on) { setMapScalars(on); });
+
+  // --- Custom Plane ---
+  auto* customGroup = new QGroupBox("Custom Plane", widget);
+  auto* customLayout = new QFormLayout(customGroup);
+
+  double center[3], normal[3];
+  planeCenter(center);
+  planeNormal(normal);
+
+  auto* pxEdit = new QLineEdit(QString::number(center[0]), widget);
+  auto* pyEdit = new QLineEdit(QString::number(center[1]), widget);
+  auto* pzEdit = new QLineEdit(QString::number(center[2]), widget);
+  auto* nxEdit = new QLineEdit(QString::number(normal[0]), widget);
+  auto* nyEdit = new QLineEdit(QString::number(normal[1]), widget);
+  auto* nzEdit = new QLineEdit(QString::number(normal[2]), widget);
+
+  auto* pointLayout = new QHBoxLayout();
+  pointLayout->addWidget(pxEdit);
+  pointLayout->addWidget(pyEdit);
+  pointLayout->addWidget(pzEdit);
+  customLayout->addRow("Point", pointLayout);
+
+  auto* normalLayout = new QHBoxLayout();
+  normalLayout->addWidget(nxEdit);
+  normalLayout->addWidget(nyEdit);
+  normalLayout->addWidget(nzEdit);
+  customLayout->addRow("Normal", normalLayout);
+
+  customGroup->setVisible(direction() == Custom);
+  layout->addRow(customGroup);
+
+  auto updateCenter = [this, pxEdit, pyEdit, pzEdit]() {
+    setPlaneCenter(pxEdit->text().toDouble(), pyEdit->text().toDouble(),
+                   pzEdit->text().toDouble());
+  };
+  auto updateNormal = [this, nxEdit, nyEdit, nzEdit]() {
+    setPlaneNormal(nxEdit->text().toDouble(), nyEdit->text().toDouble(),
+                   nzEdit->text().toDouble());
+  };
+  QObject::connect(pxEdit, &QLineEdit::editingFinished, updateCenter);
+  QObject::connect(pyEdit, &QLineEdit::editingFinished, updateCenter);
+  QObject::connect(pzEdit, &QLineEdit::editingFinished, updateCenter);
+  QObject::connect(nxEdit, &QLineEdit::editingFinished, updateNormal);
+  QObject::connect(nyEdit, &QLineEdit::editingFinished, updateNormal);
+  QObject::connect(nzEdit, &QLineEdit::editingFinished, updateNormal);
+
+  // Direction combo connections
+  QObject::connect(
+    dirCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+    [this, sliceSlider, customGroup, dirCombo](int idx) {
+      auto dir = static_cast<Direction>(dirCombo->itemData(idx).toInt());
+      setDirection(dir);
+      bool ortho = (dir != Custom);
+      sliceSlider->setVisible(ortho);
+      customGroup->setVisible(!ortho);
+      if (ortho) {
+        int ms = maxSlice();
+        sliceSlider->setRange(0, ms >= 0 ? ms : 0);
+        QSignalBlocker blocker(sliceSlider);
+        sliceSlider->setValue(slice() >= 0 ? slice() : 0);
+      }
+    });
+
+  // Update slice slider when direction/slice changes from the sink itself
+  QObject::connect(this, &SliceSink::directionChanged,
+                   [sliceSlider, customGroup, this](Direction dir) {
+                     bool ortho = (dir != Custom);
+                     sliceSlider->setVisible(ortho);
+                     customGroup->setVisible(!ortho);
+                     if (ortho) {
+                       int ms = maxSlice();
+                       sliceSlider->setRange(0, ms >= 0 ? ms : 0);
+                       QSignalBlocker blocker(sliceSlider);
+                       sliceSlider->setValue(slice() >= 0 ? slice() : 0);
+                     }
+                   });
+  QObject::connect(this, &SliceSink::sliceChanged,
+                   [sliceSlider](int s) {
+                     QSignalBlocker blocker(sliceSlider);
+                     sliceSlider->setValue(s);
+                   });
+
+  return widget;
 }
 
 QJsonObject SliceSink::serialize() const

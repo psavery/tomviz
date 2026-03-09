@@ -12,6 +12,7 @@
 
 #include <vtkWeakPointer.h>
 
+class QWidget;
 class vtkPVRenderView;
 class vtkSMViewProxy;
 
@@ -42,6 +43,10 @@ public:
   void setVisibility(bool visible);
 
   virtual bool isColorMapNeeded() const;
+
+  /// Create a widget for editing this sink's properties. Returns nullptr by
+  /// default. Caller owns the returned widget.
+  virtual QWidget* createPropertiesWidget(QWidget* parent);
 
   virtual QJsonObject serialize() const;
   virtual bool deserialize(const QJsonObject& json);
