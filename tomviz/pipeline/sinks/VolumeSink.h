@@ -92,6 +92,8 @@ private:
   vtkNew<vtkPiecewiseFunction> m_defaultOpacity;
   vtkNew<vtkColorTransferFunction> m_defaultColor;
   vtkNew<vtkPiecewiseFunction> m_gradientOpacity;
+  bool m_hasCustomOpacity = false;
+  bool m_hasCustomColor = false;
 };
 
 } // namespace pipeline

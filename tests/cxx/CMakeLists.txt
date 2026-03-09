@@ -109,3 +109,16 @@ target_link_libraries(pipelineSinkDemo
   tomviz_pipeline
   ParaView::pqApplicationComponents
   Qt6::Widgets)
+
+# Manual demo app with full pipeline: source -> transform -> 3 sinks + properties
+add_executable(pipelineDemo PipelineDemo.cxx)
+target_include_directories(pipelineDemo BEFORE PRIVATE
+  ${PROJECT_SOURCE_DIR}/tomviz/pipeline
+  ${PROJECT_BINARY_DIR}/tomviz/pipeline)
+target_compile_definitions(pipelineDemo PRIVATE
+  "TOMVIZ_PYTHON_DIR=\"${PROJECT_SOURCE_DIR}/tomviz/python\"")
+target_link_libraries(pipelineDemo
+  tomviz_pipeline
+  pybind11::embed
+  ParaView::pqApplicationComponents
+  Qt6::Widgets)

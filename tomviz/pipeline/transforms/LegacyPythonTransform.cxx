@@ -162,11 +162,10 @@ QMap<QString, PortData> LegacyPythonTransform::transform(
   vtkNew<vtkImageData> outputImage;
   outputImage->DeepCopy(inputVolume->imageData());
 
-  // Ensure Python is initialized
-  bool ownInterpreter = false;
+  // Ensure Python is initialized. Never finalize — C extension modules
+  // like numpy cannot be re-loaded after finalize_interpreter().
   if (!Py_IsInitialized()) {
     py::initialize_interpreter();
-    ownInterpreter = true;
   }
 
   try {
@@ -246,10 +245,6 @@ QMap<QString, PortData> LegacyPythonTransform::transform(
     qWarning("LegacyPythonTransform Python error: %s", e.what());
   } catch (const std::exception& e) {
     qWarning("LegacyPythonTransform error: %s", e.what());
-  }
-
-  if (ownInterpreter) {
-    py::finalize_interpreter();
   }
 
   return result;

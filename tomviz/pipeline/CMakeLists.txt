@@ -38,6 +38,8 @@ set(SOURCES
   sinks/PlotSink.cxx
   sinks/MoleculeSink.cxx
   PipelineStripWidget.cxx
+  VolumeScalarsModel.cxx
+  VolumePropertiesWidget.cxx
   vtkNonOrthoImagePlaneWidget.cxx)
 
 set(HEADERS
@@ -78,6 +80,8 @@ set(HEADERS
   sinks/PlotSink.h
   sinks/MoleculeSink.h
   PipelineStripWidget.h
+  VolumeScalarsModel.h
+  VolumePropertiesWidget.h
   vtkNonOrthoImagePlaneWidget.h)
 
 qt_add_resources(PIPELINE_RESOURCES pipeline_icons.qrc)

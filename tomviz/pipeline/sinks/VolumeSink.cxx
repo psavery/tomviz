@@ -38,12 +38,14 @@ VolumeSink::VolumeSink(QObject* parent) : LegacyModuleSink(parent)
   m_volumeProperty->SetColor(m_defaultColor);
 
   // Default opacity: ramp from 0 to 1
+  m_defaultOpacity->RemoveAllPoints();
   m_defaultOpacity->AddPoint(0.0, 0.0);
-  m_defaultOpacity->AddPoint(1.0, 1.0);
+  m_defaultOpacity->AddPoint(0.25, 0.0);
+  m_defaultOpacity->AddPoint(1.0, 0.);
   m_volumeProperty->SetScalarOpacity(m_defaultOpacity);
 
   // Gradient opacity (needed for multi-volume shader workaround)
-  m_gradientOpacity->AddPoint(0.0, 1.0);
+  // m_gradientOpacity->AddPoint(0.0, 1.0);
 
   m_volume->SetMapper(m_volumeMapper);
   m_volume->SetProperty(m_volumeProperty);
@@ -91,15 +93,20 @@ bool VolumeSink::consume(const QMap<QString, PortData>& inputs)
 
   m_volumeMapper->SetInputData(volume->imageData());
 
-  // Update the default transfer function ranges to match data
+  // Only update the default transfer functions if no custom one was set
   auto range = volume->scalarRange();
-  m_defaultColor->RemoveAllPoints();
-  m_defaultColor->AddRGBPoint(range[0], 0.0, 0.0, 0.0);
-  m_defaultColor->AddRGBPoint(range[1], 1.0, 1.0, 1.0);
+  if (!m_hasCustomColor) {
+    m_defaultColor->RemoveAllPoints();
+    m_defaultColor->AddRGBPoint(range[0], 0.0, 0.0, 0.0);
+    m_defaultColor->AddRGBPoint(range[1], 1.0, 1.0, 1.0);
+  }
 
-  m_defaultOpacity->RemoveAllPoints();
-  m_defaultOpacity->AddPoint(range[0], 0.0);
-  m_defaultOpacity->AddPoint(range[1], 1.0);
+  if (!m_hasCustomOpacity) {
+    m_defaultOpacity->RemoveAllPoints();
+    m_defaultOpacity->AddPoint(range[0], 0.0);
+    m_defaultOpacity->AddPoint(range[0] + (range[1] - range[0]) * 0.2, 0.0);
+    m_defaultOpacity->AddPoint(range[1], 0.2);
+  }
 
   m_volume->SetVisibility(visibility() ? 1 : 0);
 
@@ -227,8 +234,10 @@ void VolumeSink::setSolidity(double value)
 void VolumeSink::setColorTransferFunction(vtkColorTransferFunction* ctf)
 {
   if (ctf) {
+    m_hasCustomColor = true;
     m_volumeProperty->SetColor(ctf);
   } else {
+    m_hasCustomColor = false;
     m_volumeProperty->SetColor(m_defaultColor);
   }
   emit renderNeeded();
@@ -237,8 +246,10 @@ void VolumeSink::setColorTransferFunction(vtkColorTransferFunction* ctf)
 void VolumeSink::setOpacityTransferFunction(vtkPiecewiseFunction* otf)
 {
   if (otf) {
+    m_hasCustomOpacity = true;
     m_volumeProperty->SetScalarOpacity(otf);
   } else {
+    m_hasCustomOpacity = false;
     m_volumeProperty->SetScalarOpacity(m_defaultOpacity);
   }
   emit renderNeeded();

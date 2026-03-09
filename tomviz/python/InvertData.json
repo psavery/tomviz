@@ -1,0 +1,6 @@
+{
+  "name" : "InvertData",
+  "label" : "Invert Data",
+  "description" : "Invert the scalar values so that max becomes min and vice versa.",
+  "parameters" : []
+}
