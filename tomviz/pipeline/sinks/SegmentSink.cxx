@@ -1,0 +1,296 @@
+/* This source file is part of the Tomviz project, https://tomviz.org/.
+   It is released under the 3-Clause BSD License, see "LICENSE". */
+
+#include "SegmentSink.h"
+
+#include "data/VolumeData.h"
+
+// Qt defines 'slots' as a macro which conflicts with Python's object.h.
+// We must undef it before including any pybind11/Python headers.
+#pragma push_macro("slots")
+#undef slots
+#include <pybind11/embed.h>
+#include <pybind11/pybind11.h>
+
+#include "pybind11/PybindVTKTypeCaster.h"
+#pragma pop_macro("slots")
+
+#include <vtkActor.h>
+#include <vtkDataSetMapper.h>
+#include <vtkFlyingEdges3D.h>
+#include <vtkImageData.h>
+#include <vtkPVRenderView.h>
+#include <vtkProperty.h>
+
+PYBIND11_VTK_TYPECASTER(vtkImageData)
+
+namespace py = pybind11;
+
+namespace tomviz {
+namespace pipeline {
+
+// Default ITK segmentation script — same as ModuleSegment's default.
+static const char* DEFAULT_SCRIPT =
+  "def run_itk_segmentation(itk_image, itk_image_type):\n"
+  "    # should return the result image and result image type like this:\n"
+  "    # return outImage, outImageType\n"
+  "    # An example segmentation script follows: \n\n"
+  "    # Create a filter (ConfidenceConnectedImageFilter) for the input "
+  "image type\n"
+  "    itk_filter = "
+  "itk.ConfidenceConnectedImageFilter[itk_image_type,itk.Image.SS3].New()\n\n"
+  "    # Set input parameters on the filter (these are copied from an "
+  "example in ITK.\n"
+  "    itk_filter.SetInitialNeighborhoodRadius(3)\n"
+  "    itk_filter.SetMultiplier(3)\n"
+  "    itk_filter.SetNumberOfIterations(25)\n"
+  "    itk_filter.SetReplaceValue(255)\n"
+  "    itk_filter.SetSeed((24,65,37))\n\n"
+  "    # Hand the input image to the filter\n"
+  "    itk_filter.SetInput(itk_image)\n"
+  "    # Run the filter\n"
+  "    itk_filter.Update()\n\n"
+  "    # Return the output and the output type (itk.Image.SS3 is one of "
+  "the valid output\n"
+  "    # types for this filter and is the one we specified when we created "
+  "the filter above\n"
+  "    return itk_filter.GetOutput(), itk.Image.SS3\n";
+
+// Wrapper script template that embeds the user script and handles
+// VTK <-> ITK conversion — matches ModuleSegment::onPropertyChanged().
+static const char* WRAPPER_TEMPLATE =
+  "import vtk\n"
+  "from tomviz import utils\n"
+  "import itk\n"
+  "\n"
+  "array = utils.get_array(dataset)\n"
+  "original_origin = dataset.GetOrigin()\n"
+  "original_extent = dataset.GetExtent()\n"
+  "original_spacing = dataset.GetSpacing()\n"
+  "\n"
+  "itk_image_type = itk.Image.F3\n"
+  "itk_converter = itk.PyBuffer[itk_image_type]\n"
+  "itk_image = itk_converter.GetImageFromArray(array)\n"
+  "\n"
+  "%1\n"
+  "\n"
+  "output_itk_image, output_type = run_itk_segmentation(itk_image, "
+  "itk_image_type)\n"
+  "\n"
+  "output_array = "
+  "itk.PyBuffer[output_type].GetArrayFromImage(output_itk_image)\n"
+  "utils.set_array(dataset, output_array)\n"
+  "\n"
+  "if array.shape == output_array.shape:\n"
+  "    dataset.SetOrigin(original_origin)\n"
+  "    dataset.SetExtent(original_extent)\n"
+  "    dataset.SetSpacing(original_spacing)\n";
+
+SegmentSink::SegmentSink(QObject* parent) : LegacyModuleSink(parent)
+{
+  addInput("volume", PortType::Volume);
+  setLabel("Segment");
+
+  m_script = DEFAULT_SCRIPT;
+
+  m_contour->SetValue(0, m_contourValue);
+  m_property->SetRepresentationToSurface();
+  m_property->SetSpecular(1.0);
+  m_property->SetSpecularPower(100.0);
+
+  m_mapper->SetInputConnection(m_contour->GetOutputPort());
+  m_actor->SetMapper(m_mapper);
+  m_actor->SetProperty(m_property);
+}
+
+SegmentSink::~SegmentSink()
+{
+  finalize();
+}
+
+bool SegmentSink::isColorMapNeeded() const
+{
+  return true;
+}
+
+bool SegmentSink::initialize(vtkSMViewProxy* view)
+{
+  if (!LegacyModuleSink::initialize(view)) {
+    return false;
+  }
+
+  renderView()->AddPropToRenderer(m_actor);
+  renderView()->Update();
+  return true;
+}
+
+bool SegmentSink::finalize()
+{
+  if (renderView()) {
+    renderView()->RemovePropFromRenderer(m_actor);
+  }
+  return LegacyModuleSink::finalize();
+}
+
+bool SegmentSink::runSegmentation(vtkImageData* input)
+{
+  m_segmentedData->DeepCopy(input);
+
+  bool ownInterpreter = false;
+  if (!Py_IsInitialized()) {
+    py::initialize_interpreter();
+    ownInterpreter = true;
+  }
+
+  bool success = false;
+  try {
+    py::gil_scoped_acquire gil;
+
+    // Build the wrapper script (embeds the user's segmentation function)
+    QString wrapperScript = QString(WRAPPER_TEMPLATE).arg(m_script);
+
+    // Create namespace and inject the DeepCopied vtkImageData as 'dataset'
+    py::dict ns;
+    ns["dataset"] =
+      py::cast(static_cast<vtkImageData*>(m_segmentedData.Get()),
+               py::return_value_policy::reference);
+
+    py::exec(py::str(wrapperScript.toStdString()), ns);
+    success = true;
+  } catch (const py::error_already_set& e) {
+    qWarning("SegmentSink Python error: %s", e.what());
+  } catch (const std::exception& e) {
+    qWarning("SegmentSink error: %s", e.what());
+  }
+
+  if (ownInterpreter) {
+    py::finalize_interpreter();
+  }
+
+  return success;
+}
+
+bool SegmentSink::consume(const QMap<QString, PortData>& inputs)
+{
+  if (!validateInput(inputs, "volume")) {
+    return false;
+  }
+
+  auto volume = inputs["volume"].value<VolumeDataPtr>();
+  if (!volume || !volume->isValid()) {
+    return false;
+  }
+
+  auto* imageData = volume->imageData();
+
+  // Run segmentation script; fall back to original input on failure
+  vtkImageData* contourInput = imageData;
+  if (!m_script.isEmpty()) {
+    if (runSegmentation(imageData)) {
+      contourInput = m_segmentedData;
+    }
+  }
+
+  m_contour->SetInputData(contourInput);
+  m_contour->SetValue(0, m_contourValue);
+  m_actor->SetVisibility(visibility() ? 1 : 0);
+
+  if (renderView()) {
+    renderView()->Update();
+  }
+
+  emit renderNeeded();
+  return true;
+}
+
+QString SegmentSink::script() const
+{
+  return m_script;
+}
+
+void SegmentSink::setScript(const QString& script)
+{
+  m_script = script;
+}
+
+double SegmentSink::contourValue() const
+{
+  return m_contourValue;
+}
+
+void SegmentSink::setContourValue(double value)
+{
+  m_contourValue = value;
+  m_contour->SetValue(0, value);
+  emit renderNeeded();
+}
+
+double SegmentSink::opacity() const
+{
+  return m_property->GetOpacity();
+}
+
+void SegmentSink::setOpacity(double value)
+{
+  m_property->SetOpacity(value);
+  emit renderNeeded();
+}
+
+double SegmentSink::specular() const
+{
+  return m_property->GetSpecular();
+}
+
+void SegmentSink::setSpecular(double value)
+{
+  m_property->SetSpecular(value);
+  emit renderNeeded();
+}
+
+int SegmentSink::representation() const
+{
+  return m_property->GetRepresentation();
+}
+
+void SegmentSink::setRepresentation(int rep)
+{
+  m_property->SetRepresentation(rep);
+  emit renderNeeded();
+}
+
+QJsonObject SegmentSink::serialize() const
+{
+  auto json = LegacyModuleSink::serialize();
+  json["contourValue"] = m_contourValue;
+  json["opacity"] = m_property->GetOpacity();
+  json["specular"] = m_property->GetSpecular();
+  json["representation"] = m_property->GetRepresentation();
+  json["script"] = m_script;
+  return json;
+}
+
+bool SegmentSink::deserialize(const QJsonObject& json)
+{
+  if (!LegacyModuleSink::deserialize(json)) {
+    return false;
+  }
+  if (json.contains("contourValue")) {
+    setContourValue(json["contourValue"].toDouble());
+  }
+  if (json.contains("opacity")) {
+    setOpacity(json["opacity"].toDouble());
+  }
+  if (json.contains("specular")) {
+    setSpecular(json["specular"].toDouble());
+  }
+  if (json.contains("representation")) {
+    setRepresentation(json["representation"].toInt());
+  }
+  if (json.contains("script")) {
+    setScript(json["script"].toString());
+  }
+  return true;
+}
+
+} // namespace pipeline
+} // namespace tomviz

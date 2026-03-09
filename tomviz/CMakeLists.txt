@@ -269,8 +269,6 @@ set(SOURCES
   vtkLengthScaleRepresentation.cxx
   vtkActiveScalarsProducer.h
   vtkActiveScalarsProducer.cxx
-  vtkNonOrthoImagePlaneWidget.cxx
-  vtkNonOrthoImagePlaneWidget.h
   vtkOMETiffReader.cxx
   vtkOMETiffReader.h
   vtkTriangleBar.cxx
@@ -785,6 +783,7 @@ set_target_properties(tomviz PROPERTIES ENABLE_EXPORTS TRUE)
 target_link_libraries(tomvizlib
   PUBLIC
     tomvizcore
+    tomviz_pipeline
     ParaView::pqApplicationComponents
     ParaView::pqPython
     ParaView::RemotingExport

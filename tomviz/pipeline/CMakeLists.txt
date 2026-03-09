@@ -25,7 +25,20 @@ set(SOURCES
   transforms/ThresholdTransform.cxx
   transforms/LegacyPythonTransform.cxx
   sinks/VolumeStatsSink.cxx
-  PipelineStripWidget.cxx)
+  sinks/LegacyModuleSink.cxx
+  sinks/VolumeSink.cxx
+  sinks/SliceSink.cxx
+  sinks/ContourSink.cxx
+  sinks/ThresholdSink.cxx
+  sinks/SegmentSink.cxx
+  sinks/OutlineSink.cxx
+  sinks/ClipSink.cxx
+  sinks/RulerSink.cxx
+  sinks/ScaleCubeSink.cxx
+  sinks/PlotSink.cxx
+  sinks/MoleculeSink.cxx
+  PipelineStripWidget.cxx
+  vtkNonOrthoImagePlaneWidget.cxx)
 
 set(HEADERS
   PortType.h
@@ -52,7 +65,20 @@ set(HEADERS
   transforms/LegacyPythonTransform.h
   pybind11/PybindVTKTypeCaster.h
   sinks/VolumeStatsSink.h
-  PipelineStripWidget.h)
+  sinks/LegacyModuleSink.h
+  sinks/VolumeSink.h
+  sinks/SliceSink.h
+  sinks/ContourSink.h
+  sinks/ThresholdSink.h
+  sinks/SegmentSink.h
+  sinks/OutlineSink.h
+  sinks/ClipSink.h
+  sinks/RulerSink.h
+  sinks/ScaleCubeSink.h
+  sinks/PlotSink.h
+  sinks/MoleculeSink.h
+  PipelineStripWidget.h
+  vtkNonOrthoImagePlaneWidget.h)
 
 qt_add_resources(PIPELINE_RESOURCES pipeline_icons.qrc)
 
@@ -62,7 +88,16 @@ generate_export_header(tomviz_pipeline)
 target_link_libraries(tomviz_pipeline
   PUBLIC Qt6::Core Qt6::Widgets VTK::CommonCore VTK::CommonDataModel
   PRIVATE Python3::Python pybind11::embed VTK::WrappingPythonCore
-          VTK::IOImage VTK::IOXML VTK::IOLegacy)
+          VTK::IOImage VTK::IOXML VTK::IOLegacy
+          VTK::RenderingCore VTK::RenderingVolume
+          VTK::RenderingVolumeOpenGL2
+          VTK::FiltersCore VTK::FiltersSources VTK::FiltersGeneral
+          VTK::FiltersModeling
+          VTK::DomainsChemistry
+          VTK::InteractionWidgets VTK::ImagingCore
+          VTK::RenderingGridAxes
+          VTK::ChartsCore VTK::ViewsContext2D
+          ParaView::RemotingViews)
 target_include_directories(tomviz_pipeline
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>

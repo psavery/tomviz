@@ -99,3 +99,13 @@ target_include_directories(pipelineStripDemo BEFORE PRIVATE
   ${PROJECT_SOURCE_DIR}/tomviz/pipeline
   ${PROJECT_BINARY_DIR}/tomviz/pipeline)
 target_link_libraries(pipelineStripDemo tomviz_pipeline Qt6::Widgets)
+
+# Manual demo app for visually testing pipeline Sinks with ParaView views
+add_executable(pipelineSinkDemo PipelineSinkDemo.cxx)
+target_include_directories(pipelineSinkDemo BEFORE PRIVATE
+  ${PROJECT_SOURCE_DIR}/tomviz/pipeline
+  ${PROJECT_BINARY_DIR}/tomviz/pipeline)
+target_link_libraries(pipelineSinkDemo
+  tomviz_pipeline
+  ParaView::pqApplicationComponents
+  Qt6::Widgets)

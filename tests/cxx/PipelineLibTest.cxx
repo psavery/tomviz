@@ -20,6 +20,18 @@
 
 #include "data/VolumeData.h"
 #include "sinks/VolumeStatsSink.h"
+#include "sinks/LegacyModuleSink.h"
+#include "sinks/VolumeSink.h"
+#include "sinks/SliceSink.h"
+#include "sinks/ContourSink.h"
+#include "sinks/ThresholdSink.h"
+#include "sinks/SegmentSink.h"
+#include "sinks/OutlineSink.h"
+#include "sinks/ClipSink.h"
+#include "sinks/RulerSink.h"
+#include "sinks/ScaleCubeSink.h"
+#include "sinks/PlotSink.h"
+#include "sinks/MoleculeSink.h"
 #include "sources/SphereSource.h"
 #include "sources/DataReader.h"
 #include "sources/ReaderSourceNode.h"
@@ -38,6 +50,8 @@
 #undef slots
 #include <pybind11/embed.h>
 #pragma pop_macro("slots")
+
+#include <vector>
 
 #include <vtkFloatArray.h>
 #include <vtkImageData.h>
@@ -1340,6 +1354,149 @@ TEST_F(PipelineLibTest, ThreadedExecutorBreakpoint)
   EXPECT_FALSE(future->succeeded());
   EXPECT_EQ(reachedNode, t1);
   EXPECT_NE(t1->state(), NodeState::Current);
+}
+
+// --- LegacyModuleSink / visualization sink tests ---
+
+TEST_F(PipelineLibTest, VolumeSinkConsumeWithSphereSource)
+{
+  auto* source = new SphereSource();
+  source->setDimensions(8, 8, 8);
+  pipeline->addNode(source);
+
+  auto* sink = new VolumeSink();
+  pipeline->addNode(sink);
+
+  pipeline->createLink(source->outputPort("volume"),
+                       sink->inputPort("volume"));
+
+  source->execute();
+  auto* future = pipeline->execute();
+
+  EXPECT_TRUE(future->isFinished());
+  EXPECT_TRUE(future->succeeded());
+  EXPECT_EQ(sink->state(), NodeState::Current);
+}
+
+TEST_F(PipelineLibTest, VisibilityToggling)
+{
+  auto* sink = new VolumeSink();
+
+  EXPECT_TRUE(sink->visibility());
+
+  QSignalSpy spy(sink, &LegacyModuleSink::visibilityChanged);
+
+  sink->setVisibility(false);
+  EXPECT_FALSE(sink->visibility());
+  EXPECT_EQ(spy.count(), 1);
+  EXPECT_EQ(spy.at(0).at(0).toBool(), false);
+
+  // Setting same value should not emit again
+  sink->setVisibility(false);
+  EXPECT_EQ(spy.count(), 1);
+
+  sink->setVisibility(true);
+  EXPECT_TRUE(sink->visibility());
+  EXPECT_EQ(spy.count(), 2);
+
+  delete sink;
+}
+
+TEST_F(PipelineLibTest, ColorMapFlags)
+{
+  // Sinks that need a colormap
+  VolumeSink volumeSink;
+  SliceSink sliceSink;
+  ContourSink contourSink;
+  ThresholdSink thresholdSink;
+  SegmentSink segmentSink;
+
+  EXPECT_TRUE(volumeSink.isColorMapNeeded());
+  EXPECT_TRUE(sliceSink.isColorMapNeeded());
+  EXPECT_TRUE(contourSink.isColorMapNeeded());
+  EXPECT_TRUE(thresholdSink.isColorMapNeeded());
+  EXPECT_TRUE(segmentSink.isColorMapNeeded());
+
+  // Sinks that do not need a colormap
+  OutlineSink outlineSink;
+  ClipSink clipSink;
+  RulerSink rulerSink;
+  ScaleCubeSink scaleCubeSink;
+  PlotSink plotSink;
+  MoleculeSink moleculeSink;
+
+  EXPECT_FALSE(outlineSink.isColorMapNeeded());
+  EXPECT_FALSE(clipSink.isColorMapNeeded());
+  EXPECT_FALSE(rulerSink.isColorMapNeeded());
+  EXPECT_FALSE(scaleCubeSink.isColorMapNeeded());
+  EXPECT_FALSE(plotSink.isColorMapNeeded());
+  EXPECT_FALSE(moleculeSink.isColorMapNeeded());
+}
+
+TEST_F(PipelineLibTest, VolumeToTablePortRejection)
+{
+  // A Volume source should not connect to a Table input (PlotSink)
+  auto* source = new SphereSource();
+  source->setDimensions(8, 8, 8);
+  pipeline->addNode(source);
+
+  auto* plotSink = new PlotSink();
+  pipeline->addNode(plotSink);
+
+  auto* link = pipeline->createLink(source->outputPort("volume"),
+                                    plotSink->inputPort("table"));
+  EXPECT_EQ(link, nullptr);
+}
+
+TEST_F(PipelineLibTest, SerializationRoundTrip)
+{
+  auto* sink = new VolumeSink();
+  sink->setLabel("My Volume View");
+  sink->setVisibility(false);
+
+  QJsonObject json = sink->serialize();
+  EXPECT_EQ(json["label"].toString(), "My Volume View");
+  EXPECT_EQ(json["visible"].toBool(), false);
+
+  // Deserialize into a fresh sink
+  auto* sink2 = new VolumeSink();
+  EXPECT_TRUE(sink2->deserialize(json));
+  EXPECT_EQ(sink2->label(), "My Volume View");
+  EXPECT_FALSE(sink2->visibility());
+
+  delete sink;
+  delete sink2;
+}
+
+TEST_F(PipelineLibTest, AllVolumeSinksAcceptVolume)
+{
+  // Verify all volume-input sinks work in a pipeline with SphereSource
+  auto* source = new SphereSource();
+  source->setDimensions(8, 8, 8);
+  pipeline->addNode(source);
+  source->execute();
+
+  // Create one of each volume-input sink type
+  std::vector<LegacyModuleSink*> sinks = {
+    new SliceSink(), new ContourSink(), new ThresholdSink(),
+    new SegmentSink(), new OutlineSink(), new ClipSink(),
+    new RulerSink(), new ScaleCubeSink()
+  };
+
+  for (auto* sink : sinks) {
+    pipeline->addNode(sink);
+    pipeline->createLink(source->outputPort("volume"),
+                         sink->inputPort("volume"));
+  }
+
+  auto* future = pipeline->execute();
+
+  EXPECT_TRUE(future->isFinished());
+  EXPECT_TRUE(future->succeeded());
+
+  for (auto* sink : sinks) {
+    EXPECT_EQ(sink->state(), NodeState::Current) << sink->label().toStdString();
+  }
 }
 
 int main(int argc, char** argv)

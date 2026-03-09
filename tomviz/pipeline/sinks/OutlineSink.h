@@ -1,0 +1,71 @@
+/* This source file is part of the Tomviz project, https://tomviz.org/.
+   It is released under the 3-Clause BSD License, see "LICENSE". */
+
+#ifndef tomvizPipelineOutlineSink_h
+#define tomvizPipelineOutlineSink_h
+
+#include "tomviz_pipeline_export.h"
+
+#include "LegacyModuleSink.h"
+
+#include <vtkNew.h>
+
+class vtkActor;
+class vtkGridAxesActor3D;
+class vtkOutlineFilter;
+class vtkPolyDataMapper;
+class vtkProperty;
+
+namespace tomviz {
+namespace pipeline {
+
+/// Bounding-box outline visualization sink with optional grid axes.
+/// Matches the old ModuleOutline: outline box + configurable grid axes actor
+/// with axis labels/titles.
+class TOMVIZ_PIPELINE_EXPORT OutlineSink : public LegacyModuleSink
+{
+  Q_OBJECT
+
+public:
+  OutlineSink(QObject* parent = nullptr);
+  ~OutlineSink() override;
+
+  bool initialize(vtkSMViewProxy* view) override;
+  bool finalize() override;
+
+  QJsonObject serialize() const override;
+  bool deserialize(const QJsonObject& json) override;
+
+  void setColor(double r, double g, double b);
+
+  /// Grid axes visibility.
+  bool showGridAxes() const;
+  void setShowGridAxes(bool show);
+
+  /// Custom axis titles.
+  QString xTitle() const;
+  void setXTitle(const QString& title);
+  QString yTitle() const;
+  void setYTitle(const QString& title);
+  QString zTitle() const;
+  void setZTitle(const QString& title);
+
+protected:
+  bool consume(const QMap<QString, PortData>& inputs) override;
+
+private:
+  vtkNew<vtkOutlineFilter> m_outlineFilter;
+  vtkNew<vtkPolyDataMapper> m_mapper;
+  vtkNew<vtkActor> m_actor;
+  vtkNew<vtkProperty> m_property;
+  vtkNew<vtkGridAxesActor3D> m_gridAxes;
+  bool m_showGridAxes = false;
+  QString m_xTitle = "X";
+  QString m_yTitle = "Y";
+  QString m_zTitle = "Z";
+};
+
+} // namespace pipeline
+} // namespace tomviz
+
+#endif
