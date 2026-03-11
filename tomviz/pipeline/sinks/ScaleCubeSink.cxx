@@ -57,7 +57,6 @@ bool ScaleCubeSink::initialize(vtkSMViewProxy* view)
 
   renderView()->AddPropToRenderer(m_actor);
   renderView()->AddPropToRenderer(m_textActor);
-  renderView()->Update();
   return true;
 }
 

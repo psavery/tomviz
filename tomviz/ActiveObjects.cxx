@@ -315,4 +315,30 @@ Pipeline* ActiveObjects::activePipeline() const
   return nullptr;
 }
 
+void ActiveObjects::setActivePipeline(pipeline::Pipeline* p)
+{
+  if (m_activeNewPipeline != p) {
+    m_activeNewPipeline = p;
+    emit activePipelineChanged(p);
+  }
+}
+
+pipeline::Pipeline* ActiveObjects::activeNewPipeline() const
+{
+  return m_activeNewPipeline;
+}
+
+void ActiveObjects::setActiveNode(pipeline::Node* node)
+{
+  if (m_activeNode != node) {
+    m_activeNode = node;
+    emit activeNodeChanged(node);
+  }
+}
+
+pipeline::Node* ActiveObjects::activeNode() const
+{
+  return m_activeNode;
+}
+
 } // end of namespace tomviz

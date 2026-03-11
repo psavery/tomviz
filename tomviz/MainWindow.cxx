@@ -39,6 +39,14 @@
 #include "LoadTimeSeriesReaction.h"
 #include "ModuleManager.h"
 #include "ModuleMenu.h"
+#include "PipelineModuleMenu.h"
+#include "pipeline/Pipeline.h"
+#include "pipeline/PipelineStripWidget.h"
+#include "pipeline/Node.h"
+#include "pipeline/TransformNode.h"
+#include "pipeline/OutputPort.h"
+#include "pipeline/sinks/LegacyModuleSink.h"
+#include "pipeline/VolumePropertiesWidget.h"
 #include "ModulePropertiesPanel.h"
 #include "OperatorFactory.h"
 #include "OperatorProxy.h"
@@ -204,14 +212,13 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   connect(&ActiveObjects::instance(), &ActiveObjects::operatorActivated,
           m_ui->centralWidget, &CentralWidget::setActiveOperator);
 
-  m_ui->treeWidget->setModel(new PipelineModel(this));
-  m_ui->treeWidget->initLayout();
-
-  // Ensure that items are expanded by default, can be collapsed at will.
-  connect(m_ui->treeWidget->model(), &QAbstractItemModel::rowsInserted,
-          m_ui->treeWidget, &QTreeView::expandAll);
-  connect(m_ui->treeWidget->model(), &QAbstractItemModel::modelReset,
-          m_ui->treeWidget, &QTreeView::expandAll);
+  // Create pipeline strip widget in the left dock
+  m_pipelineStrip = new pipeline::PipelineStripWidget(this);
+  m_ui->pipelineContainerLayout->addWidget(m_pipelineStrip);
+  connect(m_pipelineStrip, &pipeline::PipelineStripWidget::nodeSelected,
+          this, &MainWindow::onNodeSelected);
+  connect(m_pipelineStrip, &pipeline::PipelineStripWidget::portSelected,
+          this, &MainWindow::onPortSelected);
 
   // connect quit.
   connect(m_ui->actionExit, &QAction::triggered, this, &MainWindow::close);
@@ -476,7 +483,7 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
                                  readInJSONDescription("AddPoissonNoise"));
 
   //#################################################################
-  new ModuleMenu(m_ui->modulesToolbar, m_ui->menuModules, this);
+  new PipelineModuleMenu(m_ui->modulesToolbar, m_ui->menuModules, this);
   new RecentFilesMenu(*m_ui->menuRecentlyOpened, m_ui->menuRecentlyOpened);
 
   new SaveDataReaction(m_ui->actionSaveData);
@@ -1186,6 +1193,74 @@ void MainWindow::findPipelineTemplates() {
   QAction* actionSaveTemplate = m_pipelineTemplates->addAction("Save Template");
   new SaveLoadTemplateReaction(actionSaveTemplate);
   connect(actionSaveTemplate, &QAction::triggered, this, &MainWindow::findPipelineTemplates);
+}
+
+void MainWindow::setPipeline(pipeline::Pipeline* p)
+{
+  m_pipeline = p;
+  m_pipelineStrip->setPipeline(p);
+  ActiveObjects::instance().setActivePipeline(p);
+}
+
+pipeline::Pipeline* MainWindow::pipeline() const
+{
+  return m_pipeline;
+}
+
+void MainWindow::onNodeSelected(pipeline::Node* node)
+{
+  // Clear previous dynamic widget
+  if (m_dynamicPropertiesWidget) {
+    m_ui->propertiesPanelStackedWidget->removeWidget(m_dynamicPropertiesWidget);
+    delete m_dynamicPropertiesWidget;
+    m_dynamicPropertiesWidget = nullptr;
+  }
+
+  if (!node) {
+    m_ui->propertiesPanelStackedWidget->setCurrentWidget(m_ui->empty);
+    return;
+  }
+
+  QWidget* propsWidget = nullptr;
+
+  if (auto* sink = dynamic_cast<pipeline::LegacyModuleSink*>(node)) {
+    propsWidget = sink->createPropertiesWidget(
+      m_ui->propertiesPanelStackedWidget);
+  } else if (auto* transform = dynamic_cast<pipeline::TransformNode*>(node)) {
+    if (transform->hasPropertiesWidget()) {
+      propsWidget = transform->createPropertiesWidget(
+        m_ui->propertiesPanelStackedWidget);
+    }
+  }
+
+  if (propsWidget) {
+    m_dynamicPropertiesWidget = propsWidget;
+    m_ui->propertiesPanelStackedWidget->addWidget(propsWidget);
+    m_ui->propertiesPanelStackedWidget->setCurrentWidget(propsWidget);
+  } else {
+    m_ui->propertiesPanelStackedWidget->setCurrentWidget(m_ui->empty);
+  }
+}
+
+void MainWindow::onPortSelected(pipeline::OutputPort* port)
+{
+  // Clear previous dynamic widget
+  if (m_dynamicPropertiesWidget) {
+    m_ui->propertiesPanelStackedWidget->removeWidget(m_dynamicPropertiesWidget);
+    delete m_dynamicPropertiesWidget;
+    m_dynamicPropertiesWidget = nullptr;
+  }
+
+  if (port && port->type() == pipeline::PortType::Volume) {
+    auto* propsWidget =
+      new pipeline::VolumePropertiesWidget(m_ui->propertiesPanelStackedWidget);
+    propsWidget->setOutputPort(port);
+    m_dynamicPropertiesWidget = propsWidget;
+    m_ui->propertiesPanelStackedWidget->addWidget(propsWidget);
+    m_ui->propertiesPanelStackedWidget->setCurrentWidget(propsWidget);
+  } else {
+    m_ui->propertiesPanelStackedWidget->setCurrentWidget(m_ui->empty);
+  }
 }
 
 } // namespace tomviz

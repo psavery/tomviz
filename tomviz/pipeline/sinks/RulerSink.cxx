@@ -41,7 +41,6 @@ bool RulerSink::initialize(vtkSMViewProxy* view)
   }
 
   renderView()->AddPropToRenderer(m_actor);
-  renderView()->Update();
   return true;
 }
 

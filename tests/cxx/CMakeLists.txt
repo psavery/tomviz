@@ -9,8 +9,10 @@ include_directories(SYSTEM
   ${PARAVIEW_INCLUDE_DIRS}
   ${GTEST_INCLUDE_DIRS})
 include_directories(${PROJECT_SOURCE_DIR}/tomviz)
-include_directories(${PROJECT_SOURCE_DIR}/tomviz/modules)
-include_directories(${PROJECT_SOURCE_DIR}/tomviz/operators)
+include_directories(${PROJECT_SOURCE_DIR}/tomviz/legacy)
+include_directories(${PROJECT_SOURCE_DIR}/tomviz/legacy/modules)
+include_directories(${PROJECT_SOURCE_DIR}/tomviz/legacy/operators)
+include_directories(${PROJECT_SOURCE_DIR}/tomviz/legacy/core)
 include_directories(${PROJECT_SOURCE_DIR}/tomviz/animations)
 include_directories(${PROJECT_SOURCE_DIR}/tomviz/loguru)
 include_directories(${PROJECT_SOURCE_DIR}/tomviz/acquisition)

@@ -28,6 +28,13 @@ class Operator;
 struct OperatorDescription;
 class OperatorResult;
 
+namespace pipeline {
+class Node;
+class OutputPort;
+class Pipeline;
+class PipelineStripWidget;
+} // namespace pipeline
+
 /// The main window for the tomviz application.
 class MainWindow : public QMainWindow
 {
@@ -37,6 +44,9 @@ public:
   MainWindow(QWidget* parent = nullptr, Qt::WindowFlags flags = Qt::WindowFlags());
   ~MainWindow() override;
   void openFiles(int argc, char** argv);
+
+  void setPipeline(pipeline::Pipeline* p);
+  pipeline::Pipeline* pipeline() const;
 
 protected:
   void showEvent(QShowEvent* event) override;
@@ -49,6 +59,8 @@ public slots:
   void openRecon();
 
 private slots:
+  void onNodeSelected(pipeline::Node* node);
+  void onPortSelected(pipeline::OutputPort* port);
   void openTilt();
   void openDataLink();
   void openReadTheDocs();
@@ -108,6 +120,11 @@ private:
   QMenu* m_pipelineTemplates = nullptr;
   QTimer* m_timer = nullptr;
   bool m_isFirstShow = true;
+
+  // New pipeline infrastructure
+  pipeline::PipelineStripWidget* m_pipelineStrip = nullptr;
+  pipeline::Pipeline* m_pipeline = nullptr;
+  QWidget* m_dynamicPropertiesWidget = nullptr;
 
   // Lazily loaded dialogs
   QWidget* m_aboutDialog = nullptr;

@@ -73,16 +73,16 @@ set(SOURCES
   DataPropertiesModel.h
   DataPropertiesPanel.cxx
   DataPropertiesPanel.h
-  DataSource.cxx
-  DataSource.h
+  legacy/DataSource.cxx
+  legacy/DataSource.h
   DataTransformMenu.cxx
   DataTransformMenu.h
   DeleteDataReaction.cxx
   DeleteDataReaction.h
-  DockerExecutor.cxx
-  DockerExecutor.h
-  DockerUtilities.cxx
-  DockerUtilities.h
+  legacy/DockerExecutor.cxx
+  legacy/DockerExecutor.h
+  legacy/DockerUtilities.cxx
+  legacy/DockerUtilities.h
   DoubleSliderWidget.cxx
   DoubleSliderWidget.h
   DoubleSpinBox.cxx
@@ -93,8 +93,8 @@ set(SOURCES
   EmdFormat.h
   ExportDataReaction.cxx
   ExportDataReaction.h
-  ExternalPythonExecutor.cxx
-  ExternalPythonExecutor.h
+  legacy/ExternalPythonExecutor.cxx
+  legacy/ExternalPythonExecutor.h
   FileFormatManager.cxx
   FileFormatManager.h
   FxiFormat.cxx
@@ -149,22 +149,22 @@ set(SOURCES
   MoleculePropertiesPanel.h
   MoveActiveObject.cxx
   MoveActiveObject.h
-  Pipeline.cxx
-  Pipeline.h
-  PipelineExecutor.cxx
-  PipelineExecutor.h
-  PipelineManager.cxx
-  PipelineManager.h
-  PipelineModel.cxx
-  PipelineModel.h
-  PipelineProxy.cxx
-  PipelineProxy.h
-  PipelineView.cxx
-  PipelineView.h
-  PipelineWorker.cxx
-  PipelineWorker.h
-  PipelineSettingsDialog.cxx
-  PipelineSettingsDialog.h
+  legacy/Pipeline.cxx
+  legacy/Pipeline.h
+  legacy/PipelineExecutor.cxx
+  legacy/PipelineExecutor.h
+  legacy/PipelineManager.cxx
+  legacy/PipelineManager.h
+  legacy/PipelineModel.cxx
+  legacy/PipelineModel.h
+  legacy/PipelineProxy.cxx
+  legacy/PipelineProxy.h
+  legacy/PipelineView.cxx
+  legacy/PipelineView.h
+  legacy/PipelineWorker.cxx
+  legacy/PipelineWorker.h
+  legacy/PipelineSettingsDialog.cxx
+  legacy/PipelineSettingsDialog.h
   PresetDialog.cxx
   PresetDialog.h
   PresetModel.cxx
@@ -231,8 +231,8 @@ set(SOURCES
   SliceViewDialog.h
   SpinBox.cxx
   SpinBox.h
-  ThreadedExecutor.cxx
-  ThreadedExecutor.h
+  legacy/ThreadedExecutor.cxx
+  legacy/ThreadedExecutor.h
   TimeSeriesLabel.h
   TimeSeriesLabel.cxx
   TimeSeriesStep.h
@@ -284,50 +284,53 @@ list(APPEND SOURCES
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/loguru)
 
 list(APPEND SOURCES
-  modules/Module.cxx
-  modules/Module.h
-  modules/ModuleClip.cxx
-  modules/ModuleClip.h
-  modules/ModuleContour.cxx
-  modules/ModuleContour.h
-  modules/ModuleContourWidget.cxx
-  modules/ModuleContourWidget.h
-  modules/ModuleFactory.cxx
-  modules/ModuleFactory.h
-  modules/ModuleManager.cxx
-  modules/ModuleManager.h
-  modules/ModuleScaleCube.cxx
-  modules/ModuleScaleCube.h
-  modules/ModuleScaleCubeWidget.cxx
-  modules/ModuleScaleCubeWidget.h
-  modules/ModuleMenu.cxx
-  modules/ModuleMenu.h
-  modules/ModuleMolecule.cxx
-  modules/ModuleMolecule.h
-  modules/ModuleOutline.cxx
-  modules/ModuleOutline.h
-  modules/ModulePlot.cxx
-  modules/ModulePlot.h
-  modules/ModulePropertiesPanel.cxx
-  modules/ModulePropertiesPanel.h
-  modules/ModuleRuler.cxx
-  modules/ModuleRuler.h
-  modules/ModuleSegment.cxx
-  modules/ModuleSegment.h
-  modules/ModuleSlice.cxx
-  modules/ModuleSlice.h
-  modules/ModuleThreshold.cxx
-  modules/ModuleThreshold.h
-  modules/ModuleVolume.cxx
-  modules/ModuleVolume.h
-  modules/ModuleVolumeWidget.cxx
-  modules/ModuleVolumeWidget.h
-  modules/ScalarsComboBox.cxx
-  modules/ScalarsComboBox.h
-  modules/VolumeManager.cxx
-  modules/VolumeManager.h
+  legacy/modules/Module.cxx
+  legacy/modules/Module.h
+  legacy/modules/ModuleClip.cxx
+  legacy/modules/ModuleClip.h
+  legacy/modules/ModuleContour.cxx
+  legacy/modules/ModuleContour.h
+  legacy/modules/ModuleContourWidget.cxx
+  legacy/modules/ModuleContourWidget.h
+  legacy/modules/ModuleFactory.cxx
+  legacy/modules/ModuleFactory.h
+  legacy/modules/ModuleManager.cxx
+  legacy/modules/ModuleManager.h
+  legacy/modules/ModuleScaleCube.cxx
+  legacy/modules/ModuleScaleCube.h
+  legacy/modules/ModuleScaleCubeWidget.cxx
+  legacy/modules/ModuleScaleCubeWidget.h
+  legacy/modules/ModuleMenu.cxx
+  legacy/modules/ModuleMenu.h
+  legacy/modules/ModuleMolecule.cxx
+  legacy/modules/ModuleMolecule.h
+  legacy/modules/ModuleOutline.cxx
+  legacy/modules/ModuleOutline.h
+  legacy/modules/ModulePlot.cxx
+  legacy/modules/ModulePlot.h
+  legacy/modules/ModulePropertiesPanel.cxx
+  legacy/modules/ModulePropertiesPanel.h
+  legacy/modules/ModuleRuler.cxx
+  legacy/modules/ModuleRuler.h
+  legacy/modules/ModuleSegment.cxx
+  legacy/modules/ModuleSegment.h
+  legacy/modules/ModuleSlice.cxx
+  legacy/modules/ModuleSlice.h
+  legacy/modules/ModuleThreshold.cxx
+  legacy/modules/ModuleThreshold.h
+  legacy/modules/ModuleVolume.cxx
+  legacy/modules/ModuleVolume.h
+  legacy/modules/ModuleVolumeWidget.cxx
+  legacy/modules/ModuleVolumeWidget.h
+  legacy/modules/ScalarsComboBox.cxx
+  legacy/modules/ScalarsComboBox.h
+  legacy/modules/VolumeManager.cxx
+  legacy/modules/VolumeManager.h
 )
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/modules)
+include_directories(
+  ${CMAKE_CURRENT_SOURCE_DIR}/legacy
+  ${CMAKE_CURRENT_SOURCE_DIR}/legacy/modules
+  ${CMAKE_CURRENT_SOURCE_DIR}/legacy/core)
 
 # acquisition/
 list(APPEND SOURCES
@@ -367,50 +370,52 @@ list(APPEND SOURCES
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/acquisition)
 
 list(APPEND SOURCES
-  operators/ArrayWranglerOperator.cxx
-  operators/ArrayWranglerOperator.h
-  operators/ConvertToFloatOperator.cxx
-  operators/ConvertToFloatOperator.h
-  operators/ConvertToVolumeOperator.cxx
-  operators/ConvertToVolumeOperator.h
-  operators/CustomPythonOperatorWidget.cxx
-  operators/CustomPythonOperatorWidget.h
-  operators/CropOperator.cxx
-  operators/CropOperator.h
-  operators/EditOperatorDialog.cxx
-  operators/EditOperatorDialog.h
-  operators/EditOperatorWidget.cxx
-  operators/EditOperatorWidget.h
-  operators/Operator.cxx
-  operators/Operator.h
-  operators/OperatorDialog.cxx
-  operators/OperatorDialog.h
-  operators/OperatorFactory.cxx
-  operators/OperatorFactory.h
-  operators/OperatorPropertiesPanel.cxx
-  operators/OperatorPropertiesPanel.h
-  operators/OperatorProxy.cxx
-  operators/OperatorProxy.h
-  operators/OperatorPython.cxx
-  operators/OperatorPython.h
-  operators/OperatorResult.cxx
-  operators/OperatorResult.h
-  operators/OperatorResultPropertiesPanel.cxx
-  operators/OperatorResultPropertiesPanel.h
-  operators/OperatorWidget.cxx
-  operators/OperatorWidget.h
-  operators/ReconstructionOperator.cxx
-  operators/ReconstructionOperator.h
-  operators/SetTiltAnglesOperator.cxx
-  operators/SetTiltAnglesOperator.h
-  operators/SnapshotOperator.h
-  operators/SnapshotOperator.cxx
-  operators/TranslateAlignOperator.h
-  operators/TranslateAlignOperator.cxx
-  operators/TransposeDataOperator.h
-  operators/TransposeDataOperator.cxx
+  legacy/operators/ArrayWranglerOperator.cxx
+  legacy/operators/ArrayWranglerOperator.h
+  legacy/operators/ConvertToFloatOperator.cxx
+  legacy/operators/ConvertToFloatOperator.h
+  legacy/operators/ConvertToVolumeOperator.cxx
+  legacy/operators/ConvertToVolumeOperator.h
+  legacy/operators/CustomPythonOperatorWidget.cxx
+  legacy/operators/CustomPythonOperatorWidget.h
+  legacy/operators/CropOperator.cxx
+  legacy/operators/CropOperator.h
+  legacy/operators/EditOperatorDialog.cxx
+  legacy/operators/EditOperatorDialog.h
+  legacy/operators/EditOperatorWidget.cxx
+  legacy/operators/EditOperatorWidget.h
+  legacy/operators/Operator.cxx
+  legacy/operators/Operator.h
+  legacy/operators/OperatorDialog.cxx
+  legacy/operators/OperatorDialog.h
+  legacy/operators/OperatorFactory.cxx
+  legacy/operators/OperatorFactory.h
+  legacy/operators/OperatorPropertiesPanel.cxx
+  legacy/operators/OperatorPropertiesPanel.h
+  legacy/operators/OperatorProxy.cxx
+  legacy/operators/OperatorProxy.h
+  legacy/operators/OperatorPython.cxx
+  legacy/operators/OperatorPython.h
+  legacy/operators/OperatorResult.cxx
+  legacy/operators/OperatorResult.h
+  legacy/operators/OperatorResultPropertiesPanel.cxx
+  legacy/operators/OperatorResultPropertiesPanel.h
+  legacy/operators/OperatorWidget.cxx
+  legacy/operators/OperatorWidget.h
+  legacy/operators/ReconstructionOperator.cxx
+  legacy/operators/ReconstructionOperator.h
+  legacy/operators/SetTiltAnglesOperator.cxx
+  legacy/operators/SetTiltAnglesOperator.h
+  legacy/operators/SnapshotOperator.h
+  legacy/operators/SnapshotOperator.cxx
+  legacy/operators/TranslateAlignOperator.h
+  legacy/operators/TranslateAlignOperator.cxx
+  legacy/operators/TransposeDataOperator.h
+  legacy/operators/TransposeDataOperator.cxx
+  PipelineModuleMenu.cxx
+  PipelineModuleMenu.h
 )
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/operators)
+include_directories(${CMAKE_CURRENT_SOURCE_DIR}/legacy/operators)
 
 # animations/
 list(APPEND SOURCES
@@ -424,14 +429,17 @@ list(APPEND SOURCES
   h5cpp/h5readwrite.cpp
 )
 
-set(exec_sources
+list(APPEND SOURCES
   AboutDialog.h
   AboutDialog.cxx
-  main.cxx
   MainWindow.cxx
   MainWindow.h
   WelcomeDialog.cxx
   WelcomeDialog.h
+)
+
+set(exec_sources
+  main.cxx
 )
 
 set(python_files
@@ -644,6 +652,7 @@ set(tomviz_python_modules
   internal_dataset.py
   internal_utils.py
   itkutils.py
+  pipeline_dataset.py
   utils.py
   web.py
   modules.py
@@ -757,7 +766,8 @@ endif()
 include_directories(
   ${CMAKE_CURRENT_BINARY_DIR}/core
   ${CMAKE_CURRENT_BINARY_DIR}
-  ${CMAKE_CURRENT_SOURCE_DIR})
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/core)
 
 configure_file(tomvizConfig.h.in tomvizConfig.h @ONLY)
 configure_file(tomvizPythonConfig.h.in tomvizPythonConfig.h @ONLY)
@@ -765,6 +775,8 @@ configure_file(tomvizPythonConfig.h.in tomvizPythonConfig.h @ONLY)
 add_library(tomvizlib STATIC ${SOURCES} ${accel_srcs})
 if(NOT WIN32)
   set_target_properties(tomvizlib PROPERTIES OUTPUT_NAME tomviz)
+  set_target_properties(tomvizlib PROPERTIES AUTOUIC_SEARCH_PATHS
+      "${CMAKE_CURRENT_SOURCE_DIR}/legacy;${CMAKE_CURRENT_SOURCE_DIR}/legacy/modules;${CMAKE_CURRENT_SOURCE_DIR}/legacy/operators")
 endif()
 
 # Need to set this property so that in stack traces, tomviz symbols

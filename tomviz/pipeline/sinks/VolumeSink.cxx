@@ -78,7 +78,6 @@ bool VolumeSink::initialize(vtkSMViewProxy* view)
   }
 
   renderView()->AddPropToRenderer(m_volume);
-  renderView()->Update();
   return true;
 }
 

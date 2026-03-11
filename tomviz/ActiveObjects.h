@@ -23,6 +23,11 @@ namespace tomviz {
 
 class Pipeline;
 
+namespace pipeline {
+class Pipeline;
+class Node;
+} // namespace pipeline
+
 /// ActiveObjects keeps track of active objects in tomviz.
 /// This is similar to pqActiveObjects in ParaView, however it tracks objects
 /// relevant to tomviz.
@@ -78,8 +83,14 @@ public:
   /// often.
   vtkSMSessionProxyManager* proxyManager() const;
 
-  /// Returns the active pipelines.
+  /// Returns the active legacy pipeline.
   Pipeline* activePipeline() const;
+
+  /// New pipeline tracking
+  void setActivePipeline(pipeline::Pipeline* p);
+  pipeline::Pipeline* activeNewPipeline() const;
+  void setActiveNode(pipeline::Node* node);
+  pipeline::Node* activeNode() const;
 
   /// The "parent" data source is the data source that new operators will be
   /// appended to. i.e. The closes parent of the currently active data source
@@ -209,6 +220,12 @@ signals:
   /// Fired to set image viewer mode
   void setImageViewerMode(bool b);
 
+  /// Fired whenever the active new pipeline changes.
+  void activePipelineChanged(pipeline::Pipeline*);
+
+  /// Fired whenever the active node changes.
+  void activeNodeChanged(pipeline::Node*);
+
   /// Fired when the interaction data source was fixed.
   void interactionDataSourceFixed(DataSource*);
 
@@ -233,6 +250,10 @@ protected:
   QPointer<Operator> m_activeOperator = nullptr;
   QPointer<OperatorResult> m_activeOperatorResult = nullptr;
   QPointer<DataSource> m_fixedInteractionDataSource = nullptr;
+
+  /// New pipeline tracking
+  pipeline::Pipeline* m_activeNewPipeline = nullptr;
+  pipeline::Node* m_activeNode = nullptr;
 
   /// interaction states
   bool m_translationEnabled = false;

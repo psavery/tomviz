@@ -70,7 +70,6 @@ bool OutlineSink::initialize(vtkSMViewProxy* view)
 
   renderView()->AddPropToRenderer(m_actor);
   renderView()->AddPropToRenderer(m_gridAxes);
-  renderView()->Update();
   return true;
 }
 

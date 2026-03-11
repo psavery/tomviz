@@ -13,6 +13,7 @@
 #include "ImageStackDialog.h"
 #include "ImageStackModel.h"
 #include "LoadStackReaction.h"
+#include "MainWindow.h"
 #include "ModuleManager.h"
 #include "MoleculeSource.h"
 #include "Pipeline.h"
@@ -24,6 +25,17 @@
 #include "TimeSeriesStep.h"
 #include "Utilities.h"
 #include "vtkOMETiffReader.h"
+
+#include "pipeline/Pipeline.h"
+#include "pipeline/SourceNode.h"
+#include "pipeline/OutputPort.h"
+#include "pipeline/InputPort.h"
+#include "pipeline/PortData.h"
+#include "pipeline/PortType.h"
+#include "pipeline/ThreadedExecutor.h"
+#include "pipeline/data/VolumeData.h"
+#include "pipeline/sinks/OutlineSink.h"
+#include "pipeline/sinks/VolumeSink.h"
 
 #include <pqActiveObjects.h>
 #include <pqLoadDataReaction.h>
@@ -50,6 +62,7 @@
 #include <vtkTrivialProducer.h>
 #include <vtkXYZMolReader2.h>
 
+#include <QApplication>
 #include <QDebug>
 #include <QFileDialog>
 #include <QFileInfo>
@@ -493,28 +506,38 @@ DataSource* LoadDataReaction::createDataSource(vtkSMProxy* reader,
 }
 
 void LoadDataReaction::dataSourceAdded(DataSource* dataSource,
-                                       bool defaultModules, bool child,
-                                       bool createCameraOrbit)
+                                       bool defaultModules, bool /* child */,
+                                       bool /* createCameraOrbit */)
 {
   if (!dataSource) {
     return;
   }
-  DataSource* previousActiveDataSource =
-    ActiveObjects::instance().activeDataSource();
-  if (child) {
-    ModuleManager::instance().addChildDataSource(dataSource);
-  } else {
-    auto pipeline = new Pipeline(dataSource);
-    PipelineManager::instance().addPipeline(pipeline);
-    // TODO Eventually we shouldn't need to keep track of the data sources,
-    // the pipeline should do that for us.
-    ModuleManager::instance().addDataSource(dataSource);
-    if (defaultModules) {
-      pipeline->addDefaultModules(dataSource);
-    }
+
+  auto* mainWindow = qobject_cast<MainWindow*>(QApplication::activeWindow());
+
+  // Reuse existing pipeline or create a new one
+  pipeline::Pipeline* pip = mainWindow ? mainWindow->pipeline() : nullptr;
+  bool isNewPipeline = false;
+  if (!pip) {
+    pip = new pipeline::Pipeline(mainWindow);
+    pip->setExecutor(new pipeline::ThreadedExecutor(pip));
+    isNewPipeline = true;
   }
 
-  // Work through pathological cases as necessary, prefer active view.
+  // Create source node and set data from the loaded vtkImageData
+  auto* source = new pipeline::SourceNode();
+  source->setLabel(dataSource->label());
+  source->addOutput("volume", pipeline::PortType::Volume);
+  pip->addNode(source);
+
+  // Wrap the loaded vtkImageData as VolumeData and set on output port
+  auto volumeData =
+    std::make_shared<pipeline::VolumeData>(dataSource->imageData());
+  source->setOutputData(
+    "volume",
+    pipeline::PortData(volumeData, pipeline::PortType::Volume));
+
+  // Get view for visualization
   ActiveObjects::instance().createRenderViewIfNeeded();
   auto view = ActiveObjects::instance().activeView();
 
@@ -523,14 +546,29 @@ void LoadDataReaction::dataSourceAdded(DataSource* dataSource,
     view = ActiveObjects::instance().activeView();
   }
 
-  if (!previousActiveDataSource) {
-    pqRenderView* renderView =
-      qobject_cast<pqRenderView*>(pqActiveObjects::instance().activeView());
-    if (renderView && createCameraOrbit) {
-      tomviz::setAnimationNumberOfFrames(200);
-      tomviz::createCameraOrbit(dataSource->proxy(),
-                                renderView->getRenderViewProxy());
-    }
+  if (defaultModules && view) {
+    // Add default sinks (Outline + Volume)
+    auto* outline = new pipeline::OutlineSink();
+    outline->setLabel("Outline");
+    outline->initialize(view);
+    pip->addNode(outline);
+    pip->createLink(source->outputPorts()[0],
+                    outline->inputPorts()[0]);
+
+    auto* volume = new pipeline::VolumeSink();
+    volume->setLabel("Volume");
+    volume->initialize(view);
+    pip->addNode(volume);
+    pip->createLink(source->outputPorts()[0],
+                    volume->inputPorts()[0]);
+  }
+
+  // Execute the pipeline (renders the data)
+  pip->execute();
+
+  // Set on main window if this is a newly created pipeline
+  if (isNewPipeline && mainWindow) {
+    mainWindow->setPipeline(pip);
   }
 }
 

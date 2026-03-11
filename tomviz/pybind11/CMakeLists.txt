@@ -2,10 +2,14 @@ find_package(TBB)
 
 set(CMAKE_MODULE_LINKER_FLAGS "")
 pybind11_add_module(_wrapping
-  OperatorPythonWrapper.cxx
-  PipelineStateManager.cxx
+  ../legacy/pybind11/OperatorPythonWrapper.cxx
+  ../legacy/pybind11/PipelineStateManager.cxx
   PythonTypeConversions.cxx
   Wrapping.cxx)
+target_include_directories(_wrapping PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}/../legacy/pybind11
+  ${CMAKE_CURRENT_SOURCE_DIR}/../legacy/core
+  ${CMAKE_CURRENT_SOURCE_DIR}/../core)
 target_link_libraries(_wrapping
   PRIVATE tomvizcore VTK::CommonDataModel VTK::WrappingPythonCore)
 

@@ -33,7 +33,6 @@ bool MoleculeSink::initialize(vtkSMViewProxy* view)
   }
 
   renderView()->GetRenderer()->AddActor(m_actor);
-  renderView()->Update();
   return true;
 }
 
