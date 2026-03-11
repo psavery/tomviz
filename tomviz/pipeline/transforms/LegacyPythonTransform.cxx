@@ -3,6 +3,7 @@
 
 #include "LegacyPythonTransform.h"
 
+#include "TransformPropertiesWidget.h"
 #include "data/VolumeData.h"
 
 // Qt defines 'slots' as a macro which conflicts with Python's object.h.
@@ -77,6 +78,51 @@ QMap<QString, QVariant> LegacyPythonTransform::parameters() const
 QString LegacyPythonTransform::operatorName() const
 {
   return m_operatorName;
+}
+
+bool LegacyPythonTransform::hasPropertiesWidget() const
+{
+  // Has a widget if the JSON description has parameters
+  QJsonDocument doc = QJsonDocument::fromJson(m_jsonDescription.toUtf8());
+  if (!doc.isObject()) {
+    return false;
+  }
+  QJsonObject obj = doc.object();
+  return obj.contains("parameters") &&
+         !obj.value("parameters").toArray().isEmpty();
+}
+
+bool LegacyPythonTransform::propertiesWidgetNeedsInput() const
+{
+  return false;
+}
+
+QWidget* LegacyPythonTransform::createPropertiesWidget(QWidget* parent)
+{
+  if (!hasPropertiesWidget()) {
+    return nullptr;
+  }
+
+  auto* widget = new TransformPropertiesWidget(
+    m_jsonDescription, m_parameters, parent);
+
+  connect(widget, &TransformPropertiesWidget::applyRequested, this,
+          [this](const QMap<QString, QVariant>& values) {
+            bool changed = false;
+            for (auto it = values.constBegin(); it != values.constEnd();
+                 ++it) {
+              if (m_parameters.value(it.key()) != it.value()) {
+                changed = true;
+              }
+              setParameter(it.key(), it.value());
+            }
+            if (changed) {
+              markStale();
+              emit parametersApplied();
+            }
+          });
+
+  return widget;
 }
 
 void LegacyPythonTransform::parseJSON()

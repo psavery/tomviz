@@ -37,6 +37,8 @@ set(SOURCES
   sinks/ScaleCubeSink.cxx
   sinks/PlotSink.cxx
   sinks/MoleculeSink.cxx
+  ParameterInterfaceBuilder.cxx
+  TransformPropertiesWidget.cxx
   PipelineStripWidget.cxx
   VolumeScalarsModel.cxx
   VolumePropertiesWidget.cxx
@@ -79,6 +81,8 @@ set(HEADERS
   sinks/ScaleCubeSink.h
   sinks/PlotSink.h
   sinks/MoleculeSink.h
+  ParameterInterfaceBuilder.h
+  TransformPropertiesWidget.h
   PipelineStripWidget.h
   VolumeScalarsModel.h
   VolumePropertiesWidget.h

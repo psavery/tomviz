@@ -12,6 +12,7 @@
 #include "Pipeline.h"
 #include "PipelineStripWidget.h"
 #include "PortType.h"
+#include "TransformNode.h"
 #include "VolumePropertiesWidget.h"
 #include "sources/SphereSource.h"
 #include "transforms/LegacyPythonTransform.h"
@@ -241,10 +242,12 @@ int main(int argc, char** argv)
     }
   };
 
-  // Helper: show sink properties when a sink node is selected
+  // Helper: show sink or transform properties when a node is selected
   auto showSinkProps = [&](Node* node) {
     propsWidget->setOutputPort(nullptr);
     propsScroll->hide();
+
+    // Try sink node first
     auto* sink = qobject_cast<LegacyModuleSink*>(node);
     if (sink) {
       auto* w = sink->createPropertiesWidget(nullptr);
@@ -254,6 +257,18 @@ int main(int argc, char** argv)
         return;
       }
     }
+
+    // Try transform node
+    auto* transform = qobject_cast<TransformNode*>(node);
+    if (transform && transform->hasPropertiesWidget()) {
+      auto* w = transform->createPropertiesWidget(nullptr);
+      if (w) {
+        sinkPropsScroll->setWidget(w);
+        sinkPropsScroll->show();
+        return;
+      }
+    }
+
     sinkPropsScroll->hide();
   };
 
@@ -290,6 +305,15 @@ int main(int argc, char** argv)
   QObject::connect(sliceSink, &LegacyModuleSink::renderNeeded, renderSlot);
   QObject::connect(volumeSink, &LegacyModuleSink::renderNeeded, renderSlot);
   QObject::connect(contourSink, &LegacyModuleSink::renderNeeded, renderSlot);
+
+  // When transform parameters are applied, re-execute the pipeline and render
+  auto reexecuteSlot = [&]() {
+    pipeline->execute();
+    pqRenderView->render();
+    window.statusBar()->showMessage("Pipeline re-executed (parameters applied)");
+  };
+  QObject::connect(invert, &TransformNode::parametersApplied, reexecuteSlot);
+  QObject::connect(addConst, &TransformNode::parametersApplied, reexecuteSlot);
 
   // When volume data is modified via properties widget, re-execute and render
   QObject::connect(propsWidget, &VolumePropertiesWidget::volumeDataModified,

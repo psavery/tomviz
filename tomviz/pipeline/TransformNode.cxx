@@ -22,6 +22,21 @@ OutputPort* TransformNode::addOutput(const QString& name, PortType type)
   return addOutputPort(name, type);
 }
 
+bool TransformNode::hasPropertiesWidget() const
+{
+  return false;
+}
+
+bool TransformNode::propertiesWidgetNeedsInput() const
+{
+  return false;
+}
+
+QWidget* TransformNode::createPropertiesWidget(QWidget* /*parent*/)
+{
+  return nullptr;
+}
+
 bool TransformNode::execute()
 {
   emit executionStarted();

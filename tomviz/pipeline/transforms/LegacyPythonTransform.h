@@ -46,6 +46,10 @@ public:
   /// The operator name from the JSON description
   QString operatorName() const;
 
+  bool hasPropertiesWidget() const override;
+  bool propertiesWidgetNeedsInput() const override;
+  QWidget* createPropertiesWidget(QWidget* parent) override;
+
 protected:
   QMap<QString, PortData> transform(
     const QMap<QString, PortData>& inputs) override;
