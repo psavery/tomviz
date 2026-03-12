@@ -25,6 +25,7 @@
 #include <vtkRenderWindow.h>
 #include <vtkRenderWindowInteractor.h>
 #include <vtkScalarsToColors.h>
+#include <vtkSMProxy.h>
 #include <vtkSMViewProxy.h>
 #include <vtkTrivialProducer.h>
 
@@ -334,10 +335,18 @@ void SliceSink::setMapScalars(bool map)
   emit renderNeeded();
 }
 
-void SliceSink::setLookupTable(vtkScalarsToColors* lut)
+void SliceSink::updateColorMap()
 {
-  if (m_widget && lut) {
-    m_widget->SetLookupTable(lut);
+  if (!m_widget) {
+    return;
+  }
+  auto* cmap = colorMap();
+  if (cmap) {
+    auto* ctf = vtkScalarsToColors::SafeDownCast(
+      cmap->GetClientSideObject());
+    if (ctf) {
+      m_widget->SetLookupTable(ctf);
+    }
   }
   emit renderNeeded();
 }
@@ -393,6 +402,16 @@ QWidget* SliceSink::createPropertiesWidget(QWidget* parent)
 {
   auto* widget = new QWidget(parent);
   auto* layout = new QFormLayout(widget);
+
+  // --- Custom color map toggle ---
+  auto* customCmapCheck = new QCheckBox(widget);
+  {
+    QSignalBlocker blocker(customCmapCheck);
+    customCmapCheck->setChecked(useDetachedColorMap());
+  }
+  layout->addRow("Custom Color Map", customCmapCheck);
+  QObject::connect(customCmapCheck, &QCheckBox::toggled,
+                   [this](bool on) { setUseDetachedColorMap(on); });
 
   // --- Direction ---
   auto* dirCombo = new QComboBox(widget);

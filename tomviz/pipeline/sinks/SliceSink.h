@@ -81,9 +81,6 @@ public:
   bool mapScalars() const;
   void setMapScalars(bool map);
 
-  /// Set the lookup table (color map) for the slice.
-  void setLookupTable(vtkScalarsToColors* lut);
-
   /// Set the center (point on the plane) for Custom direction.
   void setPlaneCenter(double x, double y, double z);
   void planeCenter(double xyz[3]) const;
@@ -98,6 +95,7 @@ signals:
 
 protected:
   bool consume(const QMap<QString, PortData>& inputs) override;
+  void updateColorMap() override;
 
 private:
   void setupWidget();

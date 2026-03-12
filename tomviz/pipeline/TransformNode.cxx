@@ -5,6 +5,9 @@
 
 #include "InputPort.h"
 #include "OutputPort.h"
+#include "data/VolumeData.h"
+
+#include <vtkImageData.h>
 
 namespace tomviz {
 namespace pipeline {
@@ -50,9 +53,30 @@ bool TransformNode::execute()
 
   for (auto it = outputs.constBegin(); it != outputs.constEnd(); ++it) {
     auto* port = outputPort(it.key());
-    if (port) {
-      port->setData(it.value());
+    if (!port) {
+      continue;
     }
+
+    // Reuse existing VolumeData on re-execution: update its imageData
+    // rather than replacing it, so the color map and other state persist.
+    if (port->hasData() && port->data().type() == PortType::Volume &&
+        it.value().type() == PortType::Volume) {
+      try {
+        auto existing = port->data().value<VolumeDataPtr>();
+        auto fresh = it.value().value<VolumeDataPtr>();
+        if (existing && fresh && existing != fresh) {
+          existing->setImageData(
+            vtkSmartPointer<vtkImageData>(fresh->imageData()));
+          existing->setLabel(fresh->label());
+          existing->setUnits(fresh->units());
+          port->setData(PortData(std::any(existing), PortType::Volume));
+          continue;
+        }
+      } catch (const std::bad_any_cast&) {
+      }
+    }
+
+    port->setData(it.value());
   }
 
   markCurrent();

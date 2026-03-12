@@ -72,13 +72,6 @@ public:
   double solidity() const;
   void setSolidity(double value);
 
-  /// Set external color transfer function (overrides built-in default).
-  void setColorTransferFunction(vtkColorTransferFunction* ctf);
-  /// Set external opacity transfer function (overrides built-in default).
-  void setOpacityTransferFunction(vtkPiecewiseFunction* otf);
-  /// Set gradient opacity function for gradient-based opacity mapping.
-  void setGradientOpacityFunction(vtkPiecewiseFunction* gof);
-
   /// Clipping plane support.
   void addClippingPlane(vtkPlane* plane);
   void removeClippingPlane(vtkPlane* plane);
@@ -86,16 +79,12 @@ public:
 
 protected:
   bool consume(const QMap<QString, PortData>& inputs) override;
+  void updateColorMap() override;
 
 private:
   vtkNew<vtkSmartVolumeMapper> m_volumeMapper;
   vtkNew<vtkVolume> m_volume;
   vtkNew<vtkVolumeProperty> m_volumeProperty;
-  vtkNew<vtkPiecewiseFunction> m_defaultOpacity;
-  vtkNew<vtkColorTransferFunction> m_defaultColor;
-  vtkNew<vtkPiecewiseFunction> m_gradientOpacity;
-  bool m_hasCustomOpacity = false;
-  bool m_hasCustomColor = false;
 };
 
 } // namespace pipeline

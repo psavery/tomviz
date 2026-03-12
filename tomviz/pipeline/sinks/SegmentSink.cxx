@@ -16,11 +16,13 @@
 #pragma pop_macro("slots")
 
 #include <vtkActor.h>
+#include <vtkColorTransferFunction.h>
 #include <vtkDataSetMapper.h>
 #include <vtkFlyingEdges3D.h>
 #include <vtkImageData.h>
 #include <vtkPVRenderView.h>
 #include <vtkProperty.h>
+#include <vtkSMProxy.h>
 
 PYBIND11_VTK_TYPECASTER(vtkImageData)
 
@@ -194,10 +196,6 @@ bool SegmentSink::consume(const QMap<QString, PortData>& inputs)
   m_contour->SetValue(0, m_contourValue);
   m_actor->SetVisibility(visibility() ? 1 : 0);
 
-  if (renderView()) {
-    renderView()->Update();
-  }
-
   emit renderNeeded();
   return true;
 }
@@ -254,6 +252,19 @@ int SegmentSink::representation() const
 void SegmentSink::setRepresentation(int rep)
 {
   m_property->SetRepresentation(rep);
+  emit renderNeeded();
+}
+
+void SegmentSink::updateColorMap()
+{
+  auto* cmap = colorMap();
+  if (cmap) {
+    auto* ctf = vtkColorTransferFunction::SafeDownCast(
+      cmap->GetClientSideObject());
+    if (ctf) {
+      m_mapper->SetLookupTable(ctf);
+    }
+  }
   emit renderNeeded();
 }
 

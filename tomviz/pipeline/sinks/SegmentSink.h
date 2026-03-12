@@ -63,6 +63,7 @@ public:
 
 protected:
   bool consume(const QMap<QString, PortData>& inputs) override;
+  void updateColorMap() override;
 
 private:
   bool runSegmentation(vtkImageData* input);

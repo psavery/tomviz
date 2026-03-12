@@ -19,6 +19,7 @@
 #include <vtkActor.h>
 #include <vtkColorTransferFunction.h>
 #include <vtkDataSetMapper.h>
+#include <vtkSMProxy.h>
 #include <vtkFlyingEdges3D.h>
 #include <vtkImageData.h>
 #include <vtkPVRenderView.h>
@@ -96,10 +97,6 @@ bool ContourSink::consume(const QMap<QString, PortData>& inputs)
 
   m_flyingEdges->SetValue(0, m_isoValue);
   m_actor->SetVisibility(visibility() ? 1 : 0);
-
-  if (renderView()) {
-    renderView()->Update();
-  }
 
   emit renderNeeded();
   return true;
@@ -211,6 +208,16 @@ QWidget* ContourSink::createPropertiesWidget(QWidget* parent)
 {
   auto* widget = new QWidget(parent);
   auto* layout = new QFormLayout(widget);
+
+  // --- Custom color map toggle ---
+  auto* customCmapCheck = new QCheckBox(widget);
+  {
+    QSignalBlocker blocker(customCmapCheck);
+    customCmapCheck->setChecked(useDetachedColorMap());
+  }
+  layout->addRow("Custom Color Map", customCmapCheck);
+  QObject::connect(customCmapCheck, &QCheckBox::toggled,
+                   [this](bool on) { setUseDetachedColorMap(on); });
 
   // --- Iso Value ---
   auto* isoSpin = new QDoubleSpinBox(widget);
@@ -341,10 +348,17 @@ void ContourSink::setMapScalars(bool map)
   emit renderNeeded();
 }
 
-void ContourSink::setLookupTable(vtkColorTransferFunction* lut)
+void ContourSink::updateColorMap()
 {
-  if (lut) {
-    m_mapper->SetLookupTable(lut);
+  if (m_mapScalars) {
+    auto* cmap = colorMap();
+    if (cmap) {
+      auto* ctf = vtkColorTransferFunction::SafeDownCast(
+        cmap->GetClientSideObject());
+      if (ctf) {
+        m_mapper->SetLookupTable(ctf);
+      }
+    }
   }
   emit renderNeeded();
 }

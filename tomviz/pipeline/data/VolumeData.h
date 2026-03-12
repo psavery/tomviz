@@ -8,13 +8,17 @@
 
 #include <QString>
 
+#include <vtkNew.h>
 #include <vtkSmartPointer.h>
 
 #include <array>
 #include <memory>
 
+class vtkColorTransferFunction;
 class vtkImageData;
 class vtkDataArray;
+class vtkPiecewiseFunction;
+class vtkSMProxy;
 
 namespace tomviz {
 namespace pipeline {
@@ -71,6 +75,42 @@ public:
   /// Get the scalar range [min, max] of the active scalars
   std::array<double, 2> scalarRange() const;
 
+  // -- Color/Opacity map --
+
+  /// Returns true if the color map has been initialized.
+  bool hasColorMap() const;
+
+  /// Create the SM proxy and cache client-side VTK objects. Must be called
+  /// on the main thread. Safe to call multiple times (no-op if already done).
+  void initColorMap();
+
+  /// Get the color transfer function proxy. Calls initColorMap() if needed.
+  vtkSMProxy* colorMap();
+
+  /// Get the scalar opacity function sub-proxy from the color map.
+  vtkSMProxy* opacityMap();
+
+  /// Direct access to the cached client-side VTK objects.
+  /// These are populated by initColorMap() and can be used for thread-safe
+  /// copy/rescale operations without going through SM proxies.
+  vtkColorTransferFunction* colorTransferFunction() const;
+  vtkPiecewiseFunction* scalarOpacity() const;
+
+  /// Get the gradient opacity function.
+  vtkPiecewiseFunction* gradientOpacity() const;
+
+  /// Rescale the color and opacity maps to the current scalarRange().
+  /// Uses cached VTK objects directly (no SM proxy interaction).
+  void rescaleColorMap();
+
+  /// Copy color/opacity map control points from another VolumeData as-is
+  /// (preserving the source's X positions). Uses cached VTK objects directly.
+  /// Both this and source must have initColorMap() called first.
+  void copyColorMapFrom(const VolumeData& source);
+
+  /// Convenience: copyColorMapFrom() + rescaleColorMap().
+  void copyAndRescaleColorMapFrom(const VolumeData& source);
+
   // -- Metadata --
 
   /// A user-visible label
@@ -83,6 +123,11 @@ public:
 
 private:
   vtkSmartPointer<vtkImageData> m_imageData;
+  vtkSmartPointer<vtkSMProxy> m_colorMap;
+  vtkNew<vtkPiecewiseFunction> m_gradientOpacity;
+  // Cached client-side VTK objects from the SM proxy
+  vtkColorTransferFunction* m_ctf = nullptr;
+  vtkPiecewiseFunction* m_opacity = nullptr;
   QString m_label;
   QString m_units;
 };

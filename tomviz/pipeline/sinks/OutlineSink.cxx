@@ -103,10 +103,6 @@ bool OutlineSink::consume(const QMap<QString, PortData>& inputs)
   m_gridAxes->SetVisibility(
     (visibility() && m_showGridAxes) ? 1 : 0);
 
-  if (renderView()) {
-    renderView()->Update();
-  }
-
   emit renderNeeded();
   return true;
 }

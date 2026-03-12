@@ -38,6 +38,9 @@
 #include "Pipeline.h"
 #include "Utilities.h"
 
+#include "pipeline/sinks/LegacyModuleSink.h"
+#include "pipeline/data/VolumeData.h"
+
 namespace tomviz {
 
 //////////////////////////////////////////////////////////////////////////////////
@@ -287,6 +290,17 @@ void CentralWidget::setColorMapDataSource(DataSource* source)
 
 void CentralWidget::onColorMapUpdated()
 {
+  // New pipeline path: trigger a render on the active sink's view.
+  // The VTK color/opacity objects are already modified in-place; we just need
+  // the view to re-render so the change is visible.
+  if (m_activeSink) {
+    if (m_activeSink->view()) {
+      m_activeSink->view()->StillRender();
+    }
+    return;
+  }
+
+  // Old pipeline path
   onColorMapDataSourceChanged();
 }
 
@@ -352,6 +366,16 @@ void CentralWidget::onColorMapDataSourceChanged()
 
 void CentralWidget::refreshHistogram()
 {
+  // New pipeline path: re-apply the current sink/volumeData state
+  if (m_activeSink) {
+    setActiveSinkNode(m_activeSink);
+    return;
+  }
+  if (m_activeVolumeData) {
+    setActiveVolumeData(m_activeVolumeData);
+    return;
+  }
+  // Old pipeline path
   setColorMapDataSource(m_activeColorMapDataSource);
 }
 
@@ -385,8 +409,14 @@ vtkImageData* CentralWidget::getInputImage(vtkSmartPointer<vtkImageData> input)
     return nullptr;
   }
 
-  // If we no longer have an active datasource, ignore showing the histogram
-  // since the data has been deleted
+  // Check new pipeline path first
+  if (m_activeVolumeData && m_activeVolumeData->isValid()) {
+    if (m_activeVolumeData->imageData() == input.Get()) {
+      return input;
+    }
+  }
+
+  // Fall back to old pipeline path
   if (!m_activeColorMapDataSource) {
     return nullptr;
   }
@@ -435,6 +465,88 @@ void CentralWidget::onTransferModeChanged(const int mode)
   }
 
   m_ui->swTransferMode->setCurrentIndex(index);
+}
+
+void CentralWidget::setActiveSinkNode(pipeline::LegacyModuleSink* sink)
+{
+  // Disconnect previous sink
+  if (m_activeSink) {
+    disconnect(m_activeSink, &pipeline::LegacyModuleSink::colorMapChanged,
+               this, nullptr);
+  }
+
+  m_activeSink = sink;
+  m_activeColorMapDataSource = nullptr;
+  m_activeModule = nullptr;
+
+  if (!sink) {
+    m_activeVolumeData.reset();
+    m_ui->histogramWidget->setInputData(nullptr, "", "");
+    m_ui->gradientOpacityWidget->setInputData(nullptr, "", "");
+    return;
+  }
+
+  // Cache the VolumeData for histogram computation
+  auto vol = sink->volumeData();
+  m_activeVolumeData = vol;
+
+  // Set the color map proxy on the histogram widget
+  auto* cmap = sink->colorMap();
+  if (cmap) {
+    m_ui->histogramWidget->setLUTProxy(cmap);
+  }
+  auto* gradOp = sink->gradientOpacity();
+  if (gradOp) {
+    m_ui->gradientOpacityWidget->setLUT(gradOp);
+  }
+
+  // Request histogram from the VolumeData's image
+  if (vol && vol->isValid()) {
+    vtkSmartPointer<vtkImageData> image = vol->imageData();
+    auto histogram = HistogramManager::instance().getHistogram(image);
+    if (histogram) {
+      setHistogramTable(histogram);
+    }
+    // If not cached, HistogramManager will emit histogramReady later
+  }
+
+  // Re-run on color map changes
+  connect(sink, &pipeline::LegacyModuleSink::colorMapChanged, this,
+          [this, sink]() { setActiveSinkNode(sink); });
+}
+
+void CentralWidget::setActiveVolumeData(pipeline::VolumeDataPtr volumeData)
+{
+  // Disconnect previous sink
+  if (m_activeSink) {
+    disconnect(m_activeSink, &pipeline::LegacyModuleSink::colorMapChanged,
+               this, nullptr);
+    m_activeSink = nullptr;
+  }
+
+  m_activeVolumeData = volumeData;
+  m_activeColorMapDataSource = nullptr;
+  m_activeModule = nullptr;
+
+  if (!volumeData || !volumeData->isValid()) {
+    m_ui->histogramWidget->setInputData(nullptr, "", "");
+    m_ui->gradientOpacityWidget->setInputData(nullptr, "", "");
+    return;
+  }
+
+  auto* cmap = volumeData->colorMap();
+  if (cmap) {
+    m_ui->histogramWidget->setLUTProxy(cmap);
+  }
+  m_ui->gradientOpacityWidget->setLUT(volumeData->gradientOpacity());
+
+  // Request histogram
+  vtkSmartPointer<vtkImageData> image = volumeData->imageData();
+  auto histogram = HistogramManager::instance().getHistogram(image);
+  if (histogram) {
+    setHistogramTable(histogram);
+  }
+  // If not cached, HistogramManager will emit histogramReady later
 }
 
 } // end of namespace tomviz

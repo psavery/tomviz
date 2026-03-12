@@ -36,6 +36,7 @@
 #include "pipeline/data/VolumeData.h"
 #include "pipeline/sinks/OutlineSink.h"
 #include "pipeline/sinks/VolumeSink.h"
+#include "ColorMap.h"
 
 #include <pqActiveObjects.h>
 #include <pqLoadDataReaction.h>
@@ -533,6 +534,11 @@ void LoadDataReaction::dataSourceAdded(DataSource* dataSource,
   // Wrap the loaded vtkImageData as VolumeData and set on output port
   auto volumeData =
     std::make_shared<pipeline::VolumeData>(dataSource->imageData());
+
+  // Initialize color/opacity maps with default preset and data range
+  ColorMap::instance().applyPreset(volumeData->colorMap());
+  volumeData->rescaleColorMap();
+
   source->setOutputData(
     "volume",
     pipeline::PortData(volumeData, pipeline::PortType::Volume));
@@ -563,13 +569,14 @@ void LoadDataReaction::dataSourceAdded(DataSource* dataSource,
                     volume->inputPorts()[0]);
   }
 
-  // Execute the pipeline (renders the data)
-  pip->execute();
-
-  // Set on main window if this is a newly created pipeline
+  // Set on main window before executing so the executionFinished handler
+  // (which propagates color maps) is connected in time.
   if (isNewPipeline && mainWindow) {
     mainWindow->setPipeline(pip);
   }
+
+  // Execute the pipeline (renders the data)
+  pip->execute();
 }
 
 QJsonObject LoadDataReaction::readerProperties(vtkSMProxy* reader)

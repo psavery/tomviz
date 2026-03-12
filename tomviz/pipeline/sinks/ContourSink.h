@@ -71,11 +71,9 @@ public:
   bool mapScalars() const;
   void setMapScalars(bool map);
 
-  /// Set the lookup table for color mapping.
-  void setLookupTable(vtkColorTransferFunction* lut);
-
 protected:
   bool consume(const QMap<QString, PortData>& inputs) override;
+  void updateColorMap() override;
 
 private:
   vtkNew<vtkFlyingEdges3D> m_flyingEdges;

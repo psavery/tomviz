@@ -106,10 +106,6 @@ bool ScaleCubeSink::consume(const QMap<QString, PortData>& inputs)
   m_textActor->SetVisibility(
     (visibility() && m_showAnnotation) ? 1 : 0);
 
-  if (renderView()) {
-    renderView()->Update();
-  }
-
   emit renderNeeded();
   return true;
 }

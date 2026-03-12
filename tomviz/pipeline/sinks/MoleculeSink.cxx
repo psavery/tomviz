@@ -63,10 +63,6 @@ bool MoleculeSink::consume(const QMap<QString, PortData>& inputs)
 
   m_actor->SetVisibility(visibility() ? 1 : 0);
 
-  if (renderView()) {
-    renderView()->Update();
-  }
-
   emit renderNeeded();
   return true;
 }

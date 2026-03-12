@@ -12,6 +12,8 @@
 #include <vtkSmartPointer.h>
 #include <vtkTable.h>
 
+#include <memory>
+
 class vtkImageData;
 class vtkPVDiscretizableColorTransferFunction;
 
@@ -29,6 +31,12 @@ class HistogramMaker;
 class Module;
 class Transfer2DModel;
 class Operator;
+
+namespace pipeline {
+class LegacyModuleSink;
+class VolumeData;
+using VolumeDataPtr = std::shared_ptr<VolumeData>;
+} // namespace pipeline
 
 /// CentralWidget is a QWidget that is used as the central widget
 /// for the application. This include a histogram at the top and a
@@ -54,6 +62,12 @@ public slots:
   void onColorLegendToggled(bool visibility);
 
   void setImageViewerMode(bool b);
+
+  /// New pipeline: set the active sink node for color map editing.
+  void setActiveSinkNode(pipeline::LegacyModuleSink* sink);
+
+  /// New pipeline: set the active VolumeData for color map editing.
+  void setActiveVolumeData(pipeline::VolumeDataPtr volumeData);
 
 private slots:
   void histogramReady(vtkSmartPointer<vtkImageData>, vtkSmartPointer<vtkTable>);
@@ -84,6 +98,10 @@ private:
   QPointer<DataSource> m_activeColorMapDataSource;
   QPointer<Module> m_activeModule;
   Transfer2DModel* m_transfer2DModel;
+
+  // New pipeline color map state
+  pipeline::LegacyModuleSink* m_activeSink = nullptr;
+  pipeline::VolumeDataPtr m_activeVolumeData;
 };
 } // namespace tomviz
 

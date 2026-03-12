@@ -41,12 +41,17 @@
 #include "ModuleMenu.h"
 #include "PipelineModuleMenu.h"
 #include "pipeline/Pipeline.h"
+#include "pipeline/PipelineExecutor.h"
 #include "pipeline/PipelineStripWidget.h"
 #include "pipeline/Node.h"
 #include "pipeline/TransformNode.h"
 #include "pipeline/OutputPort.h"
+#include "pipeline/InputPort.h"
+#include "pipeline/PortData.h"
 #include "pipeline/sinks/LegacyModuleSink.h"
+#include "pipeline/data/VolumeData.h"
 #include "pipeline/VolumePropertiesWidget.h"
+#include "CentralWidget.h"
 #include "ModulePropertiesPanel.h"
 #include "OperatorFactory.h"
 #include "OperatorProxy.h"
@@ -1200,6 +1205,99 @@ void MainWindow::setPipeline(pipeline::Pipeline* p)
   m_pipeline = p;
   m_pipelineStrip->setPipeline(p);
   ActiveObjects::instance().setActivePipeline(p);
+
+  // Color map propagation after pipeline execution completes.
+  // SM proxy creation is NOT safe while the ThreadedExecutor's worker thread
+  // is still running, so we use Pipeline::executionFinished (fires after the
+  // worker is idle) for first-time proxy creation, and per-node
+  // nodeExecutionFinished for rescaling on re-executions (safe because
+  // rescaleColorMap uses cached VTK objects, not SM proxies).
+  //
+  // TransformNode::execute() reuses existing VolumeData objects (preserving
+  // color maps across re-executions).
+
+  // Per-node handler: rescale existing color maps after each node finishes.
+  // This uses cached VTK objects (no SM proxy creation), so it's safe even
+  // while the worker thread is still running subsequent nodes.
+  connect(p->executor(), &pipeline::PipelineExecutor::nodeExecutionFinished,
+          this, [](pipeline::Node* node, bool success) {
+    if (!success) {
+      return;
+    }
+    for (auto* port : node->outputPorts()) {
+      if (port->type() != pipeline::PortType::Volume || !port->hasData()) {
+        continue;
+      }
+      pipeline::VolumeDataPtr vol;
+      try {
+        vol = port->data().value<pipeline::VolumeDataPtr>();
+      } catch (const std::bad_any_cast&) {
+        continue;
+      }
+      if (vol && vol->hasColorMap()) {
+        vol->rescaleColorMap();
+      }
+    }
+  });
+
+  // Pipeline-complete handler: initialize color maps for new VolumeData
+  // (requires SM proxy creation, only safe after worker is idle), then
+  // update any sinks whose color map was just created.
+  connect(p, &pipeline::Pipeline::executionFinished, this, [p]() {
+    bool anyNewColorMaps = false;
+    for (auto* node : p->topologicalSort()) {
+      pipeline::VolumeDataPtr upstream;
+      for (auto* port : node->inputPorts()) {
+        if (port->hasData() &&
+            port->data().type() == pipeline::PortType::Volume) {
+          try {
+            upstream = port->data().value<pipeline::VolumeDataPtr>();
+          } catch (const std::bad_any_cast&) {
+          }
+          if (upstream) {
+            break;
+          }
+        }
+      }
+
+      for (auto* port : node->outputPorts()) {
+        if (port->type() != pipeline::PortType::Volume ||
+            !port->hasData()) {
+          continue;
+        }
+        pipeline::VolumeDataPtr vol;
+        try {
+          vol = port->data().value<pipeline::VolumeDataPtr>();
+        } catch (const std::bad_any_cast&) {
+          continue;
+        }
+        if (!vol || vol == upstream) {
+          continue;
+        }
+        // First execution: create proxy, copy from upstream, rescale
+        if (!vol->hasColorMap()) {
+          vol->initColorMap();
+          if (upstream && upstream->hasColorMap()) {
+            vol->copyColorMapFrom(*upstream);
+          }
+          vol->rescaleColorMap();
+          anyNewColorMaps = true;
+        }
+      }
+    }
+
+    // If any new color maps were created, update sinks that may have
+    // skipped updateColorMap() during execution because the proxy
+    // didn't exist yet.
+    if (anyNewColorMaps) {
+      for (auto* node : p->nodes()) {
+        auto* sink = dynamic_cast<pipeline::LegacyModuleSink*>(node);
+        if (sink && sink->isColorMapNeeded()) {
+          sink->updateColorMap();
+        }
+      }
+    }
+  });
 }
 
 pipeline::Pipeline* MainWindow::pipeline() const
@@ -1240,6 +1338,47 @@ void MainWindow::onNodeSelected(pipeline::Node* node)
   } else {
     m_ui->propertiesPanelStackedWidget->setCurrentWidget(m_ui->empty);
   }
+
+  // Wire color map display in CentralWidget
+  if (auto* sink = dynamic_cast<pipeline::LegacyModuleSink*>(node)) {
+    if (sink->isColorMapNeeded()) {
+      m_ui->centralWidget->setActiveSinkNode(sink);
+    } else {
+      // Sink that doesn't need a color map — show the upstream VolumeData's
+      auto vol = sink->volumeData();
+      if (vol) {
+        m_ui->centralWidget->setActiveVolumeData(vol);
+      }
+    }
+  } else if (node) {
+    // For source/transform nodes, find VolumeData from first volume output port
+    pipeline::VolumeDataPtr vol;
+    for (auto* port : node->outputPorts()) {
+      if (port->type() == pipeline::PortType::Volume && port->hasData()) {
+        vol = port->data().value<pipeline::VolumeDataPtr>();
+        if (vol) {
+          break;
+        }
+      }
+    }
+    // If no output data yet, try input ports
+    if (!vol) {
+      for (auto* port : node->inputPorts()) {
+        if (port->hasData()) {
+          auto pd = port->data();
+          if (pd.type() == pipeline::PortType::Volume) {
+            vol = pd.value<pipeline::VolumeDataPtr>();
+            if (vol) {
+              break;
+            }
+          }
+        }
+      }
+    }
+    if (vol) {
+      m_ui->centralWidget->setActiveVolumeData(vol);
+    }
+  }
 }
 
 void MainWindow::onPortSelected(pipeline::OutputPort* port)
@@ -1258,6 +1397,14 @@ void MainWindow::onPortSelected(pipeline::OutputPort* port)
     m_dynamicPropertiesWidget = propsWidget;
     m_ui->propertiesPanelStackedWidget->addWidget(propsWidget);
     m_ui->propertiesPanelStackedWidget->setCurrentWidget(propsWidget);
+
+    // Wire color map display
+    if (port->hasData()) {
+      auto vol = port->data().value<pipeline::VolumeDataPtr>();
+      if (vol) {
+        m_ui->centralWidget->setActiveVolumeData(vol);
+      }
+    }
   } else {
     m_ui->propertiesPanelStackedWidget->setCurrentWidget(m_ui->empty);
   }

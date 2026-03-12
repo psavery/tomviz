@@ -16,6 +16,7 @@
 
 #include <vtkColorTransferFunction.h>
 #include <vtkImageData.h>
+#include <vtkSMProxy.h>
 #include <vtkPVRenderView.h>
 #include <vtkPiecewiseFunction.h>
 #include <vtkPlane.h>
@@ -41,21 +42,6 @@ VolumeSink::VolumeSink(QObject* parent) : LegacyModuleSink(parent)
   m_volumeProperty->SetDiffuse(1.0);
   m_volumeProperty->SetSpecular(1.0);
   m_volumeProperty->SetSpecularPower(100.0);
-
-  // Default grayscale color transfer function
-  m_defaultColor->AddRGBPoint(0.0, 0.0, 0.0, 0.0);
-  m_defaultColor->AddRGBPoint(1.0, 1.0, 1.0, 1.0);
-  m_volumeProperty->SetColor(m_defaultColor);
-
-  // Default opacity: ramp from 0 to 1
-  m_defaultOpacity->RemoveAllPoints();
-  m_defaultOpacity->AddPoint(0.0, 0.0);
-  m_defaultOpacity->AddPoint(0.25, 0.0);
-  m_defaultOpacity->AddPoint(1.0, 0.);
-  m_volumeProperty->SetScalarOpacity(m_defaultOpacity);
-
-  // Gradient opacity (needed for multi-volume shader workaround)
-  // m_gradientOpacity->AddPoint(0.0, 1.0);
 
   m_volume->SetMapper(m_volumeMapper);
   m_volume->SetProperty(m_volumeProperty);
@@ -101,30 +87,37 @@ bool VolumeSink::consume(const QMap<QString, PortData>& inputs)
   }
 
   m_volumeMapper->SetInputData(volume->imageData());
-
-  // Only update the default transfer functions if no custom one was set
-  auto range = volume->scalarRange();
-  if (!m_hasCustomColor) {
-    m_defaultColor->RemoveAllPoints();
-    m_defaultColor->AddRGBPoint(range[0], 0.0, 0.0, 0.0);
-    m_defaultColor->AddRGBPoint(range[1], 1.0, 1.0, 1.0);
-  }
-
-  if (!m_hasCustomOpacity) {
-    m_defaultOpacity->RemoveAllPoints();
-    m_defaultOpacity->AddPoint(range[0], 0.0);
-    m_defaultOpacity->AddPoint(range[0] + (range[1] - range[0]) * 0.2, 0.0);
-    m_defaultOpacity->AddPoint(range[1], 0.2);
-  }
-
   m_volume->SetVisibility(visibility() ? 1 : 0);
 
-  if (renderView()) {
-    renderView()->Update();
+  return true;
+}
+
+void VolumeSink::updateColorMap()
+{
+  auto* cmap = colorMap();
+  if (!cmap) {
+    return;
+  }
+  auto* ctf = vtkColorTransferFunction::SafeDownCast(
+    cmap->GetClientSideObject());
+  auto* omap = opacityMap();
+  auto* opacity = omap ? vtkPiecewiseFunction::SafeDownCast(
+                           omap->GetClientSideObject())
+                       : nullptr;
+
+  if (ctf) {
+    m_volumeProperty->SetColor(ctf);
+  }
+  if (opacity) {
+    m_volumeProperty->SetScalarOpacity(opacity);
+  }
+
+  auto* gradOp = gradientOpacity();
+  if (gradOp) {
+    m_volumeProperty->SetGradientOpacity(gradOp);
   }
 
   emit renderNeeded();
-  return true;
 }
 
 // --- Lighting ---
@@ -238,38 +231,6 @@ void VolumeSink::setSolidity(double value)
   }
 }
 
-// --- Transfer functions ---
-
-void VolumeSink::setColorTransferFunction(vtkColorTransferFunction* ctf)
-{
-  if (ctf) {
-    m_hasCustomColor = true;
-    m_volumeProperty->SetColor(ctf);
-  } else {
-    m_hasCustomColor = false;
-    m_volumeProperty->SetColor(m_defaultColor);
-  }
-  emit renderNeeded();
-}
-
-void VolumeSink::setOpacityTransferFunction(vtkPiecewiseFunction* otf)
-{
-  if (otf) {
-    m_hasCustomOpacity = true;
-    m_volumeProperty->SetScalarOpacity(otf);
-  } else {
-    m_hasCustomOpacity = false;
-    m_volumeProperty->SetScalarOpacity(m_defaultOpacity);
-  }
-  emit renderNeeded();
-}
-
-void VolumeSink::setGradientOpacityFunction(vtkPiecewiseFunction* gof)
-{
-  m_volumeProperty->SetGradientOpacity(gof);
-  emit renderNeeded();
-}
-
 // --- Clipping ---
 
 void VolumeSink::addClippingPlane(vtkPlane* plane)
@@ -300,6 +261,16 @@ QWidget* VolumeSink::createPropertiesWidget(QWidget* parent)
 {
   auto* widget = new QWidget(parent);
   auto* layout = new QFormLayout(widget);
+
+  // --- Custom color map toggle ---
+  auto* customCmapCheck = new QCheckBox(widget);
+  {
+    QSignalBlocker blocker(customCmapCheck);
+    customCmapCheck->setChecked(useDetachedColorMap());
+  }
+  layout->addRow("Custom Color Map", customCmapCheck);
+  QObject::connect(customCmapCheck, &QCheckBox::toggled,
+                   [this](bool on) { setUseDetachedColorMap(on); });
 
   // --- Lighting checkbox ---
   auto* lightCheck = new QCheckBox(widget);

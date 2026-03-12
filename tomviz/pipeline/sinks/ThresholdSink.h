@@ -57,6 +57,7 @@ public:
 
 protected:
   bool consume(const QMap<QString, PortData>& inputs) override;
+  void updateColorMap() override;
 
 private:
   vtkNew<vtkThreshold> m_threshold;

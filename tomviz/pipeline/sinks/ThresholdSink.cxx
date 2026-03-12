@@ -6,10 +6,12 @@
 #include "data/VolumeData.h"
 
 #include <vtkActor.h>
+#include <vtkColorTransferFunction.h>
 #include <vtkDataSetMapper.h>
 #include <vtkImageData.h>
 #include <vtkPVRenderView.h>
 #include <vtkProperty.h>
+#include <vtkSMProxy.h>
 #include <vtkThreshold.h>
 
 namespace tomviz {
@@ -84,10 +86,6 @@ bool ThresholdSink::consume(const QMap<QString, PortData>& inputs)
   m_threshold->SetThresholdFunction(vtkThreshold::THRESHOLD_BETWEEN);
   m_actor->SetVisibility(visibility() ? 1 : 0);
 
-  if (renderView()) {
-    renderView()->Update();
-  }
-
   emit renderNeeded();
   return true;
 }
@@ -157,6 +155,21 @@ void ThresholdSink::setMapScalars(bool map)
     m_mapper->SetColorModeToMapScalars();
   } else {
     m_mapper->SetColorModeToDirectScalars();
+  }
+  emit renderNeeded();
+}
+
+void ThresholdSink::updateColorMap()
+{
+  if (m_mapScalars) {
+    auto* cmap = colorMap();
+    if (cmap) {
+      auto* ctf = vtkColorTransferFunction::SafeDownCast(
+        cmap->GetClientSideObject());
+      if (ctf) {
+        m_mapper->SetLookupTable(ctf);
+      }
+    }
   }
   emit renderNeeded();
 }
