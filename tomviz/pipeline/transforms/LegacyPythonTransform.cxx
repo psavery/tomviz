@@ -236,13 +236,49 @@ QMap<QString, PortData> LegacyPythonTransform::transform(
     // Execute the script in the module's namespace
     py::exec(py::str(m_script.toStdString()), scriptModule.attr("__dict__"));
 
-    // Find the transform function: try transform() first, then
-    // transform_scalars()
+    // Find the transform function: try module-level transform() first, then
+    // transform_scalars(), then look for an Operator subclass.
     py::object transformFunc = py::none();
     if (py::hasattr(scriptModule, "transform")) {
       transformFunc = scriptModule.attr("transform");
     } else if (py::hasattr(scriptModule, "transform_scalars")) {
       transformFunc = scriptModule.attr("transform_scalars");
+    }
+
+    // If no module-level function, look for an Operator subclass
+    if (transformFunc.is_none()) {
+      py::module_ internalMod =
+        py::module_::import("tomviz._internal");
+      py::object findOpClass = internalMod.attr("find_operator_class");
+      py::object opClass = findOpClass(scriptModule);
+
+      if (!opClass.is_none()) {
+        // Create a stub _operator_wrapper so that Progress properties work.
+        // SimpleNamespace supports arbitrary get/set attributes.
+        py::object stubWrapper = types.attr("SimpleNamespace")(
+          py::arg("progress_maximum") = 0,
+          py::arg("progress_value") = 0,
+          py::arg("progress_message") = py::str(""),
+          py::arg("progress_data") = py::none(),
+          py::arg("canceled") = false,
+          py::arg("completed") = false);
+
+        // Instantiate following the same pattern as find_transform_function:
+        // cls.__new__(cls) → set _operator_wrapper → cls.__init__(o)
+        py::object instance = opClass.attr("__new__")(opClass);
+        instance.attr("_operator_wrapper") = stubWrapper;
+        opClass.attr("__init__")(instance);
+
+        // Check which transform method was actually implemented
+        py::object implCheck =
+          internalMod.attr("_operator_method_was_implemented");
+        if (implCheck(instance, "transform").cast<bool>()) {
+          transformFunc = instance.attr("transform");
+        } else if (implCheck(instance, "transform_scalars")
+                     .cast<bool>()) {
+          transformFunc = instance.attr("transform_scalars");
+        }
+      }
     }
 
     if (transformFunc.is_none()) {
