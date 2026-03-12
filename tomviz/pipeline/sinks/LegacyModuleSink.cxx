@@ -39,13 +39,8 @@ bool LegacyModuleSink::initialize(vtkSMViewProxy* view)
   m_renderView =
     vtkPVRenderView::SafeDownCast(view->GetClientSideView());
 
-  // Auto-render the view when sink properties change or after execution.
-  // Use QueuedConnection so this is safe when emitted from a worker thread.
-  connect(this, &LegacyModuleSink::renderNeeded, this, [this]() {
-    if (m_viewProxy) {
-      m_viewProxy->StillRender();
-    }
-  }, Qt::QueuedConnection);
+  // Rendering is wired externally (MainWindow connects renderNeeded() →
+  // pqView::render(), which coalesces multiple requests via an internal timer).
 
   return m_renderView != nullptr;
 }
@@ -223,14 +218,12 @@ bool LegacyModuleSink::execute()
     resetCameraIfFirstSink();
   }
 
-  // Push color map into VTK pipeline after consume
+  // Push color map into VTK pipeline after consume.
+  // updateColorMap() already emits renderNeeded(), so only emit separately
+  // when it was not called.
   if (success && isColorMapNeeded()) {
     updateColorMap();
-  }
-
-  // Signal that the view needs a render (handled on the main thread via
-  // the QueuedConnection established in initialize()).
-  if (success) {
+  } else if (success) {
     emit renderNeeded();
   }
 

@@ -578,6 +578,7 @@ QWidget* SliceSink::createPropertiesWidget(QWidget* parent)
 
   // Update slice slider when direction/slice changes from the sink itself
   QObject::connect(this, &SliceSink::directionChanged,
+                   widget,
                    [sliceSlider, customGroup, this](Direction dir) {
                      bool ortho = (dir != Custom);
                      sliceSlider->setVisible(ortho);
@@ -590,6 +591,7 @@ QWidget* SliceSink::createPropertiesWidget(QWidget* parent)
                      }
                    });
   QObject::connect(this, &SliceSink::sliceChanged,
+                   widget,
                    [sliceSlider](int s) {
                      QSignalBlocker blocker(sliceSlider);
                      sliceSlider->setValue(s);

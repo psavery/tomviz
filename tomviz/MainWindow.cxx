@@ -1206,6 +1206,25 @@ void MainWindow::setPipeline(pipeline::Pipeline* p)
   m_pipelineStrip->setPipeline(p);
   ActiveObjects::instance().setActivePipeline(p);
 
+  // Wire renderNeeded() → pqView::render() for all sink nodes.
+  // pqView::render() coalesces multiple calls via an internal timer
+  // (pqView.h: "Multiple calls are collapsed into one."), matching the old
+  // Module → ModuleManager::render() → pqView::render() pattern.
+  auto connectSinkRender = [](pipeline::Node* node) {
+    auto* sink = dynamic_cast<pipeline::LegacyModuleSink*>(node);
+    if (sink && sink->view()) {
+      auto* pqview = tomviz::convert<pqView*>(sink->view());
+      if (pqview) {
+        connect(sink, &pipeline::LegacyModuleSink::renderNeeded,
+                pqview, &pqView::render);
+      }
+    }
+  };
+  for (auto* node : p->nodes()) {
+    connectSinkRender(node);
+  }
+  connect(p, &pipeline::Pipeline::nodeAdded, this, connectSinkRender);
+
   // Color map propagation after pipeline execution completes.
   // SM proxy creation is NOT safe while the ThreadedExecutor's worker thread
   // is still running, so we use Pipeline::executionFinished (fires after the

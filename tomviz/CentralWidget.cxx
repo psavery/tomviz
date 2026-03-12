@@ -290,13 +290,9 @@ void CentralWidget::setColorMapDataSource(DataSource* source)
 
 void CentralWidget::onColorMapUpdated()
 {
-  // New pipeline path: trigger a render on the active sink's view.
-  // The VTK color/opacity objects are already modified in-place; we just need
-  // the view to re-render so the change is visible.
+  // New pipeline path: HistogramWidget/GradientOpacityWidget already triggered
+  // a coalesced render via pqView::render(). No additional render needed.
   if (m_activeSink) {
-    if (m_activeSink->view()) {
-      m_activeSink->view()->StillRender();
-    }
     return;
   }
 
