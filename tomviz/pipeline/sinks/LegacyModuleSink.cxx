@@ -3,7 +3,10 @@
 
 #include "LegacyModuleSink.h"
 
+#include "Pipeline.h"
+
 #include <vtkPVRenderView.h>
+#include <vtkSMRenderViewProxy.h>
 #include <vtkSMViewProxy.h>
 
 namespace tomviz {
@@ -24,6 +27,15 @@ bool LegacyModuleSink::initialize(vtkSMViewProxy* view)
   m_viewProxy = view;
   m_renderView =
     vtkPVRenderView::SafeDownCast(view->GetClientSideView());
+
+  // Auto-render the view when sink properties change or after execution.
+  // Use QueuedConnection so this is safe when emitted from a worker thread.
+  connect(this, &LegacyModuleSink::renderNeeded, this, [this]() {
+    if (m_viewProxy) {
+      m_viewProxy->StillRender();
+    }
+  }, Qt::QueuedConnection);
+
   return m_renderView != nullptr;
 }
 
@@ -79,6 +91,52 @@ bool LegacyModuleSink::deserialize(const QJsonObject& json)
     setVisibility(json["visible"].toBool());
   }
   return true;
+}
+
+bool LegacyModuleSink::execute()
+{
+  bool success = SinkNode::execute();
+
+  if (success && m_firstConsume) {
+    m_firstConsume = false;
+    resetCameraIfFirstSink();
+  }
+
+  // Signal that the view needs a render (handled on the main thread via
+  // the QueuedConnection established in initialize()).
+  if (success) {
+    emit renderNeeded();
+  }
+
+  return success;
+}
+
+void LegacyModuleSink::resetCameraIfFirstSink()
+{
+  if (!m_viewProxy) {
+    return;
+  }
+
+  // Check if any other sink sharing our view has already consumed data
+  auto* pip = qobject_cast<Pipeline*>(parent());
+  if (pip) {
+    for (auto* node : pip->nodes()) {
+      auto* other = dynamic_cast<LegacyModuleSink*>(node);
+      if (other && other != this && other->view() == m_viewProxy &&
+          !other->m_firstConsume) {
+        // Another sink already rendered to this view — skip reset
+        return;
+      }
+    }
+  }
+
+  // Schedule camera reset on the main thread
+  auto* renderViewProxy = vtkSMRenderViewProxy::SafeDownCast(m_viewProxy);
+  if (renderViewProxy) {
+    QMetaObject::invokeMethod(this, [renderViewProxy]() {
+      renderViewProxy->ResetCamera();
+    }, Qt::QueuedConnection);
+  }
 }
 
 QWidget* LegacyModuleSink::createPropertiesWidget(QWidget* /*parent*/)

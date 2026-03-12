@@ -10,6 +10,7 @@
 #include "Node.h"
 #include "OutputPort.h"
 #include "PipelineExecutor.h"
+#include "TransformNode.h"
 
 #include <QMap>
 #include <QQueue>
@@ -35,6 +36,13 @@ void Pipeline::addNode(Node* node)
   }
   node->setParent(this);
   m_nodes.append(node);
+
+  // Auto re-execute when transform parameters change
+  if (auto* transform = dynamic_cast<TransformNode*>(node)) {
+    connect(transform, &TransformNode::parametersApplied,
+            this, [this]() { execute(); });
+  }
+
   emit nodeAdded(node);
 }
 

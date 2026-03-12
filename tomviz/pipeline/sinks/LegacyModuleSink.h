@@ -14,6 +14,7 @@
 
 class QWidget;
 class vtkPVRenderView;
+class vtkSMRenderViewProxy;
 class vtkSMViewProxy;
 
 namespace tomviz {
@@ -48,6 +49,8 @@ public:
   /// default. Caller owns the returned widget.
   virtual QWidget* createPropertiesWidget(QWidget* parent);
 
+  bool execute() override;
+
   virtual QJsonObject serialize() const;
   virtual bool deserialize(const QJsonObject& json);
 
@@ -64,7 +67,11 @@ protected:
                      const QString& portName) const;
 
 private:
+  /// Reset camera on first consume if no other sink has rendered to this view.
+  void resetCameraIfFirstSink();
+
   bool m_visible = true;
+  bool m_firstConsume = true;
   vtkWeakPointer<vtkSMViewProxy> m_viewProxy;
   vtkWeakPointer<vtkPVRenderView> m_renderView;
 };
