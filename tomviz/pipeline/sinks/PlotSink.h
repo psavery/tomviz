@@ -32,6 +32,10 @@ public:
   PlotSink(QObject* parent = nullptr);
   ~PlotSink() override;
 
+  QIcon icon() const override;
+
+  void setVisibility(bool visible) override;
+
   bool initialize(vtkSMViewProxy* view) override;
   bool finalize() override;
 

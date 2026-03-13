@@ -10,6 +10,11 @@ namespace pipeline {
 
 SourceNode::SourceNode(QObject* parent) : Node(parent) {}
 
+QIcon SourceNode::icon() const
+{
+  return QIcon(QStringLiteral(":/pqWidgets/Icons/pqHome.svg"));
+}
+
 OutputPort* SourceNode::addOutput(const QString& name, PortType type)
 {
   return addOutputPort(name, type);

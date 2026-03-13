@@ -31,6 +31,23 @@ ClipSink::~ClipSink()
   finalize();
 }
 
+QIcon ClipSink::icon() const
+{
+  return QIcon(QStringLiteral(":/pqWidgets/Icons/pqClip.svg"));
+}
+
+void ClipSink::setVisibility(bool visible)
+{
+  if (m_widget) {
+    m_widget->SetEnabled(visible ? 1 : 0);
+    if (visible) {
+      m_widget->SetArrowVisibility(m_showArrow ? 1 : 0);
+      m_widget->SetInteraction(m_showArrow ? 1 : 0);
+    }
+  }
+  LegacyModuleSink::setVisibility(visible);
+}
+
 void ClipSink::setupWidget()
 {
   m_widget = vtkSmartPointer<vtkNonOrthoImagePlaneWidget>::New();

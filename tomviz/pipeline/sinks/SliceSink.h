@@ -33,6 +33,9 @@ public:
   SliceSink(QObject* parent = nullptr);
   ~SliceSink() override;
 
+  QIcon icon() const override;
+
+  void setVisibility(bool visible) override;
   bool isColorMapNeeded() const override;
 
   bool initialize(vtkSMViewProxy* view) override;

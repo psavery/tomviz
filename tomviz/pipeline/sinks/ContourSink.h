@@ -30,6 +30,9 @@ public:
   ContourSink(QObject* parent = nullptr);
   ~ContourSink() override;
 
+  QIcon icon() const override;
+
+  void setVisibility(bool visible) override;
   bool isColorMapNeeded() const override;
 
   bool initialize(vtkSMViewProxy* view) override;

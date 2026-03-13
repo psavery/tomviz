@@ -52,6 +52,17 @@ VolumeSink::~VolumeSink()
   finalize();
 }
 
+QIcon VolumeSink::icon() const
+{
+  return QIcon(QStringLiteral(":/icons/pqVolumeData.png"));
+}
+
+void VolumeSink::setVisibility(bool visible)
+{
+  m_volume->SetVisibility(visible ? 1 : 0);
+  LegacyModuleSink::setVisibility(visible);
+}
+
 bool VolumeSink::isColorMapNeeded() const
 {
   return true;

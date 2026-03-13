@@ -14,6 +14,12 @@ namespace pipeline {
 
 TransformNode::TransformNode(QObject* parent) : Node(parent) {}
 
+QIcon TransformNode::icon() const
+{
+  return QIcon(
+    QStringLiteral(":/pqWidgets/Icons/pqProgrammableFilter.svg"));
+}
+
 InputPort* TransformNode::addInput(const QString& name,
                                    PortTypes acceptedTypes)
 {

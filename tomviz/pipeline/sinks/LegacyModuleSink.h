@@ -39,6 +39,10 @@ public:
   LegacyModuleSink(QObject* parent = nullptr);
   ~LegacyModuleSink() override;
 
+  QIcon icon() const override;
+  QIcon actionIcon() const override;
+  void triggerAction() override;
+
   /// Set up the visualization pipeline for the given view.
   /// Call this before the pipeline is executed.
   virtual bool initialize(vtkSMViewProxy* view);
@@ -50,7 +54,7 @@ public:
   vtkSMViewProxy* view() const;
 
   bool visibility() const;
-  void setVisibility(bool visible);
+  virtual void setVisibility(bool visible);
 
   virtual bool isColorMapNeeded() const;
 

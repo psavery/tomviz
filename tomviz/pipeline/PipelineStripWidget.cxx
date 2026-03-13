@@ -12,6 +12,7 @@
 #include "SinkNode.h"
 #include "SourceNode.h"
 #include "TransformNode.h"
+#include "sinks/LegacyModuleSink.h"
 
 #include <QContextMenuEvent>
 #include <QFontMetrics>
@@ -289,7 +290,7 @@ void PipelineStripWidget::connectPipeline()
     return;
   }
 
-  connect(m_pipeline, &Pipeline::nodeAdded, this, [this](Node* node) {
+  auto connectNode = [this](Node* node) {
     connect(node, &Node::stateChanged, this,
             QOverload<>::of(&QWidget::update));
     connect(node, &Node::labelChanged, this,
@@ -302,12 +303,18 @@ void PipelineStripWidget::connectPipeline()
       }
     });
     connect(node, &Node::executionFinished, this, [this](bool) {
-      // Stop spinner if no nodes are executing
-      // For simplicity, just keep it running and repaint
-      // A more precise approach would track executing nodes
       m_spinnerTimer.stop();
       update();
     });
+    auto* sink = qobject_cast<LegacyModuleSink*>(node);
+    if (sink) {
+      connect(sink, &LegacyModuleSink::visibilityChanged, this,
+              QOverload<>::of(&QWidget::update));
+    }
+  };
+
+  connect(m_pipeline, &Pipeline::nodeAdded, this, [this, connectNode](Node* node) {
+    connectNode(node);
     rebuildLayout();
     update();
   });
@@ -335,21 +342,7 @@ void PipelineStripWidget::connectPipeline()
 
   // Connect existing nodes
   for (auto* node : m_pipeline->nodes()) {
-    connect(node, &Node::stateChanged, this,
-            QOverload<>::of(&QWidget::update));
-    connect(node, &Node::labelChanged, this,
-            QOverload<>::of(&QWidget::update));
-    connect(node, &Node::breakpointChanged, this,
-            QOverload<>::of(&QWidget::update));
-    connect(node, &Node::executionStarted, this, [this]() {
-      if (!m_spinnerTimer.isActive()) {
-        m_spinnerTimer.start();
-      }
-    });
-    connect(node, &Node::executionFinished, this, [this](bool) {
-      m_spinnerTimer.stop();
-      update();
-    });
+    connectNode(node);
   }
 }
 
@@ -461,21 +454,13 @@ void PipelineStripWidget::paintNodeCard(QPainter& painter,
   int cy = r.top() + NodeCardHeight / 2; // header row center
   int headerHeight = NodeCardHeight;
 
-  // Badge
-  QColor badge = badgeColor(node);
-  painter.setBrush(badge);
-  painter.setPen(Qt::NoPen);
-  painter.drawEllipse(QPoint(x + BadgeSize / 2, cy), BadgeSize / 2,
-                      BadgeSize / 2);
-
-  // Badge text
-  QFont badgeFont = font();
-  badgeFont.setPixelSize(8);
-  badgeFont.setBold(true);
-  painter.setFont(badgeFont);
-  painter.setPen(Qt::white);
-  painter.drawText(QRect(x, cy - BadgeSize / 2, BadgeSize, BadgeSize),
-                   Qt::AlignCenter, badgeText(node));
+  // Node icon
+  QIcon nodeIcon = node->icon();
+  int iconPaintSize = 14;
+  QRect iconRect(x + (BadgeSize - iconPaintSize) / 2,
+                 cy - iconPaintSize / 2,
+                 iconPaintSize, iconPaintSize);
+  nodeIcon.paint(&painter, iconRect);
 
   x += BadgeSize + 6;
 
@@ -546,6 +531,13 @@ void PipelineStripWidget::paintNodeCard(QPainter& painter,
       opt.state |= QStyle::State_Selected;
     }
     style()->drawPrimitive(QStyle::PE_IndicatorBranch, &opt, &painter, this);
+  } else {
+    // Action button for nodes without outputs (e.g. visibility toggle)
+    QIcon actIcon = node->actionIcon();
+    if (!actIcon.isNull()) {
+      QRect actRect = actionButtonRect(r);
+      actIcon.paint(&painter, actRect);
+    }
   }
 
   // Reset brush so it doesn't leak into subsequent paint calls
@@ -575,6 +567,14 @@ void PipelineStripWidget::paintPortCard(QPainter& painter,
   painter.drawPath(path);
 
   int x = r.left() + 6;
+
+  // Port type icon
+  QIcon pIcon = portTypeIcon(port);
+  int portIconSize = 12;
+  QRect pIconRect(x, r.top() + (r.height() - portIconSize) / 2,
+                  portIconSize, portIconSize);
+  pIcon.paint(&painter, pIconRect);
+  x += portIconSize + 4;
 
   // Port name
   QFont portFont = font();
@@ -915,18 +915,21 @@ QColor PipelineStripWidget::badgeColor(Node* node) const
   return QColor(158, 158, 158); // gray
 }
 
-QString PipelineStripWidget::badgeText(Node* node) const
+QIcon PipelineStripWidget::portTypeIcon(OutputPort* port) const
 {
-  if (qobject_cast<SourceNode*>(node)) {
-    return QStringLiteral("S");
+  if (!port) {
+    return QIcon(QStringLiteral(":/icons/pqInspect.png"));
   }
-  if (qobject_cast<TransformNode*>(node)) {
-    return QStringLiteral("T");
+  switch (port->type()) {
+    case PortType::Volume:
+      return QIcon(QStringLiteral(":/icons/pqInspect.png"));
+    case PortType::Table:
+      return QIcon(QStringLiteral(":/pqWidgets/Icons/pqSpreadsheet.svg"));
+    case PortType::Molecule:
+      return QIcon(QStringLiteral(":/icons/pqInspect.png"));
+    default:
+      return QIcon(QStringLiteral(":/icons/pqInspect.png"));
   }
-  if (qobject_cast<SinkNode*>(node)) {
-    return QStringLiteral("K");
-  }
-  return QStringLiteral("?");
 }
 
 QColor PipelineStripWidget::portTypeColor(OutputPort* port) const
@@ -966,7 +969,7 @@ QIcon PipelineStripWidget::stateIcon(Node* node) const
 
 QRect PipelineStripWidget::breakpointRect(const QRect& cardRect) const
 {
-  // Layout: [breakpoint] [state] [expand]
+  // Layout: [breakpoint] [state] [expand/action]
   int iconSize = 14;
   int rightPad = 4;
   int expandWidth = 16;
@@ -975,6 +978,17 @@ QRect PipelineStripWidget::breakpointRect(const QRect& cardRect) const
   int bpX = stateX - iconSize;
   int bpY = cardRect.top() + (NodeCardHeight - iconSize) / 2;
   return QRect(bpX, bpY, iconSize, iconSize);
+}
+
+QRect PipelineStripWidget::actionButtonRect(const QRect& cardRect) const
+{
+  // Same position as the expand toggle
+  int iconSize = 14;
+  int rightPad = 4;
+  int expandWidth = 16;
+  int toggleX = cardRect.right() - expandWidth - rightPad;
+  int toggleY = cardRect.top() + (NodeCardHeight - iconSize) / 2;
+  return QRect(toggleX, toggleY, expandWidth, iconSize);
 }
 
 // --- Interaction ---
@@ -997,7 +1011,7 @@ void PipelineStripWidget::mousePressEvent(QMouseEvent* event)
         return;
       }
 
-      // Expand toggle (rightmost area)
+      // Expand toggle (rightmost area) or action button
       auto outputs = node->outputPorts();
       if (!outputs.isEmpty()) {
         int expandWidth = 16;
@@ -1006,6 +1020,13 @@ void PipelineStripWidget::mousePressEvent(QMouseEvent* event)
         if (event->pos().x() >= toggleX &&
             event->pos().x() <= cardRect.right() - rightPad) {
           setExpanded(node, !isExpanded(node));
+          return;
+        }
+      } else if (!node->actionIcon().isNull()) {
+        QRect actRect = actionButtonRect(cardRect);
+        if (actRect.contains(event->pos())) {
+          node->triggerAction();
+          update();
           return;
         }
       }

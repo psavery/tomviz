@@ -20,6 +20,8 @@ public:
   SourceNode(QObject* parent = nullptr);
   ~SourceNode() override = default;
 
+  QIcon icon() const override;
+
   OutputPort* addOutput(const QString& name, PortType type);
   void setOutputData(const QString& portName, const PortData& data);
 

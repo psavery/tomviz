@@ -49,6 +49,17 @@ ContourSink::~ContourSink()
   finalize();
 }
 
+QIcon ContourSink::icon() const
+{
+  return QIcon(QStringLiteral(":/pqWidgets/Icons/pqIsosurface.svg"));
+}
+
+void ContourSink::setVisibility(bool visible)
+{
+  m_actor->SetVisibility(visible ? 1 : 0);
+  LegacyModuleSink::setVisibility(visible);
+}
+
 bool ContourSink::isColorMapNeeded() const
 {
   return true;

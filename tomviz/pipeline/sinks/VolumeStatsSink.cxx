@@ -16,6 +16,11 @@ VolumeStatsSink::VolumeStatsSink(QObject* parent) : SinkNode(parent)
   setLabel("Volume Stats");
 }
 
+QIcon VolumeStatsSink::icon() const
+{
+  return QIcon(QStringLiteral(":/pqWidgets/Icons/pqSpreadsheet.svg"));
+}
+
 double VolumeStatsSink::min() const
 {
   return m_min;

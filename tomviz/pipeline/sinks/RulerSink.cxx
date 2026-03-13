@@ -34,6 +34,17 @@ RulerSink::~RulerSink()
   finalize();
 }
 
+QIcon RulerSink::icon() const
+{
+  return QIcon(QStringLiteral(":/pqWidgets/Icons/pqRuler.svg"));
+}
+
+void RulerSink::setVisibility(bool visible)
+{
+  m_actor->SetVisibility(visible ? 1 : 0);
+  LegacyModuleSink::setVisibility(visible);
+}
+
 bool RulerSink::initialize(vtkSMViewProxy* view)
 {
   if (!LegacyModuleSink::initialize(view)) {

@@ -95,8 +95,9 @@ private:
   QColor badgeColor(Node* node) const;
   QColor portTypeColor(OutputPort* port) const;
   QIcon stateIcon(Node* node) const;
-  QString badgeText(Node* node) const;
+  QIcon portTypeIcon(OutputPort* port) const;
   QRect breakpointRect(const QRect& cardRect) const;
+  QRect actionButtonRect(const QRect& cardRect) const;
 
   Pipeline* m_pipeline = nullptr;
   QList<LayoutItem> m_layout;
@@ -116,7 +117,7 @@ private:
   static constexpr int DirectConnectionSpacing = 12;
   static constexpr int PortIndent = 8;
   static constexpr int CardRadius = 4;
-  static constexpr int BadgeSize = 12;
+  static constexpr int BadgeSize = 16;
   static constexpr int DotRadius = 4;
   static constexpr int DotSpacing = 10; // center-to-center between adjacent dots
   static constexpr int DotMargin = 6;   // left margin for dots on node cards

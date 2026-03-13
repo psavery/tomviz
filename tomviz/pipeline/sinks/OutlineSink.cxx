@@ -62,6 +62,18 @@ OutlineSink::~OutlineSink()
   finalize();
 }
 
+QIcon OutlineSink::icon() const
+{
+  return QIcon(QStringLiteral(":/pqWidgets/Icons/pqProbeLocation.svg"));
+}
+
+void OutlineSink::setVisibility(bool visible)
+{
+  m_actor->SetVisibility(visible ? 1 : 0);
+  m_gridAxes->SetVisibility((visible && m_showGridAxes) ? 1 : 0);
+  LegacyModuleSink::setVisibility(visible);
+}
+
 bool OutlineSink::initialize(vtkSMViewProxy* view)
 {
   if (!LegacyModuleSink::initialize(view)) {

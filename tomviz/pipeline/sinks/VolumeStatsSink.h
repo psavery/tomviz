@@ -21,6 +21,8 @@ public:
   VolumeStatsSink(QObject* parent = nullptr);
   ~VolumeStatsSink() override = default;
 
+  QIcon icon() const override;
+
   double min() const;
   double max() const;
   double mean() const;

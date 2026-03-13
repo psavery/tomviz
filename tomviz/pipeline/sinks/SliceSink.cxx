@@ -43,6 +43,22 @@ SliceSink::~SliceSink()
   finalize();
 }
 
+QIcon SliceSink::icon() const
+{
+  return QIcon(QStringLiteral(":/icons/orthoslice.svg"));
+}
+
+void SliceSink::setVisibility(bool visible)
+{
+  if (m_widget) {
+    m_widget->SetEnabled(visible ? 1 : 0);
+    if (visible) {
+      m_widget->SetInteraction(m_showArrow ? 1 : 0);
+    }
+  }
+  LegacyModuleSink::setVisibility(visible);
+}
+
 bool SliceSink::isColorMapNeeded() const
 {
   return true;

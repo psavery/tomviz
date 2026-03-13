@@ -25,6 +25,8 @@ public:
   TransformNode(QObject* parent = nullptr);
   ~TransformNode() override = default;
 
+  QIcon icon() const override;
+
   InputPort* addInput(const QString& name, PortTypes acceptedTypes);
   OutputPort* addOutput(const QString& name, PortType type);
 

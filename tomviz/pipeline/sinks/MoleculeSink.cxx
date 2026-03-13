@@ -26,6 +26,17 @@ MoleculeSink::~MoleculeSink()
   finalize();
 }
 
+QIcon MoleculeSink::icon() const
+{
+  return QIcon(QStringLiteral(":/pqWidgets/Icons/pqGroup.svg"));
+}
+
+void MoleculeSink::setVisibility(bool visible)
+{
+  m_actor->SetVisibility(visible ? 1 : 0);
+  LegacyModuleSink::setVisibility(visible);
+}
+
 bool MoleculeSink::initialize(vtkSMViewProxy* view)
 {
   if (!LegacyModuleSink::initialize(view)) {

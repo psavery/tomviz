@@ -110,6 +110,17 @@ SegmentSink::~SegmentSink()
   finalize();
 }
 
+QIcon SegmentSink::icon() const
+{
+  return QIcon(QStringLiteral(":/pqWidgets/Icons/pqCalculator.svg"));
+}
+
+void SegmentSink::setVisibility(bool visible)
+{
+  m_actor->SetVisibility(visible ? 1 : 0);
+  LegacyModuleSink::setVisibility(visible);
+}
+
 bool SegmentSink::isColorMapNeeded() const
 {
   return true;

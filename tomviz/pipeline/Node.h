@@ -9,6 +9,7 @@
 #include "NodeState.h"
 #include "PortType.h"
 
+#include <QIcon>
 #include <QList>
 #include <QObject>
 #include <QString>
@@ -55,6 +56,15 @@ public:
   QVariant property(const QString& key,
                     const QVariant& defaultValue = {}) const;
   QVariantMap properties() const;
+
+  virtual QIcon icon() const;
+
+  /// Optional action button icon shown on the node card (e.g. visibility
+  /// toggle). Return a null QIcon to indicate no action button.
+  virtual QIcon actionIcon() const;
+
+  /// Called when the user clicks the action button.
+  virtual void triggerAction();
 
   virtual bool execute();
 

@@ -30,6 +30,24 @@ LegacyModuleSink::~LegacyModuleSink()
   finalize();
 }
 
+QIcon LegacyModuleSink::icon() const
+{
+  return QIcon(QStringLiteral(":/icons/pqInspect.png"));
+}
+
+QIcon LegacyModuleSink::actionIcon() const
+{
+  if (m_visible) {
+    return QIcon(QStringLiteral(":/pqWidgets/Icons/pqEyeball.svg"));
+  }
+  return QIcon(QStringLiteral(":/pqWidgets/Icons/pqEyeballClosed.svg"));
+}
+
+void LegacyModuleSink::triggerAction()
+{
+  setVisibility(!m_visible);
+}
+
 bool LegacyModuleSink::initialize(vtkSMViewProxy* view)
 {
   if (!view) {
@@ -72,6 +90,7 @@ void LegacyModuleSink::setVisibility(bool visible)
   if (m_visible != visible) {
     m_visible = visible;
     emit visibilityChanged(visible);
+    emit renderNeeded();
   }
 }
 

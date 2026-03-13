@@ -36,6 +36,17 @@ ThresholdSink::~ThresholdSink()
   finalize();
 }
 
+QIcon ThresholdSink::icon() const
+{
+  return QIcon(QStringLiteral(":/pqWidgets/Icons/pqThreshold.svg"));
+}
+
+void ThresholdSink::setVisibility(bool visible)
+{
+  m_actor->SetVisibility(visible ? 1 : 0);
+  LegacyModuleSink::setVisibility(visible);
+}
+
 bool ThresholdSink::isColorMapNeeded() const
 {
   return true;

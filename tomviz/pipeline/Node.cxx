@@ -170,6 +170,18 @@ QVariantMap Node::properties() const
   return m_properties;
 }
 
+QIcon Node::icon() const
+{
+  return QIcon(QStringLiteral(":/icons/pqInspect.png"));
+}
+
+QIcon Node::actionIcon() const
+{
+  return QIcon();
+}
+
+void Node::triggerAction() {}
+
 bool Node::execute()
 {
   return true;

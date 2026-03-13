@@ -31,6 +31,21 @@ PlotSink::~PlotSink()
   finalize();
 }
 
+QIcon PlotSink::icon() const
+{
+  return QIcon(QStringLiteral(":/pqWidgets/Icons/pqLineChart16.png"));
+}
+
+void PlotSink::setVisibility(bool visible)
+{
+  if (visible) {
+    addAllPlots();
+  } else {
+    removeAllPlots();
+  }
+  LegacyModuleSink::setVisibility(visible);
+}
+
 bool PlotSink::initialize(vtkSMViewProxy* view)
 {
   // Store the view proxy in the base class (but skip the render-view cast).
