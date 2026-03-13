@@ -23,6 +23,7 @@ set(SOURCES
   sources/DataReader.cxx
   sources/ReaderSourceNode.cxx
   transforms/ThresholdTransform.cxx
+  transforms/SetTiltAnglesTransform.cxx
   transforms/LegacyPythonTransform.cxx
   sinks/VolumeStatsSink.cxx
   sinks/LegacyModuleSink.cxx
@@ -66,7 +67,9 @@ set(HEADERS
   sources/DataReader.h
   sources/ReaderSourceNode.h
   transforms/ThresholdTransform.h
+  transforms/SetTiltAnglesTransform.h
   transforms/LegacyPythonTransform.h
+  PortUtils.h
   pybind11/PybindVTKTypeCaster.h
   sinks/VolumeStatsSink.h
   sinks/LegacyModuleSink.h

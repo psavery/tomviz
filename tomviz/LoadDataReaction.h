@@ -14,8 +14,11 @@ class vtkImageData;
 class vtkSMProxy;
 
 namespace tomviz {
-class DataSource;
 class MoleculeSource;
+
+namespace pipeline {
+class SourceNode;
+}
 
 class PythonReaderFactory;
 
@@ -31,50 +34,53 @@ public:
   LoadDataReaction(QAction* parentAction);
   ~LoadDataReaction() override;
 
-  static QList<DataSource*> loadData(bool isTimeSeries = false);
+  static QList<pipeline::SourceNode*> loadData(bool isTimeSeries = false);
 
   /// Convenience method, adds defaultModules, addToRecent, and child to the
   /// JSON object before passing it to the loadData methods.
-  static DataSource* loadData(const QString& fileName, bool defaultModules,
-                              bool addToRecent, bool child,
-                              const QJsonObject& options = QJsonObject());
+  static pipeline::SourceNode* loadData(const QString& fileName,
+                                        bool defaultModules, bool addToRecent,
+                                        bool child,
+                                        const QJsonObject& options =
+                                          QJsonObject());
 
   /// Load a data file from the specified location, options can be used to pass
   /// additional parameters to the method, such as defaultModules, addToRecent,
   /// and child, or pvXML to pass to the ParaView reader.
-  static DataSource* loadData(const QString& fileName,
-                              const QJsonObject& options = QJsonObject());
+  static pipeline::SourceNode* loadData(
+    const QString& fileName, const QJsonObject& options = QJsonObject());
 
   /// Load data files from the specified locations, options can be used to pass
   /// additional parameters to the method, such as defaultModules, addToRecent,
   /// and child, or pvXML to pass to the ParaView reader.
-  static DataSource* loadData(const QStringList& fileNames,
-                              const QJsonObject& options = QJsonObject());
+  static pipeline::SourceNode* loadData(
+    const QStringList& fileNames, const QJsonObject& options = QJsonObject());
 
   static QList<MoleculeSource*> loadMolecule(
     const QStringList& fileNames, const QJsonObject& options = QJsonObject());
   static MoleculeSource* loadMolecule(
     const QString& fileName, const QJsonObject& options = QJsonObject());
 
-  /// Handle creation of a new data source.
-  static void dataSourceAdded(DataSource* dataSource,
+  /// Handle creation of a new source node (data already set on the node).
+  static void sourceNodeAdded(pipeline::SourceNode* source,
                               bool defaultModules = true, bool child = false,
                               bool createCameraOrbit = true);
 
-protected:
-  /// Create a raw data source from the reader.
-  static DataSource* createDataSource(vtkSMProxy* reader,
-                                      bool defaultModules = true,
-                                      bool child = false,
-                                      bool addToPipeline = true);
+  /// Create a SourceNode from a ParaView reader proxy.
+  static pipeline::SourceNode* createFromParaViewReader(
+    vtkSMProxy* reader, bool defaultModules = true, bool child = false,
+    bool addToPipeline = true);
 
+protected:
   /// Called when the action is triggered.
   void onTriggered() override;
 
 private:
   Q_DISABLE_COPY(LoadDataReaction)
 
-  static void addDefaultModules(DataSource* dataSource);
+  static pipeline::SourceNode* createSourceFromImageData(
+    vtkImageData* image, const QString& label,
+    const QStringList& fileNames = {});
   static QJsonObject readerProperties(vtkSMProxy* reader);
   static void setFileNameProperties(const QJsonObject& props,
                                     vtkSMProxy* reader);

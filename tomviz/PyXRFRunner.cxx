@@ -4,9 +4,12 @@
 #include "PyXRFRunner.h"
 
 #include "CameraReaction.h"
-#include "DataSource.h"
 #include "EmdFormat.h"
 #include "LoadDataReaction.h"
+
+#include "pipeline/PortUtils.h"
+#include "pipeline/SourceNode.h"
+#include "pipeline/data/VolumeData.h"
 #include "ProgressDialog.h"
 #include "PyXRFMakeHDF5Dialog.h"
 #include "PyXRFProcessDialog.h"
@@ -661,14 +664,21 @@ public:
   }
 
   void loadElementsIntoArray(const QStringList& fileList) {
-    // Load the first file into a DataSource
-    auto* dataSource = LoadDataReaction::loadData(fileList[0]);
-    if (!dataSource || !dataSource->imageData()) {
+    // Load the first file into a SourceNode
+    auto* source = LoadDataReaction::loadData(fileList[0]);
+    if (!source) {
       qCritical() << "Failed to load file:" << fileList[0];
       return;
     }
 
-    auto* rootImageData = dataSource->imageData();
+    auto vol =
+      tomviz::pipeline::getOutputData<tomviz::pipeline::VolumeDataPtr>(source);
+    if (!vol || !vol->imageData()) {
+      qCritical() << "Failed to get volume data from:" << fileList[0];
+      return;
+    }
+
+    auto* rootImageData = vol->imageData();
     auto* rootPointData = rootImageData->GetPointData();
     auto newRootName = QFileInfo(fileList[0]).baseName();
     rootPointData->GetScalars()->SetName(newRootName.toStdString().c_str());
@@ -697,19 +707,17 @@ public:
     sortedList.sort();
     auto firstName = QFileInfo(sortedList[0]).baseName();
 
-    dataSource->setActiveScalars(firstName.toStdString().c_str());
-    dataSource->setLabel("Extracted Elements");
-
-    if (!scanIDs.isEmpty()) {
-      dataSource->setScanIDs(scanIDs);
-    }
-
-    dataSource->dataModified();
+    // Set active scalars on the underlying vtkImageData
+    rootPointData->SetActiveScalars(firstName.toStdString().c_str());
+    source->setLabel("Extracted Elements");
 
     // Write this to an EMD format
-    QString saveFile = QFileInfo(sortedList[0]).dir().absoluteFilePath("extracted_elements.emd");
-    EmdFormat::write(saveFile.toStdString(), dataSource);
-    dataSource->setFileName(saveFile);
+    QString saveFile =
+      QFileInfo(sortedList[0])
+        .dir()
+        .absoluteFilePath("extracted_elements.emd");
+    EmdFormat::write(saveFile.toStdString(), rootImageData);
+    source->setProperty("fileNames", QStringList({ saveFile }));
 
     // Automatically update camera to BNL convention
     CameraReaction::resetPositiveZ();

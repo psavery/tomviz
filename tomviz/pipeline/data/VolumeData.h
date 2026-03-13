@@ -11,6 +11,9 @@
 #include <vtkNew.h>
 #include <vtkSmartPointer.h>
 
+#include <QList>
+#include <QVector>
+
 #include <array>
 #include <memory>
 
@@ -121,6 +124,31 @@ public:
   QString units() const;
   void setUnits(const QString& units);
 
+  // -- Tilt angle accessors --
+
+  bool hasTiltAngles() const;
+  QVector<double> tiltAngles() const;
+  void setTiltAngles(const QVector<double>& angles);
+
+  /// Static utility: check if a vtkImageData has tilt angles stored
+  /// in its field data (array named "tilt_angles").
+  static bool hasTiltAngles(vtkImageData* image);
+  static QVector<double> getTiltAngles(vtkImageData* image);
+
+  // -- Time series support --
+
+  struct TimeStep {
+    QString label;
+    vtkSmartPointer<vtkImageData> image;
+    double time = 0.0;
+  };
+
+  void setTimeSteps(const QList<TimeStep>& steps);
+  QList<TimeStep> timeSteps() const;
+  bool hasTimeSteps() const;
+  int currentTimeStepIndex() const;
+  void switchTimeStep(int index);
+
 private:
   vtkSmartPointer<vtkImageData> m_imageData;
   vtkSmartPointer<vtkSMProxy> m_colorMap;
@@ -130,6 +158,8 @@ private:
   vtkPiecewiseFunction* m_opacity = nullptr;
   QString m_label;
   QString m_units;
+  QList<TimeStep> m_timeSteps;
+  int m_currentTimeStep = 0;
 };
 
 /// Convenience type for sharing VolumeData through ports via std::any

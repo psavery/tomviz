@@ -8,9 +8,15 @@
 #include "LoadDataReaction.h"
 #include "Utilities.h"
 
+#include "pipeline/PortData.h"
+#include "pipeline/PortType.h"
+#include "pipeline/SourceNode.h"
+#include "pipeline/data/VolumeData.h"
+
 #include <vtkImageData.h>
 #include <vtkImageReslice.h>
 #include <vtkNew.h>
+#include <vtkSmartPointer.h>
 #include <vtkTrivialProducer.h>
 
 #include <vtkSMSourceProxy.h>
@@ -117,20 +123,19 @@ void AddResampleReaction::resample(DataSource* source)
     reslice->SetOutputOrigin(newOrigin);
     reslice->Update();
 
-    // Create a DataSource and set its data to the resampled data
-    // TODO - cloning here is really expensive memory-wise, we should figure
-    // out a different way to do it
-    // N.B. This does not clone the attached operators.
-    DataSource* resampledData = source->clone();
-    QString name = resampledData->label();
-    name = "Downsampled_" + name;
-    resampledData->setLabel(name);
-    auto t = resampledData->producer();
-    t->SetOutput(reslice->GetOutput());
-    resampledData->dataModified();
+    // Create a SourceNode with the resampled data
+    auto* newSource = new pipeline::SourceNode();
+    QString name = "Downsampled_" + source->label();
+    newSource->setLabel(name);
+    newSource->addOutput("volume", pipeline::PortType::Volume);
+    vtkSmartPointer<vtkImageData> resampledImage = reslice->GetOutput();
+    auto vol = std::make_shared<pipeline::VolumeData>(resampledImage);
+    vol->setLabel(name);
+    newSource->setOutputData(
+      "volume",
+      pipeline::PortData(vol, pipeline::PortType::Volume));
 
-    // Add the new DataSource
-    LoadDataReaction::dataSourceAdded(resampledData);
+    LoadDataReaction::sourceNodeAdded(newSource);
   }
 }
 } // namespace tomviz

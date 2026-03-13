@@ -5,6 +5,8 @@
 
 #include <vtkColorTransferFunction.h>
 #include <vtkDataArray.h>
+#include <vtkDoubleArray.h>
+#include <vtkFieldData.h>
 #include <vtkImageData.h>
 #include <vtkPiecewiseFunction.h>
 #include <vtkPointData.h>
@@ -352,6 +354,89 @@ QString VolumeData::units() const
 void VolumeData::setUnits(const QString& units)
 {
   m_units = units;
+}
+
+bool VolumeData::hasTiltAngles() const
+{
+  return hasTiltAngles(m_imageData);
+}
+
+QVector<double> VolumeData::tiltAngles() const
+{
+  return getTiltAngles(m_imageData);
+}
+
+void VolumeData::setTiltAngles(const QVector<double>& angles)
+{
+  if (!m_imageData) {
+    return;
+  }
+  vtkNew<vtkDoubleArray> array;
+  array->SetName("tilt_angles");
+  array->SetNumberOfTuples(angles.size());
+  for (int i = 0; i < angles.size(); ++i) {
+    array->SetValue(i, angles[i]);
+  }
+  m_imageData->GetFieldData()->AddArray(array);
+}
+
+bool VolumeData::hasTiltAngles(vtkImageData* image)
+{
+  if (!image || !image->GetFieldData()) {
+    return false;
+  }
+  auto* arr = image->GetFieldData()->GetArray("tilt_angles");
+  return arr != nullptr && arr->GetNumberOfTuples() > 0;
+}
+
+QVector<double> VolumeData::getTiltAngles(vtkImageData* image)
+{
+  QVector<double> result;
+  if (!image || !image->GetFieldData()) {
+    return result;
+  }
+  auto* arr = image->GetFieldData()->GetArray("tilt_angles");
+  if (!arr) {
+    return result;
+  }
+  result.resize(arr->GetNumberOfTuples());
+  for (vtkIdType i = 0; i < arr->GetNumberOfTuples(); ++i) {
+    result[i] = arr->GetComponent(i, 0);
+  }
+  return result;
+}
+
+void VolumeData::setTimeSteps(const QList<TimeStep>& steps)
+{
+  m_timeSteps = steps;
+  if (!steps.isEmpty()) {
+    m_currentTimeStep = 0;
+    m_imageData = steps[0].image;
+  }
+}
+
+QList<VolumeData::TimeStep> VolumeData::timeSteps() const
+{
+  return m_timeSteps;
+}
+
+bool VolumeData::hasTimeSteps() const
+{
+  return !m_timeSteps.isEmpty();
+}
+
+int VolumeData::currentTimeStepIndex() const
+{
+  return m_currentTimeStep;
+}
+
+void VolumeData::switchTimeStep(int index)
+{
+  if (index < 0 || index >= m_timeSteps.size()) {
+    return;
+  }
+  m_currentTimeStep = index;
+  m_imageData = m_timeSteps[index].image;
 }
 
 } // namespace pipeline

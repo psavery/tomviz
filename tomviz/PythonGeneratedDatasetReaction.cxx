@@ -7,6 +7,11 @@
 #include "DataSource.h"
 #include "LoadDataReaction.h"
 #include "ModuleManager.h"
+
+#include "pipeline/PortData.h"
+#include "pipeline/PortType.h"
+#include "pipeline/SourceNode.h"
+#include "pipeline/data/VolumeData.h"
 #include "PythonUtilities.h"
 #include "Utilities.h"
 #include "core/Variant.h"
@@ -227,6 +232,25 @@ private:
 
 namespace tomviz {
 
+namespace {
+void addGeneratedSource(DataSource* ds)
+{
+  if (!ds) {
+    return;
+  }
+  auto* source = new pipeline::SourceNode();
+  source->setLabel(ds->label());
+  source->addOutput("volume", pipeline::PortType::Volume);
+  auto vol = std::make_shared<pipeline::VolumeData>(ds->imageData());
+  vol->setLabel(ds->label());
+  source->setOutputData(
+    "volume",
+    pipeline::PortData(vol, pipeline::PortType::Volume));
+  LoadDataReaction::sourceNodeAdded(source, true, false);
+  delete ds;
+}
+} // namespace
+
 PythonGeneratedDatasetReaction::PythonGeneratedDatasetReaction(
   QAction* parentObject, const QString& l, const QString& s)
   : pqReaction(parentObject)
@@ -274,8 +298,7 @@ void PythonGeneratedDatasetReaction::addDataset()
 
     int shape[3];
     shapeWidget->getShape(shape);
-    LoadDataReaction::dataSourceAdded(generator.createDataSource(shape), true,
-                                      false);
+    addGeneratedSource(generator.createDataSource(shape));
   } else if (m_scriptLabel == "Random Particles") {
     QDialog dialog;
     dialog.setWindowTitle("Generate Random Particles");
@@ -351,8 +374,7 @@ void PythonGeneratedDatasetReaction::addDataset()
 
       int shape[3];
       shapeLayout->getShape(shape);
-      LoadDataReaction::dataSourceAdded(generator.createDataSource(shape), true,
-                                        false);
+      addGeneratedSource(generator.createDataSource(shape));
     }
   } else if (m_scriptLabel == "Electron Beam Shape") {
     QDialog dialog;
@@ -521,8 +543,7 @@ void PythonGeneratedDatasetReaction::addDataset()
       generator.setArguments(args);
 
       const int shape[3] = { Nxy->value(), Nxy->value(), Nz->value() };
-      LoadDataReaction::dataSourceAdded(generator.createDataSource(shape), true,
-                                        false);
+      addGeneratedSource(generator.createDataSource(shape));
     }
   } // end of else if
 }

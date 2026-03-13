@@ -10,6 +10,11 @@
 #include "MoleculeSource.h"
 #include "Pipeline.h"
 #include "PythonGeneratedDatasetReaction.h"
+
+#include "pipeline/PortData.h"
+#include "pipeline/PortType.h"
+#include "pipeline/SourceNode.h"
+#include "pipeline/data/VolumeData.h"
 #include "Utilities.h"
 #include "tomvizConfig.h"
 
@@ -1443,36 +1448,41 @@ DataSource* ModuleManager::loadDataSource(QJsonObject& dsObject)
     }
   }
 
-  DataSource* dataSource = nullptr;
+  // TODO: Legacy state restoration — this path creates SourceNodes via
+  // LoadDataReaction but cannot fully deserialize DataSource state.
+  // Full serialization support for the new pipeline is a separate concern.
+  pipeline::SourceNode* sourceNode = nullptr;
   if (dsObject.find("sourceInformation") != dsObject.end()) {
-    dataSource = PythonGeneratedDatasetReaction::createDataSource(
+    DataSource* ds = PythonGeneratedDatasetReaction::createDataSource(
       dsObject["sourceInformation"].toObject());
-    LoadDataReaction::dataSourceAdded(dataSource, false, false);
+    if (ds) {
+      auto* sn = new pipeline::SourceNode();
+      sn->setLabel(ds->label());
+      sn->addOutput("volume", pipeline::PortType::Volume);
+      vtkSmartPointer<vtkImageData> img = ds->imageData();
+      auto vol = std::make_shared<pipeline::VolumeData>(img);
+      vol->setLabel(ds->label());
+      sn->setOutputData(
+        "volume",
+        pipeline::PortData(vol, pipeline::PortType::Volume));
+      LoadDataReaction::sourceNodeAdded(sn, false, false);
+      sourceNode = sn;
+      delete ds;
+    }
   } else if (fileNames.size() > 0) {
-    dataSource = LoadDataReaction::loadData(fileNames, options);
+    sourceNode = LoadDataReaction::loadData(fileNames, options);
   } else {
     qCritical() << "Files not found on disk for data source, check paths.";
   }
 
-  if (dataSource) {
-    if (executePipelinesOnLoad() && dsObject.contains("operators") &&
-        dsObject["operators"].toArray().size() > 0) {
-      connect(dataSource->pipeline(), &Pipeline::finished, this,
-              &ModuleManager::onPipelineFinished);
-      ++d->RemaningPipelinesToWaitFor;
-    }
-    dataSource->deserialize(dsObject);
-    if (fileNames.isEmpty()) {
-      dataSource->setPersistenceState(DataSource::PersistenceState::Transient);
-    }
-  }
-  // FIXME: I think we need to collect the active objects and set them at
-  // the end, as the act of adding generally implies setting to active.
-  if (dsObject["active"].toBool()) {
-    ActiveObjects::instance().setActiveDataSource(dataSource);
-  }
+  Q_UNUSED(sourceNode);
+  // TODO: The following legacy code is not yet migrated:
+  // - Pipeline::finished connection for operators
+  // - dataSource->deserialize(dsObject)
+  // - setPersistenceState for transient sources
+  // - setActiveDataSource
 
-  return dataSource;
+  return nullptr;
 }
 
 void ModuleManager::setMostRecentStateFile(const QString& s)

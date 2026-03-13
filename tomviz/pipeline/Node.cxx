@@ -154,6 +154,22 @@ QList<Node*> Node::downstreamNodes() const
   return result;
 }
 
+void Node::setProperty(const QString& key, const QVariant& value)
+{
+  m_properties[key] = value;
+}
+
+QVariant Node::property(const QString& key,
+                        const QVariant& defaultValue) const
+{
+  return m_properties.value(key, defaultValue);
+}
+
+QVariantMap Node::properties() const
+{
+  return m_properties;
+}
+
 bool Node::execute()
 {
   return true;

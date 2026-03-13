@@ -4,10 +4,12 @@
 #include "RecentFilesMenu.h"
 
 #include "ActiveObjects.h"
-#include "DataSource.h"
 #include "LoadDataReaction.h"
 #include "SaveLoadStateReaction.h"
 #include "Utilities.h"
+
+#include "pipeline/Node.h"
+#include "pipeline/SourceNode.h"
 
 #include <pqSettings.h>
 
@@ -99,14 +101,18 @@ RecentFilesMenu::RecentFilesMenu(QMenu& menu, QObject* p) : QObject(p)
 
 RecentFilesMenu::~RecentFilesMenu() = default;
 
-void RecentFilesMenu::pushDataReader(DataSource* dataSource)
+void RecentFilesMenu::pushDataReader(pipeline::SourceNode* source)
 {
   // Add non-proxy based readers separately.
   auto settings = loadSettings();
   auto readerList = settings["readers"].toArray();
-  QJsonObject readerJson =
-    QJsonObject::fromVariantMap(dataSource->readerProperties());
-  auto fileNames = dataSource->fileNames();
+
+  // Get reader properties and file names from node properties
+  QVariantMap readerProps =
+    source->property("readerProperties").toMap();
+  QJsonObject readerJson = QJsonObject::fromVariantMap(readerProps);
+  QStringList fileNames = source->property("fileNames").toStringList();
+
   if (fileNames.size() < 1) {
     return;
   }

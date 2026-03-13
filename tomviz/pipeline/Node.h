@@ -12,6 +12,8 @@
 #include <QList>
 #include <QObject>
 #include <QString>
+#include <QVariant>
+#include <QVariantMap>
 
 namespace tomviz {
 namespace pipeline {
@@ -48,6 +50,12 @@ public:
   QList<Node*> upstreamNodes() const;
   QList<Node*> downstreamNodes() const;
 
+  /// Arbitrary metadata properties.
+  void setProperty(const QString& key, const QVariant& value);
+  QVariant property(const QString& key,
+                    const QVariant& defaultValue = {}) const;
+  QVariantMap properties() const;
+
   virtual bool execute();
 
 signals:
@@ -67,6 +75,7 @@ private:
   bool m_breakpoint = false;
   QList<InputPort*> m_inputPorts;
   QList<OutputPort*> m_outputPorts;
+  QVariantMap m_properties;
 };
 
 } // namespace pipeline

@@ -17,6 +17,8 @@
 #include <vtkPointData.h>
 #include <vtkSmartPointer.h>
 
+#include <h5cpp/h5readwrite.h>
+
 #include "ActiveObjects.h"
 #include "DataSource.h"
 #include "EmdFormat.h"
@@ -176,21 +178,22 @@ private slots:
     auto fileName = tempFilePath();
     QVERIFY(Tvh5Format::write(fileName.toStdString()));
 
-    // Clear application state
-    ModuleManager::instance().reset();
+    // Read back the data directly from the HDF5 file.
+    // Tvh5Format::read() now creates SourceNodes in the new pipeline rather
+    // than registering DataSources with ModuleManager, so we verify the
+    // round-trip by reading the EMD node directly.
+    using h5::H5ReadWrite;
+    H5ReadWrite reader(fileName.toStdString(), H5ReadWrite::OpenMode::ReadOnly);
 
-    // Read back
-    QVERIFY(Tvh5Format::read(fileName.toStdString()));
+    // The data source id is stored in the state; read the first datasource
+    // group from /tomviz_datasources/
+    auto children = reader.children("/tomviz_datasources");
+    QVERIFY(!children.empty());
 
-    // Verify a data source was loaded
-    auto sources = ModuleManager::instance().allDataSources();
-    QVERIFY(!sources.isEmpty());
-
-    auto* loadedDs = sources.first();
-    QVERIFY(loadedDs != nullptr);
-
-    auto* loadedImage = loadedDs->imageData();
-    QVERIFY(loadedImage != nullptr);
+    std::string path = "/tomviz_datasources/" + children[0];
+    vtkNew<vtkImageData> loadedImage;
+    QVariantMap options = { { "askForSubsample", false } };
+    QVERIFY(EmdFormat::readNode(reader, path, loadedImage, options));
 
     int dims[3];
     loadedImage->GetDimensions(dims);

@@ -4,7 +4,6 @@
 #include "PtychoRunner.h"
 
 #include "CameraReaction.h"
-#include "DataSource.h"
 #include "LoadDataReaction.h"
 #include "ProgressDialog.h"
 #include "PtychoDialog.h"
@@ -287,14 +286,13 @@ public:
     }
 
     for (auto& filePath: outputFiles) {
-      auto* dataSource = LoadDataReaction::loadData(filePath);
-      if (!dataSource || !dataSource->imageData()) {
+      auto* source = LoadDataReaction::loadData(filePath);
+      if (!source) {
         qCritical() << "Failed to load file:" << filePath;
         return;
       }
-      if (!scanIDs.isEmpty()) {
-        dataSource->setScanIDs(scanIDs);
-      }
+      // TODO: store scanIDs as node property once SourceNode replaces
+      // DataSource fully. For now this metadata is not preserved.
     }
 
     // Automatically update camera to BNL convention

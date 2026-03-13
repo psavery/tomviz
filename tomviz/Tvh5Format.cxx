@@ -10,10 +10,16 @@
 #include "ModuleManager.h"
 #include "Pipeline.h"
 
+#include "pipeline/PortData.h"
+#include "pipeline/PortType.h"
+#include "pipeline/SourceNode.h"
+#include "pipeline/data/VolumeData.h"
+
 #include <h5cpp/h5readwrite.h>
 
 #include <vtkImageData.h>
 #include <vtkNew.h>
+#include <vtkSmartPointer.h>
 
 #include <QDir>
 #include <QFileInfo>
@@ -191,9 +197,19 @@ bool Tvh5Format::loadDataSource(h5::H5ReadWrite& reader,
     parent->newChildDataSource(dataSource);
     // If it has a parent, it will be deserialized later.
   } else {
-    // This is a root data source
-    LoadDataReaction::dataSourceAdded(dataSource, false, false);
-    dataSource->deserialize(dsObject);
+    // This is a root data source — create a SourceNode for the new pipeline
+    auto* sourceNode = new pipeline::SourceNode();
+    sourceNode->setLabel(dataSource->label());
+    sourceNode->addOutput("volume", pipeline::PortType::Volume);
+    vtkSmartPointer<vtkImageData> img = dataSource->imageData();
+    auto vol = std::make_shared<pipeline::VolumeData>(img);
+    vol->setLabel(dataSource->label());
+    sourceNode->setOutputData(
+      "volume",
+      pipeline::PortData(vol, pipeline::PortType::Volume));
+    LoadDataReaction::sourceNodeAdded(sourceNode, false, false);
+    // TODO: dataSource->deserialize(dsObject) skipped — legacy
+    // serialization not yet supported in new pipeline
   }
 
   // Set the active data source
