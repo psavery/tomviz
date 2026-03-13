@@ -416,15 +416,14 @@ DataSource* LoadDataReaction::loadData(const QStringList& fileNames,
     return nullptr;
   }
 
+  // Set file names before adding to pipeline so the label is available.
+  dataSource->setFileNames(fileNames);
+
   if (addToPipeline) {
     // Add to the pipeline if needed...
     LoadDataReaction::dataSourceAdded(dataSource, defaultModules, child,
                                       createCameraOrbit);
   }
-
-  // Now for house keeping, registering elements, etc.
-  // Always save it as a list, even if there is only one file.
-  dataSource->setFileNames(fileNames);
 
   if (addToRecent && dataSource) {
     RecentFilesMenu::pushDataReader(dataSource);
@@ -469,16 +468,16 @@ DataSource* LoadDataReaction::createDataSource(vtkSMProxy* reader,
                                         ? DataSource::TiltSeries
                                         : DataSource::Volume;
 
+    QString readerFileName;
     auto prop = reader->GetProperty("FileNames");
     if (prop != nullptr) {
       auto jsonProp = toJson(prop);
-      QString fileName;
       if (jsonProp.toArray().size() > 0) {
-        fileName = jsonProp.toArray()[0].toString();
+        readerFileName = jsonProp.toArray()[0].toString();
       } else {
-        fileName = jsonProp.toString();
+        readerFileName = jsonProp.toString();
       }
-      QFileInfo info(fileName);
+      QFileInfo info(readerFileName);
       // Special case: mrc files store spacing in Angstrom
       QStringList mrcExt;
       mrcExt << "mrc"
@@ -496,6 +495,9 @@ DataSource* LoadDataReaction::createDataSource(vtkSMProxy* reader,
     }
 
     DataSource* dataSource = new DataSource(image, type);
+    if (!readerFileName.isEmpty()) {
+      dataSource->setFileName(readerFileName);
+    }
 
     // Do whatever we need to do with a new data source.
     if (addToPipeline) {

@@ -410,6 +410,7 @@ void PipelineStripWidget::paintEvent(QPaintEvent* event)
   Q_UNUSED(event);
   QPainter painter(this);
   painter.setRenderHint(QPainter::Antialiasing);
+  painter.fillRect(rect(), Qt::white);
 
   // Paint connections first (behind cards)
   paintConnections(painter);

@@ -152,19 +152,19 @@ QList<QString> PipelineModuleMenu::sinkTypes()
 
 QIcon PipelineModuleMenu::sinkIcon(const QString& type)
 {
-  // Use the same icon resource names as the old ModuleFactory where possible
+  // Icon paths must match the legacy Module::icon() implementations
   static QMap<QString, QString> iconMap = {
     { "Volume", ":/icons/pqVolumeData.png" },
-    { "Outline", ":/icons/pqBoundingBox.png" },
-    { "Slice", ":/icons/pqSlice.png" },
-    { "Contour", ":/icons/pqIsosurface.png" },
-    { "Threshold", ":/icons/pqThreshold.png" },
-    { "Clip", ":/icons/pqClip.png" },
-    { "Segment", ":/icons/pqThreshold.png" },
-    { "Ruler", ":/icons/pqRuler.png" },
-    { "Scale Cube", ":/icons/pqBoundingBox.png" },
-    { "Molecule", ":/icons/pqMolecule.png" },
-    { "Plot", ":/icons/pqLineChart.png" },
+    { "Outline", ":/pqWidgets/Icons/pqProbeLocation.svg" },
+    { "Slice", ":/icons/orthoslice.svg" },
+    { "Contour", ":pqWidgets/Icons/pqIsosurface.svg" },
+    { "Threshold", ":/pqWidgets/Icons/pqThreshold.svg" },
+    { "Clip", ":/pqWidgets/Icons/pqClip.svg" },
+    { "Segment", ":/pqWidgets/Icons/pqCalculator.svg" },
+    { "Ruler", ":/pqWidgets/Icons/pqRuler.svg" },
+    { "Scale Cube", ":/icons/pqMeasurementCube.png" },
+    { "Molecule", ":/pqWidgets/Icons/pqGroup.svg" },
+    { "Plot", ":/pqWidgets/Icons/pqLineChart16.png" },
   };
   auto it = iconMap.find(type);
   return (it != iconMap.end()) ? QIcon(it.value()) : QIcon();
