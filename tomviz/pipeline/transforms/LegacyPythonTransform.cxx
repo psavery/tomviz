@@ -141,6 +141,7 @@ void LegacyPythonTransform::parseJSON()
   }
 
   // Parse parameters with defaults
+  m_datasetInputNames.clear();
   if (obj.contains("parameters")) {
     QJsonArray params = obj.value("parameters").toArray();
     for (const auto& paramVal : params) {
@@ -149,16 +150,31 @@ void LegacyPythonTransform::parseJSON()
       QString type = param.value("type").toString();
       QJsonValue defaultVal = param.value("default");
 
+      // Dataset parameters become additional input ports, not parameters.
+      if (type == "dataset") {
+        addInput(name, PortType::Volume);
+        m_datasetInputNames.append(name);
+        continue;
+      }
+
       QVariant value;
       if (type == "double") {
         value = QVariant(defaultVal.toDouble());
-      } else if (type == "int" || type == "integer") {
+      } else if (type == "int" || type == "integer" ||
+                 type == "enumeration") {
         value = QVariant(defaultVal.toInt());
       } else if (type == "bool" || type == "boolean") {
         value = QVariant(defaultVal.toBool());
-      } else if (type == "string") {
+      } else if (type == "string" || type == "file" ||
+                 type == "save_file" || type == "directory") {
         value = QVariant(defaultVal.toString());
       } else {
+        // Types like select_scalars, xyz_header, label_map,
+        // reconstruction — skip unless there's an explicit default.
+        // This lets the Python function's own default (usually None) work.
+        if (defaultVal.isUndefined() || defaultVal.isNull()) {
+          continue;
+        }
         value = QVariant(defaultVal.toDouble());
       }
 
@@ -306,10 +322,50 @@ QMap<QString, PortData> LegacyPythonTransform::transform(
         case QMetaType::QString:
           kwargs[py::str(key)] = py::str(val.toString().toStdString());
           break;
+        case QMetaType::QVariantList: {
+          py::list pyList;
+          for (const auto& item : val.toList()) {
+            switch (item.typeId()) {
+              case QMetaType::Int:
+                pyList.append(py::int_(item.toInt()));
+                break;
+              case QMetaType::Double:
+                pyList.append(py::float_(item.toDouble()));
+                break;
+              case QMetaType::Bool:
+                pyList.append(py::bool_(item.toBool()));
+                break;
+              case QMetaType::QString:
+                pyList.append(py::str(item.toString().toStdString()));
+                break;
+              default:
+                pyList.append(py::str(item.toString().toStdString()));
+                break;
+            }
+          }
+          kwargs[py::str(key)] = pyList;
+          break;
+        }
         default:
           kwargs[py::str(key)] = py::float_(val.toDouble());
           break;
       }
+    }
+
+    // Wrap dataset input ports as PipelineDataset kwargs
+    for (const auto& dsName : m_datasetInputNames) {
+      auto it = inputs.find(dsName);
+      if (it == inputs.end()) {
+        continue;
+      }
+      auto dsVolume = it.value().template value<VolumeDataPtr>();
+      if (!dsVolume || !dsVolume->isValid()) {
+        continue;
+      }
+      py::object dsObj = datasetCls(
+        py::cast(dsVolume->imageData(),
+                 py::return_value_policy::reference));
+      kwargs[py::str(dsName.toStdString())] = dsObj;
     }
 
     // Call the transform function

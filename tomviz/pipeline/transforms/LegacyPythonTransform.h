@@ -63,6 +63,7 @@ private:
   QMap<QString, QVariant> m_parameters;
   QStringList m_resultNames;
   QStringList m_resultTypes;
+  QStringList m_datasetInputNames;
 };
 
 } // namespace pipeline
