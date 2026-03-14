@@ -16,6 +16,7 @@
 #include <QComboBox>
 #include <QDockWidget>
 #include <QMainWindow>
+#include <QMenu>
 #include <QPushButton>
 #include <QScrollArea>
 #include <QVBoxLayout>
@@ -386,6 +387,49 @@ int main(int argc, char** argv)
                               buildTomographyPipeline() };
 
   strip->setPipeline(pipelines[0]);
+
+  // Link validator: same type, different nodes, target not already connected
+  auto linkValidator = [](OutputPort* from, InputPort* to) -> bool {
+    if (from->node() == to->node()) {
+      return false;
+    }
+    if (!to->acceptedTypes().testFlag(from->type())) {
+      return false;
+    }
+    if (to->link()) {
+      return false;
+    }
+    return true;
+  };
+  strip->setLinkValidator(linkValidator);
+
+  // Create the link when requested
+  QObject::connect(strip, &PipelineStripWidget::linkRequested,
+                   [&](OutputPort* from, InputPort* to) {
+                     if (auto* p = strip->pipeline()) {
+                       p->createLink(from, to);
+                       qDebug("Created link: %s.%s -> %s.%s",
+                              qPrintable(from->node()->label()),
+                              qPrintable(from->name()),
+                              qPrintable(to->node()->label()),
+                              qPrintable(to->name()));
+                     }
+                   });
+
+  // Context menu on links: delete action
+  strip->setLinkMenuProvider([](Link* link, QMenu& menu) {
+    menu.addAction("Delete Link", [link]() {
+      auto* p = qobject_cast<Pipeline*>(link->parent());
+      if (p) {
+        qDebug("Deleting link: %s.%s -> %s.%s",
+               qPrintable(link->from()->node()->label()),
+               qPrintable(link->from()->name()),
+               qPrintable(link->to()->node()->label()),
+               qPrintable(link->to()->name()));
+        p->removeLink(link);
+      }
+    });
+  });
 
   QObject::connect(combo, &QComboBox::currentIndexChanged,
                    [&](int index) { strip->setPipeline(pipelines[index]); });

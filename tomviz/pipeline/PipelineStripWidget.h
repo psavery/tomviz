@@ -21,6 +21,7 @@ class QMenu;
 namespace tomviz {
 namespace pipeline {
 
+class InputPort;
 class Link;
 class Node;
 class OutputPort;
@@ -77,6 +78,12 @@ public:
   void setPortMenuProvider(PortMenuProvider provider);
   void setLinkMenuProvider(LinkMenuProvider provider);
 
+  /// Validator called during interactive link creation to determine whether
+  /// the pending link can connect to a given input port. If not set, all
+  /// connections are considered valid.
+  using LinkValidator = std::function<bool(OutputPort*, InputPort*)>;
+  void setLinkValidator(LinkValidator validator);
+
   QSize minimumSizeHint() const override;
   QSize sizeHint() const override;
 
@@ -85,6 +92,7 @@ signals:
   void portSelected(OutputPort* port);
   void linkSelected(Link* link);
   void nodeDoubleClicked(Node* node);
+  void linkRequested(OutputPort* from, InputPort* to);
 
 public slots:
   void rebuildLayout();
@@ -92,6 +100,7 @@ public slots:
 protected:
   void paintEvent(QPaintEvent* event) override;
   void mousePressEvent(QMouseEvent* event) override;
+  void mouseReleaseEvent(QMouseEvent* event) override;
   void mouseDoubleClickEvent(QMouseEvent* event) override;
   void keyPressEvent(QKeyEvent* event) override;
   void contextMenuEvent(QContextMenuEvent* event) override;
@@ -116,6 +125,9 @@ private:
                      bool selected, bool hovered);
   void paintConnections(QPainter& painter);
   void computeLinkGeometries();
+  void paintPendingLink(QPainter& painter);
+  OutputPort* outputPortHitTest(const QPoint& pos) const;
+  InputPort* inputPortHitTest(const QPoint& pos) const;
   void paintInputDots(QPainter& painter, const LayoutItem& item);
   void paintOutputDots(QPainter& painter, const LayoutItem& item);
   void paintPortCardDot(QPainter& painter, const LayoutItem& item);
@@ -143,6 +155,15 @@ private:
   NodeMenuProvider m_nodeMenuProvider;
   PortMenuProvider m_portMenuProvider;
   LinkMenuProvider m_linkMenuProvider;
+  LinkValidator m_linkValidator;
+
+  // Interactive link creation drag state
+  OutputPort* m_dragFromPort = nullptr;
+  InputPort* m_dragToPort = nullptr;
+  QPoint m_dragStartPos;
+  QPoint m_dragCurrentPos;
+  bool m_draggingLink = false;
+  int m_gutterLaneCount = 0;
 
   // Layout constants
   static constexpr int GutterWidth = 24;

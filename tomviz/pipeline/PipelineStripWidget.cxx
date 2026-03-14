@@ -14,6 +14,7 @@
 #include "TransformNode.h"
 #include "sinks/LegacyModuleSink.h"
 
+#include <QApplication>
 #include <QContextMenuEvent>
 #include <QFontMetrics>
 #include <QKeyEvent>
@@ -103,6 +104,11 @@ void PipelineStripWidget::setPortMenuProvider(PortMenuProvider provider)
 void PipelineStripWidget::setLinkMenuProvider(LinkMenuProvider provider)
 {
   m_linkMenuProvider = std::move(provider);
+}
+
+void PipelineStripWidget::setLinkValidator(LinkValidator validator)
+{
+  m_linkValidator = std::move(validator);
 }
 
 bool PipelineStripWidget::isExpanded(Node* node) const
@@ -475,6 +481,9 @@ void PipelineStripWidget::paintEvent(QPaintEvent* event)
       paintPortCardDot(painter, item);
     }
   }
+
+  // Paint pending link on top of everything during drag
+  paintPendingLink(painter);
 }
 
 void PipelineStripWidget::paintNodeCard(QPainter& painter,
@@ -868,6 +877,8 @@ void PipelineStripWidget::computeLinkGeometries()
     portLaneIndex[span.port] = assignedLane;
   }
 
+  m_gutterLaneCount = lanes.size();
+
   // Build link geometries
   for (auto* link : links) {
     auto* outPort = link->from();
@@ -952,6 +963,153 @@ void PipelineStripWidget::paintConnections(QPainter& painter)
     painter.setPen(QPen(lg.color, strokeWidth, Qt::SolidLine,
                         Qt::RoundCap, Qt::RoundJoin));
     painter.drawPath(lg.path);
+  }
+}
+
+OutputPort* PipelineStripWidget::outputPortHitTest(const QPoint& pos) const
+{
+  for (auto& item : m_layout) {
+    if (item.type == LayoutItem::NodeCard &&
+        !m_expandedNodes.contains(item.node)) {
+      auto outs = item.node->outputPorts();
+      for (int i = 0; i < outs.size(); ++i) {
+        QPoint dotPos = outputDotPos(item.node, i, item.rect);
+        int dx = pos.x() - dotPos.x();
+        int dy = pos.y() - dotPos.y();
+        if (dx * dx + dy * dy <= (DotRadius + 2) * (DotRadius + 2)) {
+          return outs[i];
+        }
+      }
+    } else if (item.type == LayoutItem::PortCard) {
+      QPoint dotPos(item.rect.left(), item.rect.center().y());
+      int dx = pos.x() - dotPos.x();
+      int dy = pos.y() - dotPos.y();
+      if (dx * dx + dy * dy <= (DotRadius + 2) * (DotRadius + 2)) {
+        return item.port;
+      }
+    }
+  }
+  return nullptr;
+}
+
+InputPort* PipelineStripWidget::inputPortHitTest(const QPoint& pos) const
+{
+  for (auto& item : m_layout) {
+    if (item.type != LayoutItem::NodeCard) {
+      continue;
+    }
+    auto inputs = item.node->inputPorts();
+    for (int i = 0; i < inputs.size(); ++i) {
+      QPoint dotPos = inputDotPos(item.node, i, item.rect);
+      int dx = pos.x() - dotPos.x();
+      int dy = pos.y() - dotPos.y();
+      if (dx * dx + dy * dy <= (DotRadius + 3) * (DotRadius + 3)) {
+        return inputs[i];
+      }
+    }
+  }
+  return nullptr;
+}
+
+void PipelineStripWidget::paintPendingLink(QPainter& painter)
+{
+  if (!m_draggingLink || !m_dragFromPort) {
+    return;
+  }
+
+  auto* srcNode = m_dragFromPort->node();
+
+  // Find source node card
+  int srcCardIdx = -1;
+  int srcPortCardIdx = -1;
+  for (int i = 0; i < m_layout.size(); ++i) {
+    if (m_layout[i].type == LayoutItem::NodeCard &&
+        m_layout[i].node == srcNode) {
+      srcCardIdx = i;
+    }
+    if (m_layout[i].type == LayoutItem::PortCard &&
+        m_layout[i].port == m_dragFromPort) {
+      srcPortCardIdx = i;
+    }
+  }
+  if (srcCardIdx < 0) {
+    return;
+  }
+
+  auto& srcNodeItem = m_layout[srcCardIdx];
+  bool isPortCard = (srcPortCardIdx >= 0);
+
+  // Source point
+  QPoint srcPt;
+  if (isPortCard) {
+    auto& portItem = m_layout[srcPortCardIdx];
+    srcPt = QPoint(portItem.rect.left(), portItem.rect.center().y());
+  } else {
+    int portIdx = srcNode->outputPorts().indexOf(m_dragFromPort);
+    srcPt = outputDotPos(srcNode, portIdx, srcNodeItem.rect);
+  }
+
+  // Departure Y
+  int outIdx = srcNode->outputPorts().indexOf(m_dragFromPort);
+  int departY = isPortCard ? srcPt.y()
+                           : srcPt.y() + DotClearance + outIdx * LaneSpacing;
+
+  // Gutter X — use the next lane after all existing ones
+  int gutterX = GutterWidth - LaneSpacing / 2 -
+                m_gutterLaneCount * LaneSpacing;
+  gutterX = qMax(gutterX, 2);
+
+  QColor lineColor = portTypeColor(m_dragFromPort);
+  painter.setBrush(Qt::NoBrush);
+
+  if (m_dragToPort) {
+    // Valid target — draw the full route to the input port
+    auto* dstNode = m_dragToPort->node();
+    int dstCardIdx = -1;
+    for (int i = 0; i < m_layout.size(); ++i) {
+      if (m_layout[i].type == LayoutItem::NodeCard &&
+          m_layout[i].node == dstNode) {
+        dstCardIdx = i;
+        break;
+      }
+    }
+    if (dstCardIdx < 0) {
+      return;
+    }
+
+    auto& dstNodeItem = m_layout[dstCardIdx];
+    int inIdx = dstNode->inputPorts().indexOf(m_dragToPort);
+    QPoint dstPt = inputDotPos(dstNode, inIdx, dstNodeItem.rect);
+    int approachY = dstPt.y() - DotClearance - inIdx * LaneSpacing;
+
+    QPainterPath path;
+    path.moveTo(srcPt);
+    if (departY != srcPt.y()) {
+      path.lineTo(srcPt.x(), departY);
+    }
+    path.lineTo(gutterX, departY);
+    path.lineTo(gutterX, approachY);
+    path.lineTo(dstPt.x(), approachY);
+    if (approachY != dstPt.y()) {
+      path.lineTo(dstPt);
+    }
+
+    painter.setPen(QPen(lineColor, 3.0, Qt::SolidLine,
+                        Qt::RoundCap, Qt::RoundJoin));
+    painter.drawPath(path);
+  } else {
+    // No valid target — draw from output to gutter, ending at mouse Y
+    QPainterPath path;
+    path.moveTo(srcPt);
+    if (departY != srcPt.y()) {
+      path.lineTo(srcPt.x(), departY);
+    }
+    path.lineTo(gutterX, departY);
+    path.lineTo(gutterX, m_dragCurrentPos.y());
+
+    painter.setPen(QPen(lineColor, 3.0, Qt::DashLine,
+                        Qt::RoundCap, Qt::RoundJoin));
+    painter.drawPath(path);
   }
 }
 
@@ -1050,6 +1208,17 @@ QRect PipelineStripWidget::actionButtonRect(const QRect& cardRect) const
 void PipelineStripWidget::mousePressEvent(QMouseEvent* event)
 {
   if (event->button() == Qt::LeftButton) {
+    // Check for output port dot press (potential link drag start)
+    auto* outPort = outputPortHitTest(event->pos());
+    if (outPort) {
+      m_dragFromPort = outPort;
+      m_dragStartPos = event->pos();
+      m_dragCurrentPos = event->pos();
+      m_draggingLink = false;
+      m_dragToPort = nullptr;
+      return;
+    }
+
     int idx = hitTest(event->pos());
 
     // Check clicks on node card action areas
@@ -1084,24 +1253,6 @@ void PipelineStripWidget::mousePressEvent(QMouseEvent* event)
           return;
         }
       }
-
-      // Output dot click on collapsed nodes
-      if (!m_expandedNodes.contains(node)) {
-        auto outs = node->outputPorts();
-        for (int i = 0; i < outs.size(); ++i) {
-          QPoint dotPos = outputDotPos(node, i, cardRect);
-          int dx = event->pos().x() - dotPos.x();
-          int dy = event->pos().y() - dotPos.y();
-          if (dx * dx + dy * dy <= (DotRadius + 2) * (DotRadius + 2)) {
-            m_selectedIndex = -1;
-            m_selectedPort = outs[i];
-            m_selectedLink = nullptr;
-            update();
-            emit portSelected(outs[i]);
-            return;
-          }
-        }
-      }
     }
 
     if (idx >= 0) {
@@ -1117,6 +1268,30 @@ void PipelineStripWidget::mousePressEvent(QMouseEvent* event)
     }
   }
   QWidget::mousePressEvent(event);
+}
+
+void PipelineStripWidget::mouseReleaseEvent(QMouseEvent* event)
+{
+  if (event->button() == Qt::LeftButton && m_dragFromPort) {
+    if (m_draggingLink) {
+      // Complete the drag — emit linkRequested if valid target
+      if (m_dragToPort) {
+        emit linkRequested(m_dragFromPort, m_dragToPort);
+      }
+    } else {
+      // Was a click on output dot (no drag) — select it
+      m_selectedIndex = -1;
+      m_selectedPort = m_dragFromPort;
+      m_selectedLink = nullptr;
+      emit portSelected(m_dragFromPort);
+    }
+    m_dragFromPort = nullptr;
+    m_dragToPort = nullptr;
+    m_draggingLink = false;
+    update();
+    return;
+  }
+  QWidget::mouseReleaseEvent(event);
 }
 
 void PipelineStripWidget::mouseDoubleClickEvent(QMouseEvent* event)
@@ -1143,6 +1318,14 @@ void PipelineStripWidget::keyPressEvent(QKeyEvent* event)
         selectItem(m_selectedIndex + 1);
       } else if (m_selectedIndex < 0 && !m_layout.isEmpty()) {
         selectItem(0);
+      }
+      break;
+    case Qt::Key_Escape:
+      if (m_draggingLink) {
+        m_draggingLink = false;
+        m_dragFromPort = nullptr;
+        m_dragToPort = nullptr;
+        update();
       }
       break;
     case Qt::Key_Delete:
@@ -1235,6 +1418,31 @@ void PipelineStripWidget::resizeEvent(QResizeEvent* event)
 
 void PipelineStripWidget::mouseMoveEvent(QMouseEvent* event)
 {
+  // Handle link creation drag
+  if (m_dragFromPort) {
+    if (!m_draggingLink) {
+      // Check drag threshold
+      if ((event->pos() - m_dragStartPos).manhattanLength() >=
+          QApplication::startDragDistance()) {
+        m_draggingLink = true;
+      }
+    }
+    if (m_draggingLink) {
+      m_dragCurrentPos = event->pos();
+      // Check if hovering a valid input port
+      auto* inPort = inputPortHitTest(event->pos());
+      if (inPort) {
+        bool valid = !m_linkValidator ||
+                     m_linkValidator(m_dragFromPort, inPort);
+        m_dragToPort = valid ? inPort : nullptr;
+      } else {
+        m_dragToPort = nullptr;
+      }
+      update();
+    }
+    return;
+  }
+
   int idx = hitTest(event->pos());
   // Only track hover on node cards (for breakpoint hint)
   if (idx >= 0 && m_layout[idx].type != LayoutItem::NodeCard) {
@@ -1260,7 +1468,6 @@ void PipelineStripWidget::mouseMoveEvent(QMouseEvent* event)
   }
   if (hoveredLink != m_hoveredLink) {
     m_hoveredLink = hoveredLink;
-
     needsUpdate = true;
   }
   if (needsUpdate) {
