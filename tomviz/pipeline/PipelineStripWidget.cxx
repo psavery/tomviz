@@ -17,9 +17,11 @@
 #include <QContextMenuEvent>
 #include <QFontMetrics>
 #include <QKeyEvent>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPainterPathStroker>
 #include <QStyle>
 #include <QStyleOption>
 
@@ -48,6 +50,8 @@ void PipelineStripWidget::setPipeline(Pipeline* pipeline)
   m_pipeline = pipeline;
   m_selectedIndex = -1;
   m_selectedPort = nullptr;
+  m_selectedLink = nullptr;
+  m_hoveredLink = nullptr;
   m_expandedNodes.clear();
   connectPipeline();
   rebuildLayout();
@@ -79,6 +83,26 @@ OutputPort* PipelineStripWidget::selectedPort() const
     }
   }
   return nullptr;
+}
+
+Link* PipelineStripWidget::selectedLink() const
+{
+  return m_selectedLink;
+}
+
+void PipelineStripWidget::setNodeMenuProvider(NodeMenuProvider provider)
+{
+  m_nodeMenuProvider = std::move(provider);
+}
+
+void PipelineStripWidget::setPortMenuProvider(PortMenuProvider provider)
+{
+  m_portMenuProvider = std::move(provider);
+}
+
+void PipelineStripWidget::setLinkMenuProvider(LinkMenuProvider provider)
+{
+  m_linkMenuProvider = std::move(provider);
 }
 
 bool PipelineStripWidget::isExpanded(Node* node) const
@@ -128,6 +152,7 @@ void PipelineStripWidget::rebuildLayout()
   }
 
   m_layout.clear();
+  m_linkGeometries.clear();
   m_selectedIndex = -1;
   m_selectedPort = nullptr;
 
@@ -281,6 +306,7 @@ void PipelineStripWidget::rebuildLayout()
     }
   }
 
+  computeLinkGeometries();
   updateGeometry();
 }
 
@@ -360,11 +386,12 @@ void PipelineStripWidget::disconnectPipeline()
 
 void PipelineStripWidget::selectItem(int index)
 {
-  if (index == m_selectedIndex && !m_selectedPort) {
+  if (index == m_selectedIndex && !m_selectedPort && !m_selectedLink) {
     return;
   }
   m_selectedIndex = index;
   m_selectedPort = nullptr;
+  m_selectedLink = nullptr;
   update();
 
   if (index >= 0 && index < m_layout.size()) {
@@ -394,6 +421,31 @@ int PipelineStripWidget::hitTest(const QPoint& pos) const
 int PipelineStripWidget::selectedIndex() const
 {
   return m_selectedIndex;
+}
+
+void PipelineStripWidget::selectLink(Link* link)
+{
+  if (link == m_selectedLink && m_selectedIndex < 0 && !m_selectedPort) {
+    return;
+  }
+  m_selectedIndex = -1;
+  m_selectedPort = nullptr;
+  m_selectedLink = link;
+  update();
+  emit linkSelected(link);
+}
+
+Link* PipelineStripWidget::linkHitTest(const QPoint& pos) const
+{
+  QPainterPathStroker stroker;
+  stroker.setWidth(8.0);
+  for (auto& lg : m_linkGeometries) {
+    QPainterPath hitPath = stroker.createStroke(lg.path);
+    if (hitPath.contains(pos)) {
+      return lg.link;
+    }
+  }
+  return nullptr;
 }
 
 // --- Painting ---
@@ -680,8 +732,10 @@ void PipelineStripWidget::paintPortCardDot(QPainter& painter,
   painter.setBrush(Qt::NoBrush);
 }
 
-void PipelineStripWidget::paintConnections(QPainter& painter)
+void PipelineStripWidget::computeLinkGeometries()
 {
+  m_linkGeometries.clear();
+
   if (!m_pipeline) {
     return;
   }
@@ -708,9 +762,6 @@ void PipelineStripWidget::paintConnections(QPainter& painter)
   }
 
   // Classify links as direct (straight line) or gutter-routed.
-  // A link is direct when:
-  // - source and destination nodes are adjacent in layout order
-  // - source node's output ports are NOT expanded into port cards
   auto links = m_pipeline->links();
 
   auto isDirect = [&](Link* link) -> bool {
@@ -721,7 +772,6 @@ void PipelineStripWidget::paintConnections(QPainter& painter)
     if (dstIdx != srcIdx + 1) {
       return false;
     }
-    // Check source has no expanded port cards
     for (auto* op : srcNode->outputPorts()) {
       if (portCardIndex.contains(op)) {
         return false;
@@ -730,10 +780,7 @@ void PipelineStripWidget::paintConnections(QPainter& painter)
     return true;
   };
 
-  // Assign gutter lanes using interval coloring: ports whose vertical spans
-  // don't overlap can share the same lane.
-  // First, compute the vertical span [minY, maxY] each port occupies in the
-  // gutter.
+  // Assign gutter lanes using interval coloring
   struct GutterSpan
   {
     OutputPort* port;
@@ -741,7 +788,7 @@ void PipelineStripWidget::paintConnections(QPainter& painter)
     int maxY;
   };
   QList<GutterSpan> spans;
-  QMap<OutputPort*, int> spanIndex; // port -> index in spans
+  QMap<OutputPort*, int> spanIndex;
 
   for (auto* link : links) {
     if (isDirect(link)) {
@@ -757,9 +804,7 @@ void PipelineStripWidget::paintConnections(QPainter& painter)
     }
 
     auto& srcNodeItem = m_layout[nodeCardIndex[srcNode]];
-    auto& dstNodeItem = m_layout[nodeCardIndex[dstNode]];
 
-    // Compute departure Y for this port
     QPoint srcPt;
     if (portCardIndex.contains(outPort)) {
       auto& portItem = m_layout[portCardIndex[outPort]];
@@ -774,8 +819,8 @@ void PipelineStripWidget::paintConnections(QPainter& painter)
       departY = srcPt.y();
     }
 
-    // Compute approach Y for this link's destination
     int inIdx = dstNode->inputPorts().indexOf(link->to());
+    auto& dstNodeItem = m_layout[nodeCardIndex[dstNode]];
     QPoint dstPt = inputDotPos(dstNode, inIdx, dstNodeItem.rect);
     int approachY = dstPt.y() - DotClearance - inIdx * LaneSpacing;
 
@@ -792,16 +837,13 @@ void PipelineStripWidget::paintConnections(QPainter& painter)
     }
   }
 
-  // Sort spans by minY for greedy interval coloring
   std::sort(spans.begin(), spans.end(),
             [](const GutterSpan& a, const GutterSpan& b) {
               return a.minY < b.minY;
             });
 
-  // Greedy lane assignment: assign each span to the lowest lane that doesn't
-  // overlap with any existing span in that lane.
   QMap<OutputPort*, int> portLaneIndex;
-  QList<QList<GutterSpan>> lanes; // lanes[i] = list of spans in lane i
+  QList<QList<GutterSpan>> lanes;
 
   for (auto& span : spans) {
     int assignedLane = -1;
@@ -826,8 +868,7 @@ void PipelineStripWidget::paintConnections(QPainter& painter)
     portLaneIndex[span.port] = assignedLane;
   }
 
-  int gutterLaneCount = lanes.size();
-
+  // Build link geometries
   for (auto* link : links) {
     auto* outPort = link->from();
     auto* inPort = link->to();
@@ -842,7 +883,6 @@ void PipelineStripWidget::paintConnections(QPainter& painter)
     auto& srcNodeItem = m_layout[nodeCardIndex[srcNode]];
     auto& dstNodeItem = m_layout[nodeCardIndex[dstNode]];
 
-    // Source point: port card left dot if expanded, else output dot on bottom
     QPoint srcPt;
     if (portCardIndex.contains(outPort)) {
       auto& portItem = m_layout[portCardIndex[outPort]];
@@ -852,39 +892,27 @@ void PipelineStripWidget::paintConnections(QPainter& painter)
       srcPt = outputDotPos(srcNode, portIdx, srcNodeItem.rect);
     }
 
-    // Destination point: input dot on top of node card
     int inIdx = dstNode->inputPorts().indexOf(inPort);
     QPoint dstPt = inputDotPos(dstNode, inIdx, dstNodeItem.rect);
 
     QColor lineColor = portTypeColor(outPort);
-    painter.setPen(QPen(lineColor, 3.0));
-    painter.setBrush(Qt::NoBrush);
+    QPainterPath path;
 
     if (isDirect(link)) {
-      // Straight line between adjacent nodes
-      QPainterPath path;
       path.moveTo(srcPt);
       path.lineTo(dstPt);
-      painter.drawPath(path);
     } else {
-      // Route through gutter — lane shared by all links from the same port
       int laneIdx = portLaneIndex[outPort];
-      // Lane 0 is closest to the node cards (right side of gutter),
-      // higher lanes move leftward.
       int gutterX = GutterWidth - LaneSpacing / 2 - laneIdx * LaneSpacing;
 
-      // Departure Y: offset below the output dot
       int outIdx = srcNode->outputPorts().indexOf(outPort);
       int departY = srcPt.y() + DotClearance + outIdx * LaneSpacing;
-      // For expanded port cards depart at dot Y
       if (portCardIndex.contains(outPort)) {
         departY = srcPt.y();
       }
 
-      // Approach Y: offset above the input dot
       int approachY = dstPt.y() - DotClearance - inIdx * LaneSpacing;
 
-      QPainterPath path;
       path.moveTo(srcPt);
       if (departY != srcPt.y()) {
         path.lineTo(srcPt.x(), departY);
@@ -895,10 +923,36 @@ void PipelineStripWidget::paintConnections(QPainter& painter)
       if (approachY != dstPt.y()) {
         path.lineTo(dstPt);
       }
-      painter.drawPath(path);
     }
+
+    m_linkGeometries.append({ link, path, lineColor });
   }
+}
+
+void PipelineStripWidget::paintConnections(QPainter& painter)
+{
   painter.setBrush(Qt::NoBrush);
+
+  for (auto& lg : m_linkGeometries) {
+    bool hovered = (lg.link == m_hoveredLink);
+    bool selected = (lg.link == m_selectedLink);
+    qreal baseWidth = 3.0;
+
+    // Selected: draw a shadow/glow behind the link
+    if (selected) {
+      QColor shadowColor = lg.color;
+      shadowColor.setAlpha(60);
+      painter.setPen(QPen(shadowColor, baseWidth + 6.0, Qt::SolidLine,
+                          Qt::RoundCap, Qt::RoundJoin));
+      painter.drawPath(lg.path);
+    }
+
+    // Draw the link line (hovered = +1px width)
+    qreal strokeWidth = hovered ? baseWidth + 2.0 : baseWidth;
+    painter.setPen(QPen(lg.color, strokeWidth, Qt::SolidLine,
+                        Qt::RoundCap, Qt::RoundJoin));
+    painter.drawPath(lg.path);
+  }
 }
 
 QColor PipelineStripWidget::badgeColor(Node* node) const
@@ -1041,6 +1095,7 @@ void PipelineStripWidget::mousePressEvent(QMouseEvent* event)
           if (dx * dx + dy * dy <= (DotRadius + 2) * (DotRadius + 2)) {
             m_selectedIndex = -1;
             m_selectedPort = outs[i];
+            m_selectedLink = nullptr;
             update();
             emit portSelected(outs[i]);
             return;
@@ -1049,7 +1104,17 @@ void PipelineStripWidget::mousePressEvent(QMouseEvent* event)
       }
     }
 
-    selectItem(idx);
+    if (idx >= 0) {
+      selectItem(idx);
+    } else {
+      // No card hit — check links
+      auto* link = linkHitTest(event->pos());
+      if (link) {
+        selectLink(link);
+      } else {
+        selectItem(-1);
+      }
+    }
   }
   QWidget::mousePressEvent(event);
 }
@@ -1082,11 +1147,8 @@ void PipelineStripWidget::keyPressEvent(QKeyEvent* event)
       break;
     case Qt::Key_Delete:
     case Qt::Key_Backspace:
-      if (m_selectedIndex >= 0 && m_selectedIndex < m_layout.size()) {
-        auto* node = m_layout[m_selectedIndex].node;
-        // Emit context menu for deletion handling by the parent
-        emit contextMenuRequested(node, mapToGlobal(QPoint(0, 0)));
-      }
+      // Show context menu at widget origin for the selected element
+      showContextMenu(mapToGlobal(QPoint(0, 0)));
       break;
     default:
       QWidget::keyPressEvent(event);
@@ -1098,8 +1160,70 @@ void PipelineStripWidget::keyPressEvent(QKeyEvent* event)
 void PipelineStripWidget::contextMenuEvent(QContextMenuEvent* event)
 {
   int idx = hitTest(event->pos());
+
   if (idx >= 0) {
-    emit contextMenuRequested(m_layout[idx].node, event->globalPos());
+    auto& item = m_layout[idx];
+    if (item.type == LayoutItem::PortCard && m_portMenuProvider) {
+      selectItem(idx);
+      QMenu menu(this);
+      m_portMenuProvider(item.port, menu);
+      if (!menu.isEmpty()) {
+        menu.exec(event->globalPos());
+      }
+      return;
+    }
+    if (item.type == LayoutItem::NodeCard && m_nodeMenuProvider) {
+      selectItem(idx);
+      QMenu menu(this);
+      m_nodeMenuProvider(item.node, menu);
+      if (!menu.isEmpty()) {
+        menu.exec(event->globalPos());
+      }
+      return;
+    }
+    return;
+  }
+
+  // No card hit — check links
+  auto* link = linkHitTest(event->pos());
+  if (link && m_linkMenuProvider) {
+    selectLink(link);
+    QMenu menu(this);
+    m_linkMenuProvider(link, menu);
+    if (!menu.isEmpty()) {
+      menu.exec(event->globalPos());
+    }
+  }
+}
+
+void PipelineStripWidget::showContextMenu(const QPoint& globalPos)
+{
+  if (m_selectedLink && m_linkMenuProvider) {
+    QMenu menu(this);
+    m_linkMenuProvider(m_selectedLink, menu);
+    if (!menu.isEmpty()) {
+      menu.exec(globalPos);
+    }
+    return;
+  }
+
+  if (m_selectedIndex >= 0 && m_selectedIndex < m_layout.size()) {
+    auto& item = m_layout[m_selectedIndex];
+    if (item.type == LayoutItem::PortCard && m_portMenuProvider) {
+      QMenu menu(this);
+      m_portMenuProvider(item.port, menu);
+      if (!menu.isEmpty()) {
+        menu.exec(globalPos);
+      }
+      return;
+    }
+    if (item.type == LayoutItem::NodeCard && m_nodeMenuProvider) {
+      QMenu menu(this);
+      m_nodeMenuProvider(item.node, menu);
+      if (!menu.isEmpty()) {
+        menu.exec(globalPos);
+      }
+    }
   }
 }
 
@@ -1122,8 +1246,24 @@ void PipelineStripWidget::mouseMoveEvent(QMouseEvent* event)
       }
     }
   }
+
+  // Track link hover (only when not hovering a card)
+  Link* hoveredLink = nullptr;
+  if (idx < 0) {
+    hoveredLink = linkHitTest(event->pos());
+  }
+
+  bool needsUpdate = false;
   if (idx != m_hoveredIndex) {
     m_hoveredIndex = idx;
+    needsUpdate = true;
+  }
+  if (hoveredLink != m_hoveredLink) {
+    m_hoveredLink = hoveredLink;
+
+    needsUpdate = true;
+  }
+  if (needsUpdate) {
     update();
   }
   QWidget::mouseMoveEvent(event);
@@ -1131,8 +1271,17 @@ void PipelineStripWidget::mouseMoveEvent(QMouseEvent* event)
 
 void PipelineStripWidget::leaveEvent(QEvent* event)
 {
+  bool needsUpdate = false;
   if (m_hoveredIndex >= 0) {
     m_hoveredIndex = -1;
+    needsUpdate = true;
+  }
+  if (m_hoveredLink) {
+    m_hoveredLink = nullptr;
+
+    needsUpdate = true;
+  }
+  if (needsUpdate) {
     update();
   }
   QWidget::leaveEvent(event);

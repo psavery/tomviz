@@ -8,10 +8,15 @@
 
 #include <QIcon>
 #include <QList>
+#include <QPainterPath>
 #include <QPoint>
 #include <QRect>
 #include <QTimer>
 #include <QWidget>
+
+#include <functional>
+
+class QMenu;
 
 namespace tomviz {
 namespace pipeline {
@@ -35,6 +40,13 @@ struct LayoutItem
   QRect rect;
 };
 
+struct LinkGeometry
+{
+  Link* link = nullptr;
+  QPainterPath path;
+  QColor color;
+};
+
 class TOMVIZ_PIPELINE_EXPORT PipelineStripWidget : public QWidget
 {
   Q_OBJECT
@@ -48,9 +60,22 @@ public:
 
   Node* selectedNode() const;
   OutputPort* selectedPort() const;
+  Link* selectedLink() const;
 
   bool isExpanded(Node* node) const;
   void setExpanded(Node* node, bool expanded);
+
+  /// Context menu providers. The callback populates a QMenu for the given
+  /// element. If the callback leaves the menu empty, no context menu is shown.
+  /// Passing a null (empty) std::function disables the context menu for that
+  /// element type.
+  using NodeMenuProvider = std::function<void(Node*, QMenu&)>;
+  using PortMenuProvider = std::function<void(OutputPort*, QMenu&)>;
+  using LinkMenuProvider = std::function<void(Link*, QMenu&)>;
+
+  void setNodeMenuProvider(NodeMenuProvider provider);
+  void setPortMenuProvider(PortMenuProvider provider);
+  void setLinkMenuProvider(LinkMenuProvider provider);
 
   QSize minimumSizeHint() const override;
   QSize sizeHint() const override;
@@ -58,8 +83,8 @@ public:
 signals:
   void nodeSelected(Node* node);
   void portSelected(OutputPort* port);
+  void linkSelected(Link* link);
   void nodeDoubleClicked(Node* node);
-  void contextMenuRequested(Node* node, QPoint globalPos);
 
 public slots:
   void rebuildLayout();
@@ -78,8 +103,11 @@ private:
   void connectPipeline();
   void disconnectPipeline();
   void selectItem(int index);
+  void selectLink(Link* link);
   int hitTest(const QPoint& pos) const;
+  Link* linkHitTest(const QPoint& pos) const;
   int selectedIndex() const;
+  void showContextMenu(const QPoint& globalPos);
 
   // Painting helpers
   void paintNodeCard(QPainter& painter, const LayoutItem& item,
@@ -87,6 +115,7 @@ private:
   void paintPortCard(QPainter& painter, const LayoutItem& item,
                      bool selected, bool hovered);
   void paintConnections(QPainter& painter);
+  void computeLinkGeometries();
   void paintInputDots(QPainter& painter, const LayoutItem& item);
   void paintOutputDots(QPainter& painter, const LayoutItem& item);
   void paintPortCardDot(QPainter& painter, const LayoutItem& item);
@@ -101,12 +130,19 @@ private:
 
   Pipeline* m_pipeline = nullptr;
   QList<LayoutItem> m_layout;
+  QList<LinkGeometry> m_linkGeometries;
   int m_selectedIndex = -1;
   OutputPort* m_selectedPort = nullptr; // selected output dot (collapsed nodes)
+  Link* m_selectedLink = nullptr;
+  Link* m_hoveredLink = nullptr;
   QSet<Node*> m_expandedNodes;
   int m_hoveredIndex = -1;
   QTimer m_spinnerTimer;
   int m_spinnerAngle = 0;
+
+  NodeMenuProvider m_nodeMenuProvider;
+  PortMenuProvider m_portMenuProvider;
+  LinkMenuProvider m_linkMenuProvider;
 
   // Layout constants
   static constexpr int GutterWidth = 24;
