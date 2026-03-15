@@ -16,6 +16,9 @@
 #include "pipeline/TransformNode.h"
 #include "pipeline/transforms/LegacyPythonTransform.h"
 
+#include <pqApplicationCore.h>
+#include <pqSettings.h>
+
 #include <QApplication>
 #include <QCheckBox>
 #include <QComboBox>
@@ -28,42 +31,136 @@
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QLabel>
+#include <QMessageBox>
+#include <QPushButton>
 #include <QSpinBox>
 #include <QVBoxLayout>
 #include <QtDebug>
 
 namespace tomviz {
 
-/// Find the "tip" output port in the pipeline — the last transform's output
-/// or the source's output if no transforms exist.
-static pipeline::OutputPort* findTipOutputPort(pipeline::Pipeline* pip)
+/// Find the tip output port of the branch containing the given node.
+/// Walks downstream from the node through TransformNodes to find the end
+/// of that specific branch. If the node is a SinkNode, walks upstream first
+/// to find the feeding source/transform, then walks downstream from there.
+static pipeline::OutputPort* findBranchTip(pipeline::Node* node)
+{
+  if (!node) {
+    return nullptr;
+  }
+
+  // If it's a sink, step upstream to the node feeding it
+  pipeline::Node* start = node;
+  while (dynamic_cast<pipeline::SinkNode*>(start)) {
+    auto upstream = start->upstreamNodes();
+    if (upstream.isEmpty()) {
+      return nullptr;
+    }
+    start = upstream.first();
+  }
+
+  if (start->outputPorts().isEmpty()) {
+    return nullptr;
+  }
+
+  pipeline::OutputPort* tip = start->outputPorts()[0];
+
+  // Walk downstream through transforms to the end of this branch
+  pipeline::Node* current = start;
+  while (true) {
+    pipeline::TransformNode* nextTransform = nullptr;
+    for (auto* downstream : current->downstreamNodes()) {
+      if (auto* xf = dynamic_cast<pipeline::TransformNode*>(downstream)) {
+        nextTransform = xf;
+        break;
+      }
+    }
+    if (!nextTransform || nextTransform->outputPorts().isEmpty()) {
+      break;
+    }
+    tip = nextTransform->outputPorts()[0];
+    current = nextTransform;
+  }
+
+  return tip;
+}
+
+/// Find the tip output port using contextNode to select the right branch.
+/// If contextNode is null, falls back to the first source in the pipeline.
+static pipeline::OutputPort* findTipOutputPort(
+  pipeline::Pipeline* pip, pipeline::Node* contextNode)
 {
   if (!pip) {
     return nullptr;
   }
 
-  auto nodes = pip->nodes();
-  pipeline::OutputPort* tipPort = nullptr;
-
-  for (auto* node : nodes) {
-    auto* source = dynamic_cast<pipeline::SourceNode*>(node);
-    auto* transform = dynamic_cast<pipeline::TransformNode*>(node);
-
-    if (source && !source->outputPorts().isEmpty()) {
-      if (!tipPort) {
-        tipPort = source->outputPorts()[0];
-      }
-    }
-    if (transform && !transform->outputPorts().isEmpty()) {
-      tipPort = transform->outputPorts()[0];
+  // If we have context, find the tip of the branch containing that node
+  if (contextNode && pip->nodes().contains(contextNode)) {
+    auto* tip = findBranchTip(contextNode);
+    if (tip) {
+      return tip;
     }
   }
 
-  return tipPort;
+  // Fallback: first source's branch
+  for (auto* node : pip->nodes()) {
+    if (auto* src = dynamic_cast<pipeline::SourceNode*>(node)) {
+      return findBranchTip(src);
+    }
+  }
+
+  return nullptr;
 }
 
-/// Insert a LegacyPythonTransform into the pipeline between the tip and sinks.
-/// Returns true on success.
+/// Append a transform at the given targetPort, moving sink links to the
+/// new transform's output.
+static void appendTransformAtPort(
+  pipeline::Pipeline* pip,
+  pipeline::LegacyPythonTransform* transform,
+  pipeline::OutputPort* targetPort)
+{
+  pip->addNode(transform);
+  pip->createLink(targetPort, transform->inputPorts()[0]);
+
+  // Re-link: move all sink links from old tip to new transform's output
+  auto* newTip = transform->outputPorts()[0];
+  QList<pipeline::Link*> linksToMove;
+  for (auto* link : targetPort->links()) {
+    auto* targetNode = link->to()->node();
+    if (dynamic_cast<pipeline::SinkNode*>(targetNode)) {
+      linksToMove.append(link);
+    }
+  }
+  for (auto* link : linksToMove) {
+    auto* sinkInput = link->to();
+    pip->removeLink(link);
+    pip->createLink(newTip, sinkInput);
+  }
+}
+
+/// Insert a transform before the given existing transform node.
+static void insertTransformBefore(
+  pipeline::Pipeline* pip,
+  pipeline::LegacyPythonTransform* transform,
+  pipeline::TransformNode* before)
+{
+  // Find the port currently feeding the "before" node
+  auto* beforeInput = before->inputPorts()[0];
+  auto* upstreamLink = beforeInput->link();
+  pipeline::OutputPort* upstreamPort =
+    upstreamLink ? upstreamLink->from() : nullptr;
+
+  pip->addNode(transform);
+
+  if (upstreamPort) {
+    pip->removeLink(upstreamLink);
+    pip->createLink(upstreamPort, transform->inputPorts()[0]);
+  }
+  pip->createLink(transform->outputPorts()[0], beforeInput);
+}
+
+/// Insert a LegacyPythonTransform into the pipeline using selection-aware
+/// logic. Returns true on success.
 static bool insertTransformIntoPipeline(
   pipeline::LegacyPythonTransform* transform)
 {
@@ -75,35 +172,85 @@ static bool insertTransformIntoPipeline(
     return false;
   }
 
-  auto* tipPort = findTipOutputPort(pip);
+  // Ctrl held: add the node unconnected (user will link manually)
+  if (QApplication::keyboardModifiers() & Qt::ControlModifier) {
+    pip->addNode(transform);
+    return true;
+  }
+
+  auto& ao = ActiveObjects::instance();
+  auto* activePort = ao.activePort();
+  auto* activeNode = ao.activeNode();
+
+  // Case 1: An output port is explicitly selected — connect there
+  if (activePort && activePort->node() &&
+      pip->nodes().contains(activePort->node())) {
+    appendTransformAtPort(pip, transform, activePort);
+    pip->execute();
+    return true;
+  }
+
+  // Case 2: A transform node is selected — ask insert-before or append
+  auto* selectedTransform =
+    dynamic_cast<pipeline::TransformNode*>(activeNode);
+  if (selectedTransform && pip->nodes().contains(selectedTransform)) {
+    bool insertBefore = false;
+
+    auto settings = pqApplicationCore::instance()->settings();
+    bool skipConfirm =
+      settings->value("TransformInsertConfirm/DontAsk", false).toBool();
+
+    if (skipConfirm) {
+      insertBefore = true;
+    } else {
+      QMessageBox msgBox;
+      msgBox.setWindowTitle("Insert Transform?");
+      msgBox.setText(
+        QString("Insert this transform before \"%1\" in the pipeline?")
+          .arg(selectedTransform->label()));
+      QAbstractButton* insertBtn =
+        msgBox.addButton("Insert Before", QMessageBox::AcceptRole);
+      msgBox.addButton("Append to End", QMessageBox::RejectRole);
+      msgBox.setDefaultButton(
+        qobject_cast<QPushButton*>(insertBtn));
+      QCheckBox dontAskAgain("Don't ask again (always insert before)");
+      msgBox.setCheckBox(&dontAskAgain);
+
+      msgBox.exec();
+
+      if (dontAskAgain.isChecked()) {
+        settings->setValue("TransformInsertConfirm/DontAsk", true);
+      }
+      insertBefore = (msgBox.clickedButton() == insertBtn);
+    }
+
+    if (insertBefore) {
+      insertTransformBefore(pip, transform, selectedTransform);
+    } else {
+      // Append to the tip of the branch containing the selected transform
+      auto* tipPort = findBranchTip(selectedTransform);
+      if (!tipPort) {
+        qCritical("No output port found in pipeline.");
+        delete transform;
+        return false;
+      }
+      appendTransformAtPort(pip, transform, tipPort);
+    }
+
+    pip->execute();
+    return true;
+  }
+
+  // Case 3: No port/transform selected — append at chain tip
+  // (activeNode provides multi-source context)
+  auto* tipPort = findTipOutputPort(pip, activeNode);
   if (!tipPort) {
     qCritical("No source or transform output port found in pipeline.");
     delete transform;
     return false;
   }
 
-  // Add the transform to the pipeline
-  pip->addNode(transform);
-
-  // Link tip -> transform input
-  pip->createLink(tipPort, transform->inputPorts()[0]);
-
-  // Re-link: move all sink links from old tip to new transform's output
-  auto* newTip = transform->outputPorts()[0];
-  QList<pipeline::Link*> linksToMove;
-  for (auto* link : tipPort->links()) {
-    auto* targetNode = link->to()->node();
-    if (dynamic_cast<pipeline::SinkNode*>(targetNode)) {
-      linksToMove.append(link);
-    }
-  }
-  for (auto* link : linksToMove) {
-    auto* sinkInput = link->to();
-    pip->removeLink(link);
-    pip->createLink(newTip, sinkInput);
-  }
-
-  // Execute the pipeline
+  appendTransformAtPort(pip, transform, tipPort);
   pip->execute();
   return true;
 }

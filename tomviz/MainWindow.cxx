@@ -47,6 +47,7 @@
 #include "pipeline/TransformNode.h"
 #include "pipeline/OutputPort.h"
 #include "pipeline/InputPort.h"
+#include "pipeline/Link.h"
 #include "pipeline/PortData.h"
 #include "pipeline/sinks/LegacyModuleSink.h"
 #include "pipeline/data/VolumeData.h"
@@ -225,6 +226,41 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
           this, &MainWindow::onNodeSelected);
   connect(m_pipelineStrip, &pipeline::PipelineStripWidget::portSelected,
           this, &MainWindow::onPortSelected);
+
+  // Link validator: type-compatible, different nodes, target not connected
+  m_pipelineStrip->setLinkValidator(
+    [](pipeline::OutputPort* from, pipeline::InputPort* to) -> bool {
+      if (from->node() == to->node()) {
+        return false;
+      }
+      if (!to->acceptedTypes().testFlag(from->type())) {
+        return false;
+      }
+      if (to->link()) {
+        return false;
+      }
+      return true;
+    });
+
+  // Create the link when the user completes a drag between ports
+  connect(m_pipelineStrip, &pipeline::PipelineStripWidget::linkRequested,
+          this, [this](pipeline::OutputPort* from, pipeline::InputPort* to) {
+            if (auto* p = pipeline()) {
+              p->createLink(from, to);
+              p->execute();
+            }
+          });
+
+  // Context menu on links: delete action
+  m_pipelineStrip->setLinkMenuProvider(
+    [](pipeline::Link* link, QMenu& menu) {
+      menu.addAction("Delete Link", [link]() {
+        auto* p = qobject_cast<pipeline::Pipeline*>(link->parent());
+        if (p) {
+          p->removeLink(link);
+        }
+      });
+    });
 
   // connect quit.
   connect(m_ui->actionExit, &QAction::triggered, this, &MainWindow::close);
@@ -1327,6 +1363,9 @@ pipeline::Pipeline* MainWindow::pipeline() const
 
 void MainWindow::onNodeSelected(pipeline::Node* node)
 {
+  ActiveObjects::instance().setActiveNode(node);
+  ActiveObjects::instance().setActivePort(nullptr);
+
   // Clear previous dynamic widget
   if (m_dynamicPropertiesWidget) {
     m_ui->propertiesPanelStackedWidget->removeWidget(m_dynamicPropertiesWidget);
@@ -1403,6 +1442,9 @@ void MainWindow::onNodeSelected(pipeline::Node* node)
 
 void MainWindow::onPortSelected(pipeline::OutputPort* port)
 {
+  ActiveObjects::instance().setActivePort(port);
+  ActiveObjects::instance().setActiveNode(port ? port->node() : nullptr);
+
   // Clear previous dynamic widget
   if (m_dynamicPropertiesWidget) {
     m_ui->propertiesPanelStackedWidget->removeWidget(m_dynamicPropertiesWidget);

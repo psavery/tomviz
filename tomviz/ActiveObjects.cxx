@@ -341,4 +341,17 @@ pipeline::Node* ActiveObjects::activeNode() const
   return m_activeNode;
 }
 
+void ActiveObjects::setActivePort(pipeline::OutputPort* port)
+{
+  if (m_activePort != port) {
+    m_activePort = port;
+    emit activePortChanged(port);
+  }
+}
+
+pipeline::OutputPort* ActiveObjects::activePort() const
+{
+  return m_activePort;
+}
+
 } // end of namespace tomviz

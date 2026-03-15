@@ -101,35 +101,71 @@ static vtkSMViewProxy* resolveViewForSink(const QString& sinkType)
   return proxy;
 }
 
-/// Find the "tip" output port in the pipeline — the last transform's output
-/// or the source's output if no transforms exist. This is the port that
-/// currently feeds the sinks.
-static pipeline::OutputPort* findTipOutputPort(pipeline::Pipeline* pipeline)
+/// Find the tip output port of the branch containing the given node.
+/// Walks downstream from the node through TransformNodes to find the end
+/// of that specific branch. If the node is a SinkNode, walks upstream first.
+static pipeline::OutputPort* findBranchTip(pipeline::Node* node)
+{
+  if (!node) {
+    return nullptr;
+  }
+
+  pipeline::Node* start = node;
+  while (dynamic_cast<pipeline::SinkNode*>(start)) {
+    auto upstream = start->upstreamNodes();
+    if (upstream.isEmpty()) {
+      return nullptr;
+    }
+    start = upstream.first();
+  }
+
+  if (start->outputPorts().isEmpty()) {
+    return nullptr;
+  }
+
+  pipeline::OutputPort* tip = start->outputPorts()[0];
+  pipeline::Node* current = start;
+  while (true) {
+    pipeline::TransformNode* nextTransform = nullptr;
+    for (auto* downstream : current->downstreamNodes()) {
+      if (auto* xf = dynamic_cast<pipeline::TransformNode*>(downstream)) {
+        nextTransform = xf;
+        break;
+      }
+    }
+    if (!nextTransform || nextTransform->outputPorts().isEmpty()) {
+      break;
+    }
+    tip = nextTransform->outputPorts()[0];
+    current = nextTransform;
+  }
+  return tip;
+}
+
+/// Find the tip output port using contextNode to select the right branch.
+/// If contextNode is null, falls back to the first source in the pipeline.
+static pipeline::OutputPort* findTipOutputPort(
+  pipeline::Pipeline* pipeline, pipeline::Node* contextNode)
 {
   if (!pipeline) {
     return nullptr;
   }
 
-  auto nodes = pipeline->nodes();
-  pipeline::OutputPort* tipPort = nullptr;
-
-  // Walk from roots. In a linear pipeline: source -> [transforms] -> sinks
-  // The tip is the output port of the last non-sink node.
-  for (auto* node : nodes) {
-    auto* source = dynamic_cast<pipeline::SourceNode*>(node);
-    auto* transform = dynamic_cast<pipeline::TransformNode*>(node);
-
-    if (source && !source->outputPorts().isEmpty()) {
-      if (!tipPort) {
-        tipPort = source->outputPorts()[0];
-      }
-    }
-    if (transform && !transform->outputPorts().isEmpty()) {
-      tipPort = transform->outputPorts()[0];
+  if (contextNode && pipeline->nodes().contains(contextNode)) {
+    auto* tip = findBranchTip(contextNode);
+    if (tip) {
+      return tip;
     }
   }
 
-  return tipPort;
+  // Fallback: first source's branch
+  for (auto* node : pipeline->nodes()) {
+    if (auto* src = dynamic_cast<pipeline::SourceNode*>(node)) {
+      return findBranchTip(src);
+    }
+  }
+
+  return nullptr;
 }
 
 PipelineModuleMenu::PipelineModuleMenu(QToolBar* toolBar, QMenu* menu,
@@ -234,8 +270,19 @@ void PipelineModuleMenu::triggered(QAction* maction)
     return;
   }
 
-  auto* tipPort = findTipOutputPort(pip);
-  if (!tipPort) {
+  auto& ao = ActiveObjects::instance();
+
+  // Sinks connect to the selected output port if one is selected,
+  // otherwise to the chain tip (using active node for multi-source context).
+  pipeline::OutputPort* targetPort = nullptr;
+  auto* activePort = ao.activePort();
+  if (activePort && activePort->node() &&
+      pip->nodes().contains(activePort->node())) {
+    targetPort = activePort;
+  } else {
+    targetPort = findTipOutputPort(pip, ao.activeNode());
+  }
+  if (!targetPort) {
     qCritical("No source or transform output port found in pipeline.");
     return;
   }
@@ -249,7 +296,11 @@ void PipelineModuleMenu::triggered(QAction* maction)
   sink->setLabel(type);
   sink->initialize(view);
   pip->addNode(sink);
-  pip->createLink(tipPort, sink->inputPorts()[0]);
+
+  // Ctrl held: add the node unconnected (user will link manually)
+  if (!(QApplication::keyboardModifiers() & Qt::ControlModifier)) {
+    pip->createLink(targetPort, sink->inputPorts()[0]);
+  }
   pip->execute();
 }
 
