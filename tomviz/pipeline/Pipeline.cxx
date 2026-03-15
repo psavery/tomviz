@@ -202,15 +202,17 @@ bool Pipeline::isValid() const
   }
 
   // Check no cycles (try topological sort)
-  // Use Kahn's algorithm - if we can sort all nodes, no cycles
+  // Use Kahn's algorithm - if we can sort all nodes, no cycles.
+  // Count in-degree by unique upstream node, not per link.
   QMap<Node*, int> inDegree;
   for (auto* node : m_nodes) {
     inDegree[node] = 0;
   }
-  for (auto* link : m_links) {
-    Node* downstream = link->to()->node();
-    if (downstream) {
-      inDegree[downstream]++;
+  for (auto* node : m_nodes) {
+    for (auto* upstream : node->upstreamNodes()) {
+      if (m_nodes.contains(upstream)) {
+        inDegree[node]++;
+      }
     }
   }
 
@@ -373,16 +375,18 @@ QList<Node*> Pipeline::topologicalSort(const QList<Node*>& startNodes,
     return result;
   }
 
-  // Kahn's algorithm on the subset
+  // Kahn's algorithm on the subset.
+  // Count in-degree by unique upstream node (not per link) so that multiple
+  // links between the same pair of nodes count as a single dependency edge.
   QMap<Node*, int> inDegree;
   for (auto* node : subset) {
     inDegree[node] = 0;
   }
-  for (auto* link : m_links) {
-    Node* from = link->from()->node();
-    Node* to = link->to()->node();
-    if (subset.contains(from) && subset.contains(to)) {
-      inDegree[to]++;
+  for (auto* node : subset) {
+    for (auto* upstream : node->upstreamNodes()) {
+      if (subset.contains(upstream)) {
+        inDegree[node]++;
+      }
     }
   }
 
@@ -565,16 +569,17 @@ QList<Node*> Pipeline::executionOrder(Node* target)
     return {};
   }
 
-  // Topological sort of just the needed nodes
+  // Topological sort of just the needed nodes.
+  // Count in-degree by unique upstream node, not per link.
   QMap<Node*, int> inDegree;
   for (auto* node : needed) {
     inDegree[node] = 0;
   }
-  for (auto* link : m_links) {
-    Node* from = link->from()->node();
-    Node* to = link->to()->node();
-    if (needed.contains(from) && needed.contains(to)) {
-      inDegree[to]++;
+  for (auto* node : needed) {
+    for (auto* upstream : node->upstreamNodes()) {
+      if (needed.contains(upstream)) {
+        inDegree[node]++;
+      }
     }
   }
 

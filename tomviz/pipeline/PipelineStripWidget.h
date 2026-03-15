@@ -6,6 +6,8 @@
 
 #include "tomviz_pipeline_export.h"
 
+#include "PortType.h"
+
 #include <QIcon>
 #include <QList>
 #include <QPainterPath>
@@ -137,8 +139,17 @@ private:
   void paintPortCardDot(QPainter& painter, const LayoutItem& item);
   QPoint inputDotPos(Node* node, int portIndex, const QRect& nodeRect) const;
   QPoint outputDotPos(Node* node, int portIndex, const QRect& nodeRect) const;
+
+  // Layout lookup helpers — resolve a port to its widget position
+  QPoint outputPortPos(OutputPort* port) const;
+  QPoint inputPortPos(InputPort* port) const;
+  bool isPortCardVisible(OutputPort* port) const;
+
   QColor badgeColor(Node* node) const;
   QColor portTypeColor(OutputPort* port) const;
+  QColor portTypeColor(PortType type) const;
+  QPainterPath buildLinkPath(OutputPort* fromPort, InputPort* toPort,
+                             int gutterX) const;
   QIcon stateIcon(Node* node) const;
   QIcon portTypeIcon(OutputPort* port) const;
   QRect breakpointRect(const QRect& cardRect) const;
@@ -180,9 +191,12 @@ private:
   static constexpr int PortIndent = 8;
   static constexpr int CardRadius = 4;
   static constexpr int BadgeSize = 16;
-  static constexpr int DotRadius = 4;
-  static constexpr int DotSpacing = 10; // center-to-center between adjacent dots
-  static constexpr int DotMargin = 6;   // left margin for dots on node cards
+  static constexpr int DotRadius = 5;
+  static constexpr int DotSpacing = 12; // center-to-center between adjacent dots
+  static constexpr int DotMargin = 6;      // left margin for dots on node cards
+  static constexpr int HeaderIconSize = 14; // icon size in node card header
+  static constexpr int HeaderRightPad = 4;  // right padding in node card header
+  static constexpr int HeaderExpandWidth = 16; // expand toggle width
   static constexpr int LaneSpacing = 6;              // spacing between parallel lines
   static constexpr int DotClearance = DotRadius * 2; // initial offset from dot before first lane
   static constexpr int Padding = 4;

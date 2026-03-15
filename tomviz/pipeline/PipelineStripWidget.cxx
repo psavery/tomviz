@@ -549,13 +549,10 @@ void PipelineStripWidget::paintNodeCard(QPainter& painter,
   // Right side layout: [breakpoint] [state] [expand]
   // Expand toggle is rightmost (only for nodes with outputs), but state
   // icon is always at the same X so it stays aligned across all nodes.
-  int iconSize = 14;
-  int rightPad = 4;
   auto outputs = node->outputPorts();
-  int expandWidth = 16; // reserved for expand toggle (always reserved)
-  int toggleX = r.right() - expandWidth - rightPad;
-  int stateX = toggleX - iconSize;
-  int bpX = stateX - iconSize;
+  int toggleX = r.right() - HeaderExpandWidth - HeaderRightPad;
+  int stateX = toggleX - HeaderIconSize;
+  int bpX = stateX - HeaderIconSize;
 
   int labelWidth = bpX - x - 2;
   QString elidedLabel =
@@ -575,8 +572,8 @@ void PipelineStripWidget::paintNodeCard(QPainter& painter,
   }
 
   // State indicator icon
-  int stateY = r.top() + (headerHeight - iconSize) / 2;
-  QRect stateRect(stateX, stateY, iconSize, iconSize);
+  int stateY = r.top() + (headerHeight - HeaderIconSize) / 2;
+  QRect stateRect(stateX, stateY, HeaderIconSize, HeaderIconSize);
 
   if (m_spinnerTimer.isActive() && node->state() == NodeState::Stale) {
     // Draw rotating spinner icon
@@ -584,8 +581,8 @@ void PipelineStripWidget::paintNodeCard(QPainter& painter,
     painter.save();
     painter.translate(stateRect.center());
     painter.rotate(m_spinnerAngle);
-    painter.drawPixmap(-iconSize / 2, -iconSize / 2, iconSize, iconSize,
-                       spinner);
+    painter.drawPixmap(-HeaderIconSize / 2, -HeaderIconSize / 2,
+                       HeaderIconSize, HeaderIconSize, spinner);
     painter.restore();
   } else {
     QIcon icon = stateIcon(node);
@@ -665,25 +662,58 @@ void PipelineStripWidget::paintPortCard(QPainter& painter,
 QPoint PipelineStripWidget::inputDotPos(Node* node, int portIndex,
                                         const QRect& nodeRect) const
 {
-  auto inputs = node->inputPorts();
-  int y = nodeRect.top();
   int startX = nodeRect.left() + PortIndent;
-  if (inputs.size() <= 1) {
-    return QPoint(startX, y);
-  }
-  return QPoint(startX + portIndex * DotSpacing, y);
+  int x = (node->inputPorts().size() <= 1) ? startX
+                                           : startX + portIndex * DotSpacing;
+  return QPoint(x, nodeRect.top());
 }
 
 QPoint PipelineStripWidget::outputDotPos(Node* node, int portIndex,
                                          const QRect& nodeRect) const
 {
-  auto outputs = node->outputPorts();
-  int y = nodeRect.bottom();
   int startX = nodeRect.left() + PortIndent;
-  if (outputs.size() <= 1) {
-    return QPoint(startX, y);
+  int x = (node->outputPorts().size() <= 1) ? startX
+                                            : startX + portIndex * DotSpacing;
+  return QPoint(x, nodeRect.bottom());
+}
+
+QPoint PipelineStripWidget::outputPortPos(OutputPort* port) const
+{
+  auto* node = port->node();
+  for (auto& item : m_layout) {
+    if (item.type == LayoutItem::PortCard && item.port == port) {
+      return QPoint(item.rect.left(), item.rect.center().y());
+    }
   }
-  return QPoint(startX + portIndex * DotSpacing, y);
+  for (auto& item : m_layout) {
+    if (item.type == LayoutItem::NodeCard && item.node == node) {
+      int portIdx = node->outputPorts().indexOf(port);
+      return outputDotPos(node, portIdx, item.rect);
+    }
+  }
+  return QPoint();
+}
+
+QPoint PipelineStripWidget::inputPortPos(InputPort* port) const
+{
+  auto* node = port->node();
+  for (auto& item : m_layout) {
+    if (item.type == LayoutItem::NodeCard && item.node == node) {
+      int portIdx = node->inputPorts().indexOf(port);
+      return inputDotPos(node, portIdx, item.rect);
+    }
+  }
+  return QPoint();
+}
+
+bool PipelineStripWidget::isPortCardVisible(OutputPort* port) const
+{
+  for (auto& item : m_layout) {
+    if (item.type == LayoutItem::PortCard && item.port == port) {
+      return true;
+    }
+  }
+  return false;
 }
 
 void PipelineStripWidget::paintInputDots(QPainter& painter,
@@ -697,9 +727,21 @@ void PipelineStripWidget::paintInputDots(QPainter& painter,
 
   for (int i = 0; i < inputs.size(); ++i) {
     auto* inPort = inputs[i];
-    QColor color(120, 120, 120);
+    QColor color;
     if (inPort->link()) {
       color = portTypeColor(inPort->link()->from());
+    } else {
+      // Use the first accepted type's color for unconnected inputs
+      PortTypes accepted = inPort->acceptedTypes();
+      PortType primaryType = PortType::None;
+      for (auto t : { PortType::Volume, PortType::Image, PortType::Scalar,
+                      PortType::Array, PortType::Table, PortType::Molecule }) {
+        if (accepted.testFlag(t)) {
+          primaryType = t;
+          break;
+        }
+      }
+      color = portTypeColor(primaryType);
     }
     // Input dots filled with app background, stroke with port color
     painter.setBrush(palette().window());
@@ -763,19 +805,6 @@ void PipelineStripWidget::computeLinkGeometries()
     return;
   }
 
-  // Build lookup maps
-  QHash<Node*, int> nodeCardIndex;
-  QHash<OutputPort*, int> portCardIndex;
-
-  for (int i = 0; i < m_layout.size(); ++i) {
-    auto& item = m_layout[i];
-    if (item.type == LayoutItem::NodeCard) {
-      nodeCardIndex[item.node] = i;
-    } else if (item.type == LayoutItem::PortCard) {
-      portCardIndex[item.port] = i;
-    }
-  }
-
   // Build node order from layout for adjacency checks
   QList<Node*> nodeOrder;
   for (auto& item : m_layout) {
@@ -795,12 +824,23 @@ void PipelineStripWidget::computeLinkGeometries()
     if (dstIdx != srcIdx + 1) {
       return false;
     }
-    for (auto* op : srcNode->outputPorts()) {
-      if (portCardIndex.contains(op)) {
-        return false;
-      }
+    return !isPortCardVisible(link->from());
+  };
+
+  // Compute departure/approach Y for a gutter-routed link
+  auto departY = [this](OutputPort* port) -> int {
+    QPoint pt = outputPortPos(port);
+    if (isPortCardVisible(port)) {
+      return pt.y();
     }
-    return true;
+    int outIdx = port->node()->outputPorts().indexOf(port);
+    return pt.y() + DotClearance + outIdx * LaneSpacing;
+  };
+
+  auto approachY = [this](InputPort* port) -> int {
+    QPoint pt = inputPortPos(port);
+    int inIdx = port->node()->inputPorts().indexOf(port);
+    return pt.y() - DotClearance - inIdx * LaneSpacing;
   };
 
   // Assign gutter lanes using interval coloring
@@ -818,37 +858,15 @@ void PipelineStripWidget::computeLinkGeometries()
       continue;
     }
     auto* outPort = link->from();
-    auto* srcNode = outPort->node();
-    auto* dstNode = link->to()->node();
-
-    if (!nodeCardIndex.contains(srcNode) ||
-        !nodeCardIndex.contains(dstNode)) {
+    if (outputPortPos(outPort).isNull() ||
+        inputPortPos(link->to()).isNull()) {
       continue;
     }
 
-    auto& srcNodeItem = m_layout[nodeCardIndex[srcNode]];
-
-    QPoint srcPt;
-    if (portCardIndex.contains(outPort)) {
-      auto& portItem = m_layout[portCardIndex[outPort]];
-      srcPt = QPoint(portItem.rect.left(), portItem.rect.center().y());
-    } else {
-      int portIdx = srcNode->outputPorts().indexOf(outPort);
-      srcPt = outputDotPos(srcNode, portIdx, srcNodeItem.rect);
-    }
-    int outIdx = srcNode->outputPorts().indexOf(outPort);
-    int departY = srcPt.y() + DotClearance + outIdx * LaneSpacing;
-    if (portCardIndex.contains(outPort)) {
-      departY = srcPt.y();
-    }
-
-    int inIdx = dstNode->inputPorts().indexOf(link->to());
-    auto& dstNodeItem = m_layout[nodeCardIndex[dstNode]];
-    QPoint dstPt = inputDotPos(dstNode, inIdx, dstNodeItem.rect);
-    int approachY = dstPt.y() - DotClearance - inIdx * LaneSpacing;
-
-    int segMinY = qMin(departY, approachY);
-    int segMaxY = qMax(departY, approachY);
+    int dY = departY(outPort);
+    int aY = approachY(link->to());
+    int segMinY = qMin(dY, aY);
+    int segMaxY = qMax(dY, aY);
 
     if (spanIndex.contains(outPort)) {
       auto& span = spans[spanIndex[outPort]];
@@ -893,65 +911,73 @@ void PipelineStripWidget::computeLinkGeometries()
 
   m_gutterLaneCount = lanes.size();
 
-  // Build link geometries
+  // Build link geometries using buildLinkPath
   for (auto* link : links) {
     auto* outPort = link->from();
-    auto* inPort = link->to();
-    auto* srcNode = outPort->node();
-    auto* dstNode = inPort->node();
-
-    if (!nodeCardIndex.contains(srcNode) ||
-        !nodeCardIndex.contains(dstNode)) {
-      continue;
-    }
-
-    auto& srcNodeItem = m_layout[nodeCardIndex[srcNode]];
-    auto& dstNodeItem = m_layout[nodeCardIndex[dstNode]];
-
-    QPoint srcPt;
-    if (portCardIndex.contains(outPort)) {
-      auto& portItem = m_layout[portCardIndex[outPort]];
-      srcPt = QPoint(portItem.rect.left(), portItem.rect.center().y());
-    } else {
-      int portIdx = srcNode->outputPorts().indexOf(outPort);
-      srcPt = outputDotPos(srcNode, portIdx, srcNodeItem.rect);
-    }
-
-    int inIdx = dstNode->inputPorts().indexOf(inPort);
-    QPoint dstPt = inputDotPos(dstNode, inIdx, dstNodeItem.rect);
-
-    QColor lineColor = portTypeColor(outPort);
-    QPainterPath path;
-
-    if (isDirect(link)) {
-      path.moveTo(srcPt);
-      path.lineTo(dstPt);
-    } else {
+    int gutterX = 0;
+    if (!isDirect(link) && portLaneIndex.contains(outPort)) {
       int laneIdx = portLaneIndex[outPort];
-      int gutterX = GutterWidth - LaneSpacing / 2 - laneIdx * LaneSpacing;
+      gutterX = GutterWidth - LaneSpacing / 2 - laneIdx * LaneSpacing;
+    }
+    QPainterPath path = buildLinkPath(outPort, link->to(), gutterX);
+    if (!path.isEmpty()) {
+      m_linkGeometries.append({ link, path, portTypeColor(outPort) });
+    }
+  }
+}
 
-      int outIdx = srcNode->outputPorts().indexOf(outPort);
-      int departY = srcPt.y() + DotClearance + outIdx * LaneSpacing;
-      if (portCardIndex.contains(outPort)) {
-        departY = srcPt.y();
-      }
+QPainterPath PipelineStripWidget::buildLinkPath(OutputPort* fromPort,
+                                                InputPort* toPort,
+                                                int gutterX) const
+{
+  QPoint srcPt = outputPortPos(fromPort);
+  QPoint dstPt = inputPortPos(toPort);
+  if (srcPt.isNull() || dstPt.isNull()) {
+    return QPainterPath();
+  }
 
-      int approachY = dstPt.y() - DotClearance - inIdx * LaneSpacing;
+  bool portCard = isPortCardVisible(fromPort);
 
-      path.moveTo(srcPt);
-      if (departY != srcPt.y()) {
-        path.lineTo(srcPt.x(), departY);
-      }
-      path.lineTo(gutterX, departY);
-      path.lineTo(gutterX, approachY);
-      path.lineTo(dstPt.x(), approachY);
-      if (approachY != dstPt.y()) {
-        path.lineTo(dstPt);
+  // Check if direct (adjacent nodes, output not expanded to port cards)
+  bool direct = false;
+  if (!portCard) {
+    auto* srcNode = fromPort->node();
+    auto* dstNode = toPort->node();
+    QList<Node*> nodeOrder;
+    for (auto& item : m_layout) {
+      if (item.type == LayoutItem::NodeCard) {
+        nodeOrder.append(item.node);
       }
     }
-
-    m_linkGeometries.append({ link, path, lineColor });
+    int srcOrderIdx = nodeOrder.indexOf(srcNode);
+    int dstOrderIdx = nodeOrder.indexOf(dstNode);
+    direct = (dstOrderIdx == srcOrderIdx + 1);
   }
+
+  QPainterPath path;
+  if (direct) {
+    path.moveTo(srcPt);
+    path.lineTo(dstPt);
+  } else {
+    int outIdx = fromPort->node()->outputPorts().indexOf(fromPort);
+    int departY = portCard
+                    ? srcPt.y()
+                    : srcPt.y() + DotClearance + outIdx * LaneSpacing;
+    int inIdx = toPort->node()->inputPorts().indexOf(toPort);
+    int approachY = dstPt.y() - DotClearance - inIdx * LaneSpacing;
+
+    path.moveTo(srcPt);
+    if (departY != srcPt.y()) {
+      path.lineTo(srcPt.x(), departY);
+    }
+    path.lineTo(gutterX, departY);
+    path.lineTo(gutterX, approachY);
+    path.lineTo(dstPt.x(), approachY);
+    if (approachY != dstPt.y()) {
+      path.lineTo(dstPt);
+    }
+  }
+  return path;
 }
 
 void PipelineStripWidget::paintConnections(QPainter& painter)
@@ -1031,88 +1057,37 @@ void PipelineStripWidget::paintPendingLink(QPainter& painter)
     return;
   }
 
-  auto* srcNode = m_dragFromPort->node();
-
-  // Find source node card
-  int srcCardIdx = -1;
-  int srcPortCardIdx = -1;
-  for (int i = 0; i < m_layout.size(); ++i) {
-    if (m_layout[i].type == LayoutItem::NodeCard &&
-        m_layout[i].node == srcNode) {
-      srcCardIdx = i;
-    }
-    if (m_layout[i].type == LayoutItem::PortCard &&
-        m_layout[i].port == m_dragFromPort) {
-      srcPortCardIdx = i;
-    }
-  }
-  if (srcCardIdx < 0) {
-    return;
-  }
-
-  auto& srcNodeItem = m_layout[srcCardIdx];
-  bool isPortCard = (srcPortCardIdx >= 0);
-
-  // Source point
-  QPoint srcPt;
-  if (isPortCard) {
-    auto& portItem = m_layout[srcPortCardIdx];
-    srcPt = QPoint(portItem.rect.left(), portItem.rect.center().y());
-  } else {
-    int portIdx = srcNode->outputPorts().indexOf(m_dragFromPort);
-    srcPt = outputDotPos(srcNode, portIdx, srcNodeItem.rect);
-  }
-
-  // Departure Y
-  int outIdx = srcNode->outputPorts().indexOf(m_dragFromPort);
-  int departY = isPortCard ? srcPt.y()
-                           : srcPt.y() + DotClearance + outIdx * LaneSpacing;
-
-  // Gutter X — use the next lane after all existing ones
-  int gutterX = GutterWidth - LaneSpacing / 2 -
-                m_gutterLaneCount * LaneSpacing;
-  gutterX = qMax(gutterX, 2);
-
   QColor lineColor = portTypeColor(m_dragFromPort);
   painter.setBrush(Qt::NoBrush);
 
   if (m_dragToPort) {
-    // Valid target — draw the full route to the input port
-    auto* dstNode = m_dragToPort->node();
-    int dstCardIdx = -1;
-    for (int i = 0; i < m_layout.size(); ++i) {
-      if (m_layout[i].type == LayoutItem::NodeCard &&
-          m_layout[i].node == dstNode) {
-        dstCardIdx = i;
-        break;
-      }
+    // Valid target — reuse the same path logic as real links
+    int gutterX = GutterWidth - LaneSpacing / 2 -
+                  m_gutterLaneCount * LaneSpacing;
+    gutterX = qMax(gutterX, 2);
+
+    QPainterPath path = buildLinkPath(m_dragFromPort, m_dragToPort, gutterX);
+    if (!path.isEmpty()) {
+      painter.setPen(QPen(lineColor, 3.0, Qt::SolidLine,
+                          Qt::RoundCap, Qt::RoundJoin));
+      painter.drawPath(path);
     }
-    if (dstCardIdx < 0) {
+  } else {
+    // No valid target — draw from output to gutter, ending at mouse Y
+    QPoint srcPt = outputPortPos(m_dragFromPort);
+    if (srcPt.isNull()) {
       return;
     }
 
-    auto& dstNodeItem = m_layout[dstCardIdx];
-    int inIdx = dstNode->inputPorts().indexOf(m_dragToPort);
-    QPoint dstPt = inputDotPos(dstNode, inIdx, dstNodeItem.rect);
-    int approachY = dstPt.y() - DotClearance - inIdx * LaneSpacing;
+    bool portCard = isPortCardVisible(m_dragFromPort);
+    int outIdx = m_dragFromPort->node()->outputPorts().indexOf(m_dragFromPort);
+    int departY = portCard ? srcPt.y()
+                           : srcPt.y() + DotClearance + outIdx * LaneSpacing;
 
-    QPainterPath path;
-    path.moveTo(srcPt);
-    if (departY != srcPt.y()) {
-      path.lineTo(srcPt.x(), departY);
-    }
-    path.lineTo(gutterX, departY);
-    path.lineTo(gutterX, approachY);
-    path.lineTo(dstPt.x(), approachY);
-    if (approachY != dstPt.y()) {
-      path.lineTo(dstPt);
-    }
+    int gutterX = GutterWidth - LaneSpacing / 2 -
+                  m_gutterLaneCount * LaneSpacing;
+    gutterX = qMax(gutterX, 2);
 
-    painter.setPen(QPen(lineColor, 3.0, Qt::SolidLine,
-                        Qt::RoundCap, Qt::RoundJoin));
-    painter.drawPath(path);
-  } else {
-    // No valid target — draw from output to gutter, ending at mouse Y
     QPainterPath path;
     path.moveTo(srcPt);
     if (departY != srcPt.y()) {
@@ -1158,14 +1133,11 @@ QIcon PipelineStripWidget::portTypeIcon(OutputPort* port) const
   }
 }
 
-QColor PipelineStripWidget::portTypeColor(OutputPort* port) const
+QColor PipelineStripWidget::portTypeColor(PortType type) const
 {
-  if (!port) {
-    return QColor(158, 158, 158);
-  }
   // Port type colors are chosen to be distinct from node badge colors
   // (Source=green, Transform=blue, Sink=orange).
-  switch (port->type()) {
+  switch (type) {
     case PortType::Volume:
       return QColor(121, 85, 196); // purple
     case PortType::Table:
@@ -1177,6 +1149,14 @@ QColor PipelineStripWidget::portTypeColor(OutputPort* port) const
     default:
       return QColor(158, 158, 158); // gray
   }
+}
+
+QColor PipelineStripWidget::portTypeColor(OutputPort* port) const
+{
+  if (!port) {
+    return QColor(158, 158, 158);
+  }
+  return portTypeColor(port->type());
 }
 
 QIcon PipelineStripWidget::stateIcon(Node* node) const
@@ -1196,25 +1176,19 @@ QIcon PipelineStripWidget::stateIcon(Node* node) const
 QRect PipelineStripWidget::breakpointRect(const QRect& cardRect) const
 {
   // Layout: [breakpoint] [state] [expand/action]
-  int iconSize = 14;
-  int rightPad = 4;
-  int expandWidth = 16;
-  int toggleX = cardRect.right() - expandWidth - rightPad;
-  int stateX = toggleX - iconSize;
-  int bpX = stateX - iconSize;
-  int bpY = cardRect.top() + (NodeCardHeight - iconSize) / 2;
-  return QRect(bpX, bpY, iconSize, iconSize);
+  int toggleX = cardRect.right() - HeaderExpandWidth - HeaderRightPad;
+  int stateX = toggleX - HeaderIconSize;
+  int bpX = stateX - HeaderIconSize;
+  int bpY = cardRect.top() + (NodeCardHeight - HeaderIconSize) / 2;
+  return QRect(bpX, bpY, HeaderIconSize, HeaderIconSize);
 }
 
 QRect PipelineStripWidget::actionButtonRect(const QRect& cardRect) const
 {
   // Same position as the expand toggle
-  int iconSize = 14;
-  int rightPad = 4;
-  int expandWidth = 16;
-  int toggleX = cardRect.right() - expandWidth - rightPad;
-  int toggleY = cardRect.top() + (NodeCardHeight - iconSize) / 2;
-  return QRect(toggleX, toggleY, expandWidth, iconSize);
+  int toggleX = cardRect.right() - HeaderExpandWidth - HeaderRightPad;
+  int toggleY = cardRect.top() + (NodeCardHeight - HeaderIconSize) / 2;
+  return QRect(toggleX, toggleY, HeaderExpandWidth, HeaderIconSize);
 }
 
 // --- Interaction ---
@@ -1251,11 +1225,9 @@ void PipelineStripWidget::mousePressEvent(QMouseEvent* event)
       // Expand toggle (rightmost area) or action button
       auto outputs = node->outputPorts();
       if (!outputs.isEmpty()) {
-        int expandWidth = 16;
-        int rightPad = 4;
-        int toggleX = cardRect.right() - expandWidth - rightPad;
+        int toggleX = cardRect.right() - HeaderExpandWidth - HeaderRightPad;
         if (event->pos().x() >= toggleX &&
-            event->pos().x() <= cardRect.right() - rightPad) {
+            event->pos().x() <= cardRect.right() - HeaderRightPad) {
           setExpanded(node, !isExpanded(node));
           return;
         }
