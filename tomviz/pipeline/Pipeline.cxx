@@ -96,6 +96,11 @@ QList<Node*> Pipeline::roots() const
   return result;
 }
 
+int Pipeline::creationIndex(Node* node) const
+{
+  return m_nodes.indexOf(node);
+}
+
 Link* Pipeline::createLink(OutputPort* from, InputPort* to)
 {
   if (!from || !to) {
@@ -258,7 +263,8 @@ void Pipeline::depthFirstTraversal(std::function<void(Node*)> visitor,
   }
 }
 
-QList<Node*> Pipeline::topologicalSort(const QList<Node*>& startNodes)
+QList<Node*> Pipeline::topologicalSort(const QList<Node*>& startNodes,
+                                       SortOrder order)
 {
   // Determine the subset of nodes to sort
   QSet<Node*> subset;
@@ -286,6 +292,87 @@ QList<Node*> Pipeline::topologicalSort(const QList<Node*>& startNodes)
     }
   }
 
+  if (order == SortOrder::DepthFirst) {
+    // DFS reverse post-order: keeps chains together.
+    // Tiebreak among siblings/roots by creation order.
+    QList<Node*> result;
+    QSet<Node*> visited;
+
+    // Build creation-index map for the subset
+    QMap<Node*, int> indexMap;
+    for (int i = 0; i < m_nodes.size(); ++i) {
+      if (subset.contains(m_nodes[i])) {
+        indexMap[m_nodes[i]] = i;
+      }
+    }
+
+    auto byCreation = [&indexMap](Node* a, Node* b) {
+      return indexMap.value(a, INT_MAX) < indexMap.value(b, INT_MAX);
+    };
+
+    // Collect roots within the subset, sorted by creation order
+    QList<Node*> subsetRoots;
+    for (auto* node : m_nodes) {
+      if (!subset.contains(node)) {
+        continue;
+      }
+      bool isRoot = true;
+      for (auto* input : node->inputPorts()) {
+        if (input->link() && subset.contains(input->link()->from()->node())) {
+          isRoot = false;
+          break;
+        }
+      }
+      if (isRoot) {
+        subsetRoots.append(node);
+      }
+    }
+    // subsetRoots already in creation order (iterated m_nodes)
+
+    // Iterative DFS with two-pass approach for post-order
+    struct Frame
+    {
+      Node* node;
+      bool childrenPushed;
+    };
+    QStack<Frame> dfsStack;
+    // Push in forward creation order so that later-created roots sit on top
+    // of the stack, get processed (and prepended) first, and end up after
+    // earlier-created roots in the final result.
+    for (int i = 0; i < subsetRoots.size(); ++i) {
+      dfsStack.push({ subsetRoots[i], false });
+    }
+
+    while (!dfsStack.isEmpty()) {
+      auto& frame = dfsStack.top();
+      if (visited.contains(frame.node)) {
+        dfsStack.pop();
+        continue;
+      }
+      if (frame.childrenPushed) {
+        // Post-order: all children processed, emit this node
+        visited.insert(frame.node);
+        result.prepend(frame.node);
+        dfsStack.pop();
+      } else {
+        frame.childrenPushed = true;
+        // Sort downstream by creation order, then push in forward order so
+        // that later-created children sit on top, get prepended first, and
+        // end up after earlier-created siblings in the final result.
+        auto downstream = frame.node->downstreamNodes();
+        std::sort(downstream.begin(), downstream.end(), byCreation);
+        for (int i = 0; i < downstream.size(); ++i) {
+          if (subset.contains(downstream[i]) &&
+              !visited.contains(downstream[i])) {
+            dfsStack.push({ downstream[i], false });
+          }
+        }
+      }
+    }
+
+    return result;
+  }
+
   // Kahn's algorithm on the subset
   QMap<Node*, int> inDegree;
   for (auto* node : subset) {
@@ -299,6 +386,54 @@ QList<Node*> Pipeline::topologicalSort(const QList<Node*>& startNodes)
     }
   }
 
+  if (order == SortOrder::Stable) {
+    // Stable Kahn's: among nodes with in-degree 0, pick the one with the
+    // smallest creation index (position in m_nodes).
+    QMap<Node*, int> indexMap;
+    for (int i = 0; i < m_nodes.size(); ++i) {
+      if (subset.contains(m_nodes[i])) {
+        indexMap[m_nodes[i]] = i;
+      }
+    }
+
+    // Collect initial ready set
+    QList<Node*> ready;
+    for (auto it = inDegree.constBegin(); it != inDegree.constEnd(); ++it) {
+      if (it.value() == 0) {
+        ready.append(it.key());
+      }
+    }
+
+    QList<Node*> result;
+    while (!ready.isEmpty()) {
+      // Pick the node with the smallest creation index
+      int bestIdx = 0;
+      int bestCreation = indexMap.value(ready[0], INT_MAX);
+      for (int i = 1; i < ready.size(); ++i) {
+        int ci = indexMap.value(ready[i], INT_MAX);
+        if (ci < bestCreation) {
+          bestCreation = ci;
+          bestIdx = i;
+        }
+      }
+      Node* node = ready.takeAt(bestIdx);
+      result.append(node);
+
+      for (auto* downstream : node->downstreamNodes()) {
+        if (!subset.contains(downstream)) {
+          continue;
+        }
+        inDegree[downstream]--;
+        if (inDegree[downstream] == 0) {
+          ready.append(downstream);
+        }
+      }
+    }
+
+    return result;
+  }
+
+  // Default Kahn's (original behavior)
   QQueue<Node*> queue;
   for (auto it = inDegree.constBegin(); it != inDegree.constEnd(); ++it) {
     if (it.value() == 0) {

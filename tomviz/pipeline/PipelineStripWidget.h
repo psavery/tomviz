@@ -21,6 +21,7 @@ class QMenu;
 namespace tomviz {
 namespace pipeline {
 
+enum class SortOrder;
 class InputPort;
 class Link;
 class Node;
@@ -58,6 +59,9 @@ public:
 
   void setPipeline(Pipeline* pipeline);
   Pipeline* pipeline() const;
+
+  void setSortOrder(SortOrder order);
+  SortOrder sortOrder() const;
 
   Node* selectedNode() const;
   OutputPort* selectedPort() const;
@@ -141,6 +145,7 @@ private:
   QRect actionButtonRect(const QRect& cardRect) const;
 
   Pipeline* m_pipeline = nullptr;
+  SortOrder m_sortOrder{}; // SortOrder::Default
   QList<LayoutItem> m_layout;
   QList<LinkGeometry> m_linkGeometries;
   int m_selectedIndex = -1;

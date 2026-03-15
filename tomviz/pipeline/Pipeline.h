@@ -21,6 +21,13 @@ class Node;
 class OutputPort;
 class PipelineExecutor;
 
+enum class SortOrder
+{
+  Default,    // Kahn's algorithm, arbitrary tiebreaking (by pointer address)
+  Stable,     // Kahn's algorithm, creation-order tiebreaking
+  DepthFirst  // DFS reverse post-order (keeps chains together)
+};
+
 class TOMVIZ_PIPELINE_EXPORT Pipeline : public QObject
 {
   Q_OBJECT
@@ -35,6 +42,10 @@ public:
   QList<Node*> nodes() const;
   QList<Node*> roots() const;
 
+  /// Return the index at which @a node was added (creation order).
+  /// Returns -1 if the node is not in this pipeline.
+  int creationIndex(Node* node) const;
+
   // Link management
   Link* createLink(OutputPort* from, InputPort* to);
   void removeLink(Link* link);
@@ -47,7 +58,9 @@ public:
   // Traversal
   void depthFirstTraversal(std::function<void(Node*)> visitor,
                            const QList<Node*>& startNodes = {});
-  QList<Node*> topologicalSort(const QList<Node*>& startNodes = {});
+  QList<Node*> topologicalSort(
+    const QList<Node*>& startNodes = {},
+    SortOrder order = SortOrder::Default);
 
   // Execution
   void setExecutor(PipelineExecutor* executor);

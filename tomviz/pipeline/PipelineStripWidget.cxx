@@ -64,6 +64,20 @@ Pipeline* PipelineStripWidget::pipeline() const
   return m_pipeline;
 }
 
+void PipelineStripWidget::setSortOrder(SortOrder order)
+{
+  if (m_sortOrder != order) {
+    m_sortOrder = order;
+    rebuildLayout();
+    update();
+  }
+}
+
+SortOrder PipelineStripWidget::sortOrder() const
+{
+  return m_sortOrder;
+}
+
 Node* PipelineStripWidget::selectedNode() const
 {
   if (m_selectedIndex >= 0 && m_selectedIndex < m_layout.size()) {
@@ -167,7 +181,7 @@ void PipelineStripWidget::rebuildLayout()
     return;
   }
 
-  auto sorted = m_pipeline->topologicalSort();
+  auto sorted = m_pipeline->topologicalSort({}, m_sortOrder);
   int y = Padding;
   int cardWidth = qMax(width() - GutterWidth - Padding * 2, 80);
 

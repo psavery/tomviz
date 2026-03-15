@@ -219,6 +219,7 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
 
   // Create pipeline strip widget in the left dock
   m_pipelineStrip = new pipeline::PipelineStripWidget(this);
+  m_pipelineStrip->setSortOrder(pipeline::SortOrder::DepthFirst);
   m_ui->pipelineContainerLayout->addWidget(m_pipelineStrip);
   connect(m_pipelineStrip, &pipeline::PipelineStripWidget::nodeSelected,
           this, &MainWindow::onNodeSelected);
