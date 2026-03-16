@@ -3,6 +3,7 @@
 
 #include "TransformNode.h"
 
+#include "EditTransformWidget.h"
 #include "InputPort.h"
 #include "OutputPort.h"
 #include "data/VolumeData.h"
@@ -41,7 +42,8 @@ bool TransformNode::propertiesWidgetNeedsInput() const
   return false;
 }
 
-QWidget* TransformNode::createPropertiesWidget(QWidget* /*parent*/)
+EditTransformWidget* TransformNode::createPropertiesWidget(
+  QWidget* /*parent*/)
 {
   return nullptr;
 }
@@ -49,6 +51,15 @@ QWidget* TransformNode::createPropertiesWidget(QWidget* /*parent*/)
 bool TransformNode::execute()
 {
   emit executionStarted();
+
+  // Check that all input ports are connected and have data.
+  // If any required input is missing, skip execution rather than crash.
+  for (auto* port : inputPorts()) {
+    if (!port->link() || !port->hasData()) {
+      emit executionFinished(false);
+      return false;
+    }
+  }
 
   QMap<QString, PortData> inputs;
   for (auto* port : inputPorts()) {

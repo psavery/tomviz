@@ -48,7 +48,7 @@ public:
 
   bool hasPropertiesWidget() const override;
   bool propertiesWidgetNeedsInput() const override;
-  QWidget* createPropertiesWidget(QWidget* parent) override;
+  EditTransformWidget* createPropertiesWidget(QWidget* parent) override;
 
 protected:
   QMap<QString, PortData> transform(

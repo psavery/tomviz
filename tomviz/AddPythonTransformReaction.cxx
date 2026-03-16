@@ -6,6 +6,7 @@
 #include "ActiveObjects.h"
 #include "MainWindow.h"
 
+#include "pipeline/DeferredLinkInfo.h"
 #include "pipeline/Pipeline.h"
 #include "pipeline/InputPort.h"
 #include "pipeline/Link.h"
@@ -13,6 +14,7 @@
 #include "pipeline/OutputPort.h"
 #include "pipeline/SinkNode.h"
 #include "pipeline/SourceNode.h"
+#include "pipeline/TransformEditDialog.h"
 #include "pipeline/TransformNode.h"
 #include "pipeline/transforms/LegacyPythonTransform.h"
 
@@ -138,6 +140,28 @@ static void appendTransformAtPort(
   }
 }
 
+/// Deferred variant: adds node and input link only, returns deferred info
+/// for the output links to be completed later.
+static pipeline::DeferredLinkInfo appendTransformAtPortDeferred(
+  pipeline::Pipeline* pip,
+  pipeline::LegacyPythonTransform* transform,
+  pipeline::OutputPort* targetPort)
+{
+  pip->addNode(transform);
+  pip->createLink(targetPort, transform->inputPorts()[0]);
+
+  pipeline::DeferredLinkInfo deferred;
+  auto* newTip = transform->outputPorts()[0];
+  for (auto* link : targetPort->links()) {
+    auto* targetNode = link->to()->node();
+    if (dynamic_cast<pipeline::SinkNode*>(targetNode)) {
+      deferred.linksToBreak.append({ targetPort, link->to() });
+      deferred.linksToCreate.append({ newTip, link->to() });
+    }
+  }
+  return deferred;
+}
+
 /// Insert a transform before the given existing transform node.
 static void insertTransformBefore(
   pipeline::Pipeline* pip,
@@ -159,6 +183,49 @@ static void insertTransformBefore(
   pip->createLink(transform->outputPorts()[0], beforeInput);
 }
 
+/// Deferred variant: adds node and input link only, returns deferred info.
+static pipeline::DeferredLinkInfo insertTransformBeforeDeferred(
+  pipeline::Pipeline* pip,
+  pipeline::LegacyPythonTransform* transform,
+  pipeline::TransformNode* before)
+{
+  auto* beforeInput = before->inputPorts()[0];
+  auto* upstreamLink = beforeInput->link();
+  pipeline::OutputPort* upstreamPort =
+    upstreamLink ? upstreamLink->from() : nullptr;
+
+  pip->addNode(transform);
+
+  if (upstreamPort) {
+    // Create input link (upstream now feeds both 'before' and 'transform')
+    pip->createLink(upstreamPort, transform->inputPorts()[0]);
+  }
+
+  pipeline::DeferredLinkInfo deferred;
+  if (upstreamLink) {
+    deferred.linksToBreak.append({ upstreamPort, beforeInput });
+  }
+  deferred.linksToCreate.append(
+    { transform->outputPorts()[0], beforeInput });
+  return deferred;
+}
+
+/// Show a TransformEditDialog for a newly inserted transform with deferred
+/// link info.
+static void showInsertionDialog(
+  pipeline::LegacyPythonTransform* transform,
+  pipeline::Pipeline* pip,
+  const pipeline::DeferredLinkInfo& deferred,
+  QWidget* parent)
+{
+  auto* dialog = new pipeline::TransformEditDialog(
+    transform, pip, deferred, parent);
+  dialog->setAttribute(Qt::WA_DeleteOnClose);
+  dialog->setWindowTitle(
+    QString("Configure - %1").arg(transform->label()));
+  dialog->show();
+}
+
 /// Insert a LegacyPythonTransform into the pipeline using selection-aware
 /// logic. Returns true on success.
 static bool insertTransformIntoPipeline(
@@ -178,6 +245,8 @@ static bool insertTransformIntoPipeline(
     return true;
   }
 
+  bool showDialog = transform->hasPropertiesWidget();
+
   auto& ao = ActiveObjects::instance();
   auto* activePort = ao.activePort();
   auto* activeNode = ao.activeNode();
@@ -185,8 +254,14 @@ static bool insertTransformIntoPipeline(
   // Case 1: An output port is explicitly selected — connect there
   if (activePort && activePort->node() &&
       pip->nodes().contains(activePort->node())) {
-    appendTransformAtPort(pip, transform, activePort);
-    pip->execute();
+    if (showDialog) {
+      auto deferred =
+        appendTransformAtPortDeferred(pip, transform, activePort);
+      showInsertionDialog(transform, pip, deferred, mainWindow);
+    } else {
+      appendTransformAtPort(pip, transform, activePort);
+      pip->execute();
+    }
     return true;
   }
 
@@ -225,19 +300,31 @@ static bool insertTransformIntoPipeline(
     }
 
     if (insertBefore) {
-      insertTransformBefore(pip, transform, selectedTransform);
+      if (showDialog) {
+        auto deferred =
+          insertTransformBeforeDeferred(pip, transform, selectedTransform);
+        showInsertionDialog(transform, pip, deferred, mainWindow);
+      } else {
+        insertTransformBefore(pip, transform, selectedTransform);
+        pip->execute();
+      }
     } else {
-      // Append to the tip of the branch containing the selected transform
       auto* tipPort = findBranchTip(selectedTransform);
       if (!tipPort) {
         qCritical("No output port found in pipeline.");
         delete transform;
         return false;
       }
-      appendTransformAtPort(pip, transform, tipPort);
+      if (showDialog) {
+        auto deferred =
+          appendTransformAtPortDeferred(pip, transform, tipPort);
+        showInsertionDialog(transform, pip, deferred, mainWindow);
+      } else {
+        appendTransformAtPort(pip, transform, tipPort);
+        pip->execute();
+      }
     }
 
-    pip->execute();
     return true;
   }
 
@@ -250,8 +337,13 @@ static bool insertTransformIntoPipeline(
     return false;
   }
 
-  appendTransformAtPort(pip, transform, tipPort);
-  pip->execute();
+  if (showDialog) {
+    auto deferred = appendTransformAtPortDeferred(pip, transform, tipPort);
+    showInsertionDialog(transform, pip, deferred, mainWindow);
+  } else {
+    appendTransformAtPort(pip, transform, tipPort);
+    pip->execute();
+  }
   return true;
 }
 

@@ -39,7 +39,11 @@ set(SOURCES
   sinks/PlotSink.cxx
   sinks/MoleculeSink.cxx
   ParameterInterfaceBuilder.cxx
+  EditTransformWidget.cxx
   TransformPropertiesWidget.cxx
+  PythonTransformEditorWidget.cxx
+  TransformPropertiesPanel.cxx
+  TransformEditDialog.cxx
   PipelineStripWidget.cxx
   VolumeScalarsModel.cxx
   VolumePropertiesWidget.cxx
@@ -85,7 +89,12 @@ set(HEADERS
   sinks/PlotSink.h
   sinks/MoleculeSink.h
   ParameterInterfaceBuilder.h
+  EditTransformWidget.h
   TransformPropertiesWidget.h
+  PythonTransformEditorWidget.h
+  TransformPropertiesPanel.h
+  TransformEditDialog.h
+  DeferredLinkInfo.h
   PipelineStripWidget.h
   VolumeScalarsModel.h
   VolumePropertiesWidget.h
@@ -99,6 +108,7 @@ generate_export_header(tomviz_pipeline)
 target_link_libraries(tomviz_pipeline
   PUBLIC Qt6::Core Qt6::Widgets VTK::CommonCore VTK::CommonDataModel
   PRIVATE Python3::Python pybind11::embed VTK::WrappingPythonCore
+          ParaView::pqPython
           VTK::IOImage VTK::IOXML VTK::IOLegacy
           VTK::RenderingCore VTK::RenderingVolume
           VTK::RenderingVolumeOpenGL2

@@ -5,7 +5,6 @@
 
 #include "ParameterInterfaceBuilder.h"
 
-#include <QPushButton>
 #include <QVBoxLayout>
 
 namespace tomviz {
@@ -14,7 +13,7 @@ namespace pipeline {
 TransformPropertiesWidget::TransformPropertiesWidget(
   const QString& jsonDescription,
   const QMap<QString, QVariant>& currentValues, QWidget* parent)
-  : QWidget(parent)
+  : EditTransformWidget(parent)
 {
   auto* layout = new QVBoxLayout(this);
   layout->setContentsMargins(0, 0, 0, 0);
@@ -25,13 +24,6 @@ TransformPropertiesWidget::TransformPropertiesWidget(
 
   m_innerWidget = builder.buildWidget(this);
   layout->addWidget(m_innerWidget);
-
-  auto* applyButton = new QPushButton(tr("Apply"), this);
-  layout->addWidget(applyButton);
-
-  connect(applyButton, &QPushButton::clicked, this, [this]() {
-    emit applyRequested(values());
-  });
 }
 
 QMap<QString, QVariant> TransformPropertiesWidget::values() const
@@ -40,6 +32,11 @@ QMap<QString, QVariant> TransformPropertiesWidget::values() const
     return {};
   }
   return ParameterInterfaceBuilder::parameterValues(m_innerWidget);
+}
+
+void TransformPropertiesWidget::applyChangesToOperator()
+{
+  emit applyRequested(values());
 }
 
 } // namespace pipeline

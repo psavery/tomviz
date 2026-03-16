@@ -3,6 +3,7 @@
 
 #include "LegacyPythonTransform.h"
 
+#include "PythonTransformEditorWidget.h"
 #include "TransformPropertiesWidget.h"
 #include "data/VolumeData.h"
 
@@ -82,14 +83,8 @@ QString LegacyPythonTransform::operatorName() const
 
 bool LegacyPythonTransform::hasPropertiesWidget() const
 {
-  // Has a widget if the JSON description has parameters
-  QJsonDocument doc = QJsonDocument::fromJson(m_jsonDescription.toUtf8());
-  if (!doc.isObject()) {
-    return false;
-  }
-  QJsonObject obj = doc.object();
-  return obj.contains("parameters") &&
-         !obj.value("parameters").toArray().isEmpty();
+  // Always has a widget — at minimum the script editor tab.
+  return true;
 }
 
 bool LegacyPythonTransform::propertiesWidgetNeedsInput() const
@@ -97,18 +92,27 @@ bool LegacyPythonTransform::propertiesWidgetNeedsInput() const
   return false;
 }
 
-QWidget* LegacyPythonTransform::createPropertiesWidget(QWidget* parent)
+EditTransformWidget* LegacyPythonTransform::createPropertiesWidget(
+  QWidget* parent)
 {
-  if (!hasPropertiesWidget()) {
-    return nullptr;
-  }
+  auto* widget = new PythonTransformEditorWidget(
+    label(), m_script, m_jsonDescription, m_parameters, parent);
 
-  auto* widget = new TransformPropertiesWidget(
-    m_jsonDescription, m_parameters, parent);
-
-  connect(widget, &TransformPropertiesWidget::applyRequested, this,
-          [this](const QMap<QString, QVariant>& values) {
+  connect(widget, &PythonTransformEditorWidget::applied, this,
+          [this](const QString& newLabel, const QString& newScript,
+                 const QMap<QString, QVariant>& values) {
             bool changed = false;
+
+            if (label() != newLabel) {
+              setLabel(newLabel);
+              changed = true;
+            }
+
+            if (m_script != newScript) {
+              m_script = newScript;
+              changed = true;
+            }
+
             for (auto it = values.constBegin(); it != values.constEnd();
                  ++it) {
               if (m_parameters.value(it.key()) != it.value()) {
@@ -116,6 +120,7 @@ QWidget* LegacyPythonTransform::createPropertiesWidget(QWidget* parent)
               }
               setParameter(it.key(), it.value());
             }
+
             if (changed) {
               markStale();
               emit parametersApplied();

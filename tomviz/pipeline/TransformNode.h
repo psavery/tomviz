@@ -17,6 +17,8 @@ class QWidget;
 namespace tomviz {
 namespace pipeline {
 
+class EditTransformWidget;
+
 class TOMVIZ_PIPELINE_EXPORT TransformNode : public Node
 {
   Q_OBJECT
@@ -39,7 +41,7 @@ public:
   virtual bool propertiesWidgetNeedsInput() const;
 
   /// Create the properties widget. Caller owns the returned widget.
-  virtual QWidget* createPropertiesWidget(QWidget* parent);
+  virtual EditTransformWidget* createPropertiesWidget(QWidget* parent);
 
 signals:
   /// Emitted when the user applies new parameter values via the properties

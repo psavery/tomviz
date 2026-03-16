@@ -51,6 +51,8 @@
 #include "pipeline/PortData.h"
 #include "pipeline/sinks/LegacyModuleSink.h"
 #include "pipeline/data/VolumeData.h"
+#include "pipeline/TransformEditDialog.h"
+#include "pipeline/TransformPropertiesPanel.h"
 #include "pipeline/VolumePropertiesWidget.h"
 #include "CentralWidget.h"
 #include "ModulePropertiesPanel.h"
@@ -226,6 +228,20 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
           this, &MainWindow::onNodeSelected);
   connect(m_pipelineStrip, &pipeline::PipelineStripWidget::portSelected,
           this, &MainWindow::onPortSelected);
+
+  // Double-click on a transform node opens the edit dialog
+  connect(m_pipelineStrip, &pipeline::PipelineStripWidget::nodeDoubleClicked,
+          this, [this](pipeline::Node* node) {
+            auto* xf = dynamic_cast<pipeline::TransformNode*>(node);
+            if (xf && xf->hasPropertiesWidget()) {
+              auto* dlg = new pipeline::TransformEditDialog(
+                xf, pipeline(), this);
+              dlg->setAttribute(Qt::WA_DeleteOnClose);
+              dlg->setWindowTitle(
+                QString("Edit - %1").arg(xf->label()));
+              dlg->show();
+            }
+          });
 
   // Link validator: type-compatible, different nodes, target not connected
   m_pipelineStrip->setLinkValidator(
@@ -1385,8 +1401,8 @@ void MainWindow::onNodeSelected(pipeline::Node* node)
       m_ui->propertiesPanelStackedWidget);
   } else if (auto* transform = dynamic_cast<pipeline::TransformNode*>(node)) {
     if (transform->hasPropertiesWidget()) {
-      propsWidget = transform->createPropertiesWidget(
-        m_ui->propertiesPanelStackedWidget);
+      propsWidget = new pipeline::TransformPropertiesPanel(
+        transform, pipeline(), m_ui->propertiesPanelStackedWidget);
     }
   }
 

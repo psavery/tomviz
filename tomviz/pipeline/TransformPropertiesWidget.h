@@ -6,17 +6,20 @@
 
 #include "tomviz_pipeline_export.h"
 
+#include "EditTransformWidget.h"
+
 #include <QMap>
 #include <QString>
 #include <QVariant>
-#include <QWidget>
 
 namespace tomviz {
 namespace pipeline {
 
-/// A widget that wraps ParameterInterfaceBuilder and provides an Apply button.
-/// Parameters are only committed when the user clicks Apply.
-class TOMVIZ_PIPELINE_EXPORT TransformPropertiesWidget : public QWidget
+/// A JSON-driven parameter editing widget built by ParameterInterfaceBuilder.
+/// Does not own any buttons — the wrapper (TransformPropertiesPanel or
+/// TransformEditDialog) provides Apply/OK/Cancel.
+class TOMVIZ_PIPELINE_EXPORT TransformPropertiesWidget
+  : public EditTransformWidget
 {
   Q_OBJECT
 
@@ -27,8 +30,11 @@ public:
 
   QMap<QString, QVariant> values() const;
 
+  void applyChangesToOperator() override;
+
 signals:
-  /// Emitted when the user clicks Apply, carrying the current values.
+  /// Emitted by applyChangesToOperator(), carrying the current values.
+  /// The transform connects to this signal to update its parameters.
   void applyRequested(const QMap<QString, QVariant>& values);
 
 private:

@@ -7,6 +7,7 @@
    VolumePropertiesWidget below (shown only when a Volume port is selected).
 */
 
+#include "EditTransformWidget.h"
 #include "Node.h"
 #include "OutputPort.h"
 #include "Pipeline.h"
