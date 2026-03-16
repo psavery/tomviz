@@ -70,6 +70,18 @@ AddPythonTransformReaction::AddPythonTransformReaction(
     }
   }
 
+  // Extract the description from JSON and set it on the action for the search
+  // dialog to display.
+  if (!json.isEmpty()) {
+    auto descDoc = QJsonDocument::fromJson(json.toLatin1());
+    if (descDoc.isObject()) {
+      QString desc = descDoc.object().value("description").toString();
+      if (!desc.isEmpty()) {
+        parentObject->setStatusTip(desc);
+      }
+    }
+  }
+
   OperatorFactory::instance().registerPythonOperator(l, s, rts, rv, rf, json);
 
   updateEnableState();
