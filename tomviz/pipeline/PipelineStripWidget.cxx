@@ -227,11 +227,44 @@ void PipelineStripWidget::rebuildLayout()
       nodeHeight += PortIndent; // bottom padding
     }
 
+    // Compute indentation level based on node type and connections.
+    // - All inputs disconnected: indent 0
+    // - Source nodes: always indent 0
+    // - Transform nodes with connections: indent 1
+    // - Sink nodes with connections: indent 2 if connected to at least one
+    //   transform, otherwise indent 1
+    int indentLevel = 0;
+    bool hasConnectedInput = false;
+    for (auto* inp : inputs) {
+      if (inp->link()) {
+        hasConnectedInput = true;
+        break;
+      }
+    }
+    if (hasConnectedInput && !qobject_cast<SourceNode*>(node)) {
+      if (qobject_cast<SinkNode*>(node)) {
+        bool connectedToTransform = false;
+        for (auto* inp : inputs) {
+          if (inp->link() &&
+              qobject_cast<TransformNode*>(inp->link()->from()->node())) {
+            connectedToTransform = true;
+            break;
+          }
+        }
+        indentLevel = connectedToTransform ? 2 : 1;
+      } else {
+        // TransformNode (or any non-source, non-sink)
+        indentLevel = 1;
+      }
+    }
+    int indent = indentLevel * IndentWidth;
+
     // Node card
     LayoutItem nodeItem;
     nodeItem.type = LayoutItem::NodeCard;
     nodeItem.node = node;
-    nodeItem.rect = QRect(GutterWidth + Padding, y, cardWidth, nodeHeight);
+    nodeItem.rect =
+      QRect(GutterWidth + Padding + indent, y, cardWidth - indent, nodeHeight);
     m_layout.append(nodeItem);
 
     if (showPorts) {
@@ -241,8 +274,9 @@ void PipelineStripWidget::rebuildLayout()
         portItem.type = LayoutItem::PortCard;
         portItem.node = node;
         portItem.port = port;
-        portItem.rect = QRect(GutterWidth + Padding + PortIndent, portY,
-                              cardWidth - 2 * PortIndent, PortCardHeight);
+        portItem.rect =
+          QRect(GutterWidth + Padding + indent + PortIndent, portY,
+                cardWidth - indent - 2 * PortIndent, PortCardHeight);
         m_layout.append(portItem);
         portY += PortCardHeight + CardSpacing;
       }

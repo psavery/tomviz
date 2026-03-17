@@ -200,6 +200,7 @@ private:
   static constexpr int HeaderExpandWidth = 16; // expand toggle width
   static constexpr int LaneSpacing = 6;              // spacing between parallel lines
   static constexpr int DotClearance = DotRadius * 2; // initial offset from dot before first lane
+  static constexpr int IndentWidth = 8;
   static constexpr int Padding = 4;
 };
 
