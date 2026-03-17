@@ -5,11 +5,11 @@
 
 #include "ActiveObjects.h"
 #include "AddRenderViewContextMenuBehavior.h"
-#include "ShiftRotationCenterWidget.h"
 #include "ManualManipulationWidget.h"
+#include "ShiftRotationCenterWidget.h"
 #include "MoveActiveObject.h"
-#include "OperatorPython.h"
 #include "RotateAlignWidget.h"
+#include "transforms/LegacyPythonTransform.h"
 #include "TimeSeriesLabel.h"
 #include "ViewFrameActions.h"
 
@@ -102,12 +102,34 @@ Behaviors::Behaviors(QMainWindow* mainWindow) : QObject(mainWindow)
 
 void Behaviors::registerCustomOperatorUIs()
 {
-  OperatorPython::registerCustomWidget("ShiftRotationCenterWidget", true,
-                                       ShiftRotationCenterWidget::New);
-  OperatorPython::registerCustomWidget("RotationAlignWidget", true,
-                                       RotateAlignWidget::New);
-  OperatorPython::registerCustomWidget("ManualManipulationWidget", true,
-                                       ManualManipulationWidget::New);
+  using namespace pipeline;
+
+  LegacyPythonTransform::registerCustomWidget(
+    "RotationAlignWidget",
+    { /*needsData=*/true,
+      /*create=*/
+      [](QWidget* parent, vtkSmartPointer<vtkImageData> data,
+         vtkSMProxy* colorMap) -> CustomPythonTransformWidget* {
+        return new RotateAlignWidget(data, colorMap, parent);
+      } });
+
+  LegacyPythonTransform::registerCustomWidget(
+    "ShiftRotationCenterWidget",
+    { /*needsData=*/true,
+      /*create=*/
+      [](QWidget* parent, vtkSmartPointer<vtkImageData> data,
+         vtkSMProxy* colorMap) -> CustomPythonTransformWidget* {
+        return new ShiftRotationCenterWidget(data, colorMap, parent);
+      } });
+
+  LegacyPythonTransform::registerCustomWidget(
+    "ManualManipulationWidget",
+    { /*needsData=*/true,
+      /*create=*/
+      [](QWidget* parent, vtkSmartPointer<vtkImageData> data,
+         vtkSMProxy* colorMap) -> CustomPythonTransformWidget* {
+        return new ManualManipulationWidget(data, colorMap, parent);
+      } });
 }
 
 } // end of namespace tomviz

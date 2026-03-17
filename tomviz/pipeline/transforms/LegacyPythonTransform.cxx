@@ -3,6 +3,8 @@
 
 #include "LegacyPythonTransform.h"
 
+#include "CustomPythonTransformWidget.h"
+#include "InputPort.h"
 #include "PythonTransformEditorWidget.h"
 #include "TransformPropertiesWidget.h"
 #include "data/VolumeData.h"
@@ -30,6 +32,19 @@ namespace py = pybind11;
 
 namespace tomviz {
 namespace pipeline {
+
+QMap<QString, CustomWidgetInfo> LegacyPythonTransform::s_customWidgetMap;
+
+void LegacyPythonTransform::registerCustomWidget(const QString& id,
+                                                  const CustomWidgetInfo& info)
+{
+  s_customWidgetMap[id] = info;
+}
+
+QString LegacyPythonTransform::customWidgetID() const
+{
+  return m_customWidgetID;
+}
 
 LegacyPythonTransform::LegacyPythonTransform(QObject* parent)
   : TransformNode(parent)
@@ -89,18 +104,53 @@ bool LegacyPythonTransform::hasPropertiesWidget() const
 
 bool LegacyPythonTransform::propertiesWidgetNeedsInput() const
 {
+  if (!m_customWidgetID.isEmpty() &&
+      s_customWidgetMap.contains(m_customWidgetID)) {
+    return s_customWidgetMap[m_customWidgetID].needsData;
+  }
   return false;
 }
 
 EditTransformWidget* LegacyPythonTransform::createPropertiesWidget(
   QWidget* parent)
 {
+  CustomPythonTransformWidget* customWidget = nullptr;
+
+  if (!m_customWidgetID.isEmpty() &&
+      s_customWidgetMap.contains(m_customWidgetID)) {
+    const auto& info = s_customWidgetMap[m_customWidgetID];
+
+    // Get input data and color map if the widget needs them
+    vtkSmartPointer<vtkImageData> inputImage;
+    vtkSMProxy* colorMap = nullptr;
+    if (info.needsData) {
+      auto* input = inputPort("volume");
+      if (input && input->hasData()) {
+        auto vol = input->data().value<VolumeDataPtr>();
+        if (vol && vol->isValid()) {
+          inputImage = vol->imageData();
+          vol->initColorMap();
+          colorMap = vol->colorMap();
+        }
+      }
+    }
+
+    if (info.create) {
+      customWidget = info.create(parent, inputImage, colorMap);
+      if (customWidget) {
+        customWidget->setValues(m_parameters);
+        customWidget->setScript(m_script);
+      }
+    }
+  }
+
   auto* widget = new PythonTransformEditorWidget(
-    label(), m_script, m_jsonDescription, m_parameters, parent);
+    label(), m_script, m_jsonDescription, m_parameters, customWidget, parent);
 
   connect(widget, &PythonTransformEditorWidget::applied, this,
-          [this](const QString& newLabel, const QString& newScript,
-                 const QMap<QString, QVariant>& values) {
+          [this, customWidget](const QString& newLabel,
+                               const QString& newScript,
+                               const QMap<QString, QVariant>& values) {
             bool changed = false;
 
             if (label() != newLabel) {
@@ -113,8 +163,16 @@ EditTransformWidget* LegacyPythonTransform::createPropertiesWidget(
               changed = true;
             }
 
-            for (auto it = values.constBegin(); it != values.constEnd();
-                 ++it) {
+            // Get values from the custom widget if present,
+            // otherwise use the auto-generated parameter values.
+            QMap<QString, QVariant> finalValues = values;
+            if (customWidget) {
+              customWidget->getValues(finalValues);
+              customWidget->writeSettings();
+            }
+
+            for (auto it = finalValues.constBegin();
+                 it != finalValues.constEnd(); ++it) {
               if (m_parameters.value(it.key()) != it.value()) {
                 changed = true;
               }
@@ -145,6 +203,11 @@ void LegacyPythonTransform::parseJSON()
     setLabel(obj.value("label").toString());
   }
 
+  // Custom widget ID (e.g. "RotationAlignWidget")
+  if (obj.contains("widget")) {
+    m_customWidgetID = obj.value("widget").toString();
+  }
+
   // Parse parameters with defaults
   m_datasetInputNames.clear();
   if (obj.contains("parameters")) {
@@ -163,7 +226,20 @@ void LegacyPythonTransform::parseJSON()
       }
 
       QVariant value;
-      if (type == "double") {
+
+      // Array defaults (e.g. [0.0, 0.0, 0.0]) → QVariantList,
+      // regardless of the declared scalar type.
+      if (defaultVal.isArray()) {
+        QVariantList list;
+        for (const auto& item : defaultVal.toArray()) {
+          if (type == "int" || type == "integer") {
+            list.append(item.toInt());
+          } else {
+            list.append(item.toDouble());
+          }
+        }
+        value = list;
+      } else if (type == "double") {
         value = QVariant(defaultVal.toDouble());
       } else if (type == "int" || type == "integer" ||
                  type == "enumeration") {

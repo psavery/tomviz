@@ -3,6 +3,7 @@
 
 #include "PythonTransformEditorWidget.h"
 
+#include "CustomPythonTransformWidget.h"
 #include "TransformPropertiesWidget.h"
 
 #include <pqPythonSyntaxHighlighter.h>
@@ -21,8 +22,9 @@ namespace pipeline {
 
 PythonTransformEditorWidget::PythonTransformEditorWidget(
   const QString& label, const QString& script, const QString& jsonDescription,
-  const QMap<QString, QVariant>& currentValues, QWidget* parent)
-  : EditTransformWidget(parent)
+  const QMap<QString, QVariant>& currentValues,
+  CustomPythonTransformWidget* customParamsWidget, QWidget* parent)
+  : EditTransformWidget(parent), m_customParamsWidget(customParamsWidget)
 {
   auto* mainLayout = new QVBoxLayout(this);
   mainLayout->setContentsMargins(0, 0, 0, 0);
@@ -67,26 +69,33 @@ PythonTransformEditorWidget::PythonTransformEditorWidget(
   auto* paramsTab = new QWidget(m_tabWidget);
   auto* paramsLayout = new QVBoxLayout(paramsTab);
 
-  // Show operator description from JSON if available
-  if (!jsonDescription.isEmpty()) {
-    QJsonDocument doc = QJsonDocument::fromJson(jsonDescription.toUtf8());
-    if (doc.isObject()) {
-      QString desc = doc.object().value("description").toString();
-      if (!desc.isEmpty()) {
-        auto* descLabel = new QLabel(desc, paramsTab);
-        descLabel->setWordWrap(true);
-        descLabel->setStyleSheet(
-          "QLabel { color: palette(text); padding: 4px; }");
-        paramsLayout->addWidget(descLabel);
+  if (m_customParamsWidget) {
+    // Use the custom widget instead of auto-generated parameters
+    m_customParamsWidget->setParent(paramsTab);
+    paramsLayout->addWidget(m_customParamsWidget, 1);
+  } else {
+    // Show operator description from JSON if available
+    if (!jsonDescription.isEmpty()) {
+      QJsonDocument doc = QJsonDocument::fromJson(jsonDescription.toUtf8());
+      if (doc.isObject()) {
+        QString desc = doc.object().value("description").toString();
+        if (!desc.isEmpty()) {
+          auto* descLabel = new QLabel(desc, paramsTab);
+          descLabel->setWordWrap(true);
+          descLabel->setStyleSheet(
+            "QLabel { color: palette(text); padding: 4px; }");
+          paramsLayout->addWidget(descLabel);
+        }
       }
+
+      m_paramsWidget = new TransformPropertiesWidget(jsonDescription,
+                                                     currentValues, paramsTab);
+      paramsLayout->addWidget(m_paramsWidget, 1);
     }
 
-    m_paramsWidget =
-      new TransformPropertiesWidget(jsonDescription, currentValues, paramsTab);
-    paramsLayout->addWidget(m_paramsWidget, 1);
+    paramsLayout->addStretch();
   }
 
-  paramsLayout->addStretch();
   m_tabWidget->addTab(paramsTab, tr("Parameters"));
 
   // Start on the Parameters tab

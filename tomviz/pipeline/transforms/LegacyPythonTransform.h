@@ -13,8 +13,31 @@
 #include <QStringList>
 #include <QVariant>
 
+#include <functional>
+
+#include <vtkSmartPointer.h>
+
+class vtkImageData;
+class vtkSMProxy;
+
 namespace tomviz {
 namespace pipeline {
+
+class CustomPythonTransformWidget;
+
+/// Registration info for a custom widget that replaces the auto-generated
+/// parameter UI for specific Python operators (e.g. RotationAlign).
+struct TOMVIZ_PIPELINE_EXPORT CustomWidgetInfo
+{
+  /// Whether the widget needs input data (vtkImageData) to display.
+  bool needsData = false;
+
+  /// Factory: creates the widget given a parent, input image data, and the
+  /// source volume's color map proxy (may be null).
+  std::function<CustomPythonTransformWidget*(
+    QWidget* parent, vtkSmartPointer<vtkImageData>, vtkSMProxy* colorMap)>
+    create;
+};
 
 /// A TransformNode that loads and executes an existing tomviz Python operator
 /// described by a JSON description and Python script file pair.
@@ -46,6 +69,13 @@ public:
   /// The operator name from the JSON description
   QString operatorName() const;
 
+  /// The custom widget ID from the JSON "widget" field (empty if none).
+  QString customWidgetID() const;
+
+  /// Register a custom widget factory for a given widget ID.
+  static void registerCustomWidget(const QString& id,
+                                   const CustomWidgetInfo& info);
+
   bool hasPropertiesWidget() const override;
   bool propertiesWidgetNeedsInput() const override;
   EditTransformWidget* createPropertiesWidget(QWidget* parent) override;
@@ -61,9 +91,12 @@ private:
   QString m_script;
   QString m_operatorName;
   QMap<QString, QVariant> m_parameters;
+  QString m_customWidgetID;
   QStringList m_resultNames;
   QStringList m_resultTypes;
   QStringList m_datasetInputNames;
+
+  static QMap<QString, CustomWidgetInfo> s_customWidgetMap;
 };
 
 } // namespace pipeline

@@ -4,29 +4,26 @@
 #ifndef tomvizShiftRotationCenterWidget_h
 #define tomvizShiftRotationCenterWidget_h
 
-#include "CustomPythonOperatorWidget.h"
+#include "CustomPythonTransformWidget.h"
 
 #include <vtkSmartPointer.h>
 
 #include <QScopedPointer>
 
 class vtkImageData;
+class vtkSMProxy;
 
 namespace tomviz {
-class Operator;
 
-class ShiftRotationCenterWidget : public CustomPythonOperatorWidget
+class ShiftRotationCenterWidget : public pipeline::CustomPythonTransformWidget
 {
   Q_OBJECT
-  typedef CustomPythonOperatorWidget Superclass;
 
 public:
-  ShiftRotationCenterWidget(Operator* op, vtkSmartPointer<vtkImageData> image,
-                            QWidget* parent = NULL);
+  ShiftRotationCenterWidget(vtkSmartPointer<vtkImageData> image,
+                            vtkSMProxy* sourceColorMap,
+                            QWidget* parent = nullptr);
   ~ShiftRotationCenterWidget();
-
-  static CustomPythonOperatorWidget* New(QWidget* p, Operator* op,
-                                         vtkSmartPointer<vtkImageData> data);
 
   void getValues(QMap<QString, QVariant>& map) override;
   void setValues(const QMap<QString, QVariant>& map) override;
@@ -41,12 +38,6 @@ private:
   class Internal;
   QScopedPointer<Internal> m_internal;
 };
-
-inline CustomPythonOperatorWidget* ShiftRotationCenterWidget::New(
-  QWidget* p, Operator* op, vtkSmartPointer<vtkImageData> data)
-{
-  return new ShiftRotationCenterWidget(op, data, p);
-}
 
 } // namespace tomviz
 #endif

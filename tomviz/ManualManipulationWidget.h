@@ -4,37 +4,33 @@
 #ifndef tomvizManualManipulationWidget_h
 #define tomvizManualManipulationWidget_h
 
-#include "CustomPythonOperatorWidget.h"
-
-#include "vtkSmartPointer.h"
-
+#include "CustomPythonTransformWidget.h"
+#include <vtkSmartPointer.h>
 #include <QScopedPointer>
 
 class vtkImageData;
+class vtkSMProxy;
 
 namespace tomviz {
-class Operator;
 
-class ManualManipulationWidget : public CustomPythonOperatorWidget
+class ManualManipulationWidget : public pipeline::CustomPythonTransformWidget
 {
   Q_OBJECT
 
 public:
-  ManualManipulationWidget(Operator* op, vtkSmartPointer<vtkImageData> image,
+  ManualManipulationWidget(vtkSmartPointer<vtkImageData> image,
+                           vtkSMProxy* sourceColorMap,
                            QWidget* parent = nullptr);
   ~ManualManipulationWidget();
-
-  static CustomPythonOperatorWidget* New(QWidget* p, Operator* op,
-                                         vtkSmartPointer<vtkImageData> data);
 
   void getValues(QMap<QString, QVariant>& map) override;
   void setValues(const QMap<QString, QVariant>& map) override;
 
 private:
   Q_DISABLE_COPY(ManualManipulationWidget)
-
   class Internal;
   QScopedPointer<Internal> m_internal;
 };
+
 } // namespace tomviz
 #endif

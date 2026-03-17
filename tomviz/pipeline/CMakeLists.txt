@@ -39,6 +39,7 @@ set(SOURCES
   sinks/PlotSink.cxx
   sinks/MoleculeSink.cxx
   ParameterInterfaceBuilder.cxx
+  CustomPythonTransformWidget.cxx
   EditTransformWidget.cxx
   TransformPropertiesWidget.cxx
   PythonTransformEditorWidget.cxx

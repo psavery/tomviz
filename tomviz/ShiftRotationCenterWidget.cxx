@@ -6,15 +6,24 @@
 
 #include "ActiveObjects.h"
 #include "ColorMap.h"
-#include "DataSource.h"
-#include "InternalPythonHelper.h"
 #include "PresetDialog.h"
 #include "Utilities.h"
+
+// Qt defines 'slots' as a macro which conflicts with Python's object.h.
+// We must undef it before including any pybind11/Python headers.
+#pragma push_macro("slots")
+#undef slots
+#include <pybind11/embed.h>
+#include <pybind11/pybind11.h>
+
+#include "pybind11/PybindVTKTypeCaster.h"
+#pragma pop_macro("slots")
 
 #include <cmath>
 
 #include <pqApplicationCore.h>
 #include <pqSettings.h>
+#include <vtkSMProxy.h>
 #include <vtkSMTransferFunctionManager.h>
 
 #include <vtkActor.h>
@@ -57,6 +66,10 @@
 #include "pqLineEdit.h"
 
 #include <algorithm>
+
+PYBIND11_VTK_TYPECASTER(vtkImageData)
+
+namespace py = pybind11;
 
 namespace tomviz {
 
@@ -129,7 +142,6 @@ class ShiftRotationCenterWidget::Internal : public QObject
 
 public:
   Ui::ShiftRotationCenterWidget ui;
-  QPointer<Operator> op;
   vtkSmartPointer<vtkImageData> image;
   vtkSmartPointer<vtkImageData> rotationImages;
   vtkSmartPointer<vtkSMProxy> colorMap;
@@ -160,19 +172,25 @@ public:
   QList<double> qnValues;
 
   QString script;
-  InternalPythonHelper pythonHelper;
   QPointer<ShiftRotationCenterWidget> parent;
-  QPointer<DataSource> dataSource;
+  vtkSMProxy* m_sourceColorMap = nullptr;
   int sliceNumber = 0;
   QScopedPointer<InternalProgressDialog> progressDialog;
   QFutureWatcher<void> futureWatcher;
   bool testRotationsSuccess = false;
   QString testRotationsErrorMessage;
 
-  Internal(Operator* o, vtkSmartPointer<vtkImageData> img,
+  Internal(vtkSmartPointer<vtkImageData> img, vtkSMProxy* sourceColorMap,
            ShiftRotationCenterWidget* p)
-    : op(o), image(img)
+    : image(img)
   {
+    init(p, sourceColorMap);
+  }
+
+  void init(ShiftRotationCenterWidget* p, vtkSMProxy* sourceColorMap)
+  {
+    m_sourceColorMap = sourceColorMap;
+
     // Must call setupUi() before using p in any way
     ui.setupUi(p);
     setParent(p);
@@ -196,15 +214,6 @@ public:
     ui.sliceView->interactor()->SetInteractorStyle(interactorStyle);
     setRotationData(vtkImageData::New());
 
-    // Use a child data source if one is available so the color map will match
-    if (op->childDataSource()) {
-      dataSource = op->childDataSource();
-    } else if (op->dataSource()) {
-      dataSource = op->dataSource();
-    } else {
-      dataSource = ActiveObjects::instance().activeDataSource();
-    }
-
     // Set up the projection view showing one projection image (Z-axis slice).
     // This matches the orientation used by the main slice view in
     // RotateAlignWidget: XY plane, camera looking from +Z.
@@ -213,11 +222,13 @@ public:
     projMapper->Update();
     projSlice->SetMapper(projMapper);
 
-    // Use the data source's color map for the projection view
-    auto* dsLut = vtkScalarsToColors::SafeDownCast(
-      dataSource->colorMap()->GetClientSideObject());
-    if (dsLut) {
-      projSlice->GetProperty()->SetLookupTable(dsLut);
+    // Use the source color map for the projection view
+    if (m_sourceColorMap) {
+      auto* dsLut = vtkScalarsToColors::SafeDownCast(
+        m_sourceColorMap->GetClientSideObject());
+      if (dsLut) {
+        projSlice->GetProperty()->SetLookupTable(dsLut);
+      }
     }
 
     projRenderer->AddViewProp(projSlice);
@@ -284,14 +295,18 @@ public:
           .data(),
         pxm);
 
-    // Default to the same colormap as the data source (projection view /
+    // Default to the same colormap as the source (projection view /
     // main render window). Fall back to grayscale if unavailable.
-    auto* dsLutVtk = vtkScalarsToColors::SafeDownCast(
-      dataSource->colorMap()->GetClientSideObject());
-    auto* colorMapVtk =
-      vtkScalarsToColors::SafeDownCast(colorMap->GetClientSideObject());
-    if (dsLutVtk && colorMapVtk) {
-      colorMapVtk->DeepCopy(dsLutVtk);
+    if (m_sourceColorMap) {
+      auto* dsLutVtk = vtkScalarsToColors::SafeDownCast(
+        m_sourceColorMap->GetClientSideObject());
+      auto* colorMapVtk =
+        vtkScalarsToColors::SafeDownCast(colorMap->GetClientSideObject());
+      if (dsLutVtk && colorMapVtk) {
+        colorMapVtk->DeepCopy(dsLutVtk);
+      } else {
+        setColorMapToGrayscale();
+      }
     } else {
       setColorMapToGrayscale();
     }
@@ -614,91 +629,108 @@ public:
     testRotationsSuccess = false;
     rotations.clear();
 
-    {
-      Python python;
-      auto module = pythonHelper.loadModule(script);
-      if (!module.isValid()) {
-        testRotationsErrorMessage = "Failed to load script";
-        return;
-      }
+    if (!Py_IsInitialized()) {
+      py::initialize_interpreter();
+    }
 
-      auto func = module.findFunction("test_rotations");
-      if (!func.isValid()) {
+    try {
+      py::gil_scoped_acquire gil;
+
+      // Create PipelineDataset wrapping the vtkImageData
+      py::module_ datasetMod = py::module_::import("tomviz.pipeline_dataset");
+      py::object datasetCls = datasetMod.attr("PipelineDataset");
+      py::object dataset = datasetCls(
+        py::cast(image.Get(), py::return_value_policy::reference));
+
+      // Load the Python script as a module
+      py::module_ types = py::module_::import("types");
+      py::object moduleType = types.attr("ModuleType");
+      py::object scriptModule =
+        moduleType(py::str("test_rotations_module"));
+      py::exec(py::str(script.toStdString()),
+               scriptModule.attr("__dict__"));
+
+      // Find and call test_rotations
+      if (!py::hasattr(scriptModule, "test_rotations")) {
         testRotationsErrorMessage =
           "Failed to find function \"test_rotations\"";
         return;
       }
+      py::object testFunc = scriptModule.attr("test_rotations");
 
-      Python::Object data = Python::createDataset(image, *dataSource);
+      py::dict kwargs;
+      kwargs["dataset"] = dataset;
+      kwargs["start"] = ui.start->value();
+      kwargs["stop"] = ui.stop->value();
+      kwargs["steps"] = ui.steps->value();
+      kwargs["sli"] = ui.slice->value();
+      kwargs["algorithm"] = algorithm().toStdString();
+      kwargs["num_iter"] = ui.numIterations->value();
+      kwargs["circ_mask_ratio"] = ui.circMaskRatio->value();
 
-      Python::Dict kwargs;
-      kwargs.set("dataset", data);
-      kwargs.set("start", ui.start->value());
-      kwargs.set("stop", ui.stop->value());
-      kwargs.set("steps", ui.steps->value());
-      kwargs.set("sli", ui.slice->value());
-      kwargs.set("algorithm", algorithm());
-      kwargs.set("num_iter", ui.numIterations->value());
-      kwargs.set("circ_mask_ratio", ui.circMaskRatio->value());
+      py::object ret = testFunc(**kwargs);
 
-      auto ret = func.call(kwargs);
-      auto result = ret.toDict();
-      if (!result.isValid()) {
+      // Extract results
+      if (!py::isinstance<py::dict>(ret)) {
         testRotationsErrorMessage = "Failed to execute test_rotations()";
         return;
       }
+      py::dict result = ret.cast<py::dict>();
 
-      auto pyImages = result["images"];
-      auto* object = Python::VTK::convertToDataObject(pyImages);
-      if (!object) {
+      // Extract images
+      if (!result.contains("images")) {
         testRotationsErrorMessage =
           "No image data was returned from test_rotations()";
         return;
       }
-
-      auto* imageData = vtkImageData::SafeDownCast(object);
+      auto* imageData = dynamic_cast<vtkImageData*>(
+        vtkPythonUtil::GetPointerFromObject(result["images"].ptr(),
+                                            "vtkImageData"));
       if (!imageData) {
+        PyErr_Clear();
         testRotationsErrorMessage =
           "No image data was returned from test_rotations()";
         return;
       }
 
-      auto centers = result["centers"];
-      auto pyRotations = centers.toList();
-      if (!pyRotations.isValid() || pyRotations.length() <= 0) {
+      // Extract centers
+      if (!result.contains("centers")) {
         testRotationsErrorMessage =
           "No rotations returned from test_rotations()";
         return;
       }
-
-      for (int i = 0; i < pyRotations.length(); ++i) {
-        rotations.append(pyRotations[i].toDouble());
+      py::list pyCenters = result["centers"].cast<py::list>();
+      for (size_t i = 0; i < pyCenters.size(); ++i) {
+        rotations.append(pyCenters[i].cast<double>());
       }
 
+      // Extract quality metrics
       qiaValues.clear();
       qnValues.clear();
-
-      auto pyQia = result["qia"];
-      auto qiaList = pyQia.toList();
-      if (qiaList.isValid()) {
-        for (int i = 0; i < qiaList.length(); ++i) {
-          qiaValues.append(qiaList[i].toDouble());
+      if (result.contains("qia")) {
+        py::list pyQia = result["qia"].cast<py::list>();
+        for (size_t i = 0; i < pyQia.size(); ++i) {
+          qiaValues.append(pyQia[i].cast<double>());
         }
       }
-
-      auto pyQn = result["qn"];
-      auto qnList = pyQn.toList();
-      if (qnList.isValid()) {
-        for (int i = 0; i < qnList.length(); ++i) {
-          qnValues.append(qnList[i].toDouble());
+      if (result.contains("qn")) {
+        py::list pyQn = result["qn"].cast<py::list>();
+        for (size_t i = 0; i < pyQn.size(); ++i) {
+          qnValues.append(pyQn[i].cast<double>());
         }
       }
 
       setRotationData(imageData);
+
+    } catch (const py::error_already_set& e) {
+      testRotationsErrorMessage =
+        QString("Python error: %1").arg(e.what());
+      return;
+    } catch (const std::exception& e) {
+      testRotationsErrorMessage = QString("Error: %1").arg(e.what());
+      return;
     }
 
-    // If we made it this far, it was a success
-    // Save these settings in case the user wants to use them again...
     writeSettings();
     testRotationsSuccess = true;
   }
@@ -1051,10 +1083,10 @@ public:
 #include "ShiftRotationCenterWidget.moc"
 
 ShiftRotationCenterWidget::ShiftRotationCenterWidget(
-  Operator* op, vtkSmartPointer<vtkImageData> image, QWidget* p)
-  : CustomPythonOperatorWidget(p)
+  vtkSmartPointer<vtkImageData> image, vtkSMProxy* sourceColorMap, QWidget* p)
+  : pipeline::CustomPythonTransformWidget(p)
 {
-  m_internal.reset(new Internal(op, image, this));
+  m_internal.reset(new Internal(image, sourceColorMap, this));
 }
 
 ShiftRotationCenterWidget::~ShiftRotationCenterWidget() = default;
@@ -1095,13 +1127,11 @@ void ShiftRotationCenterWidget::setValues(const QVariantMap& map)
 
 void ShiftRotationCenterWidget::setScript(const QString& script)
 {
-  Superclass::setScript(script);
   m_internal->script = script;
 }
 
 void ShiftRotationCenterWidget::writeSettings()
 {
-  Superclass::writeSettings();
   m_internal->writeSettings();
 }
 
