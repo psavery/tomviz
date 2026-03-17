@@ -11,8 +11,8 @@ namespace pipeline {
 SetTiltAnglesTransform::SetTiltAnglesTransform(QObject* parent)
   : TransformNode(parent)
 {
-  addInput("volume", PortType::Volume);
-  addOutput("output", PortType::Volume);
+  addInput("volume", PortType::ImageData);
+  addOutput("output", PortType::TiltSeries);
 }
 
 void SetTiltAnglesTransform::setTiltAngles(
@@ -59,7 +59,7 @@ QMap<QString, PortData> SetTiltAnglesTransform::transform(
 
   vol->setTiltAngles(angles);
 
-  outputs["output"] = PortData(std::any(vol), PortType::Volume);
+  outputs["output"] = PortData(std::any(vol), PortType::TiltSeries);
   return outputs;
 }
 

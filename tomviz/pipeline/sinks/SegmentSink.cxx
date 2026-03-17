@@ -90,7 +90,7 @@ static const char* WRAPPER_TEMPLATE =
 
 SegmentSink::SegmentSink(QObject* parent) : LegacyModuleSink(parent)
 {
-  addInput("volume", PortType::Volume);
+  addInput("volume", PortType::ImageData);
   setLabel("Segment");
 
   m_script = DEFAULT_SCRIPT;

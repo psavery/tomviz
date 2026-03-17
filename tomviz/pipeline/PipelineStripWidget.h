@@ -49,6 +49,7 @@ struct LinkGeometry
   Link* link = nullptr;
   QPainterPath path;
   QColor color;
+  bool valid = true;
 };
 
 class TOMVIZ_PIPELINE_EXPORT PipelineStripWidget : public QWidget

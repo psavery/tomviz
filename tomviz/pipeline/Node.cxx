@@ -187,6 +187,57 @@ bool Node::execute()
   return true;
 }
 
+void Node::setTypeInferenceSource(const QString& outputPortName,
+                                  const QString& inputPortName)
+{
+  m_typeInferenceSources[outputPortName] = inputPortName;
+}
+
+void Node::recomputeEffectiveTypes()
+{
+  for (auto* output : m_outputPorts) {
+    if (output->declaredType() != PortType::ImageData) {
+      // Concrete types (TiltSeries, Volume, Table, etc.) are never inferred.
+      output->setEffectiveType(output->declaredType());
+      continue;
+    }
+
+    // Find the driving input port for this output.
+    InputPort* driver = nullptr;
+    auto it = m_typeInferenceSources.constFind(output->name());
+    if (it != m_typeInferenceSources.constEnd()) {
+      // Explicit mapping
+      driver = inputPort(it.value());
+    } else {
+      // Default: first ImageData input port
+      for (auto* input : m_inputPorts) {
+        if (input->acceptedTypes().testFlag(PortType::ImageData)) {
+          driver = input;
+          break;
+        }
+      }
+    }
+
+    if (driver && driver->link() && driver->link()->from()) {
+      // Inherit effective type from the upstream output
+      output->setEffectiveType(driver->link()->from()->type());
+    } else {
+      // No connection — revert to declared type
+      output->setEffectiveType(PortType::ImageData);
+    }
+  }
+}
+
+bool Node::hasInvalidInputLinks() const
+{
+  for (auto* input : m_inputPorts) {
+    if (input->link() && !input->link()->isValid()) {
+      return true;
+    }
+  }
+  return false;
+}
+
 InputPort* Node::addInputPort(const QString& name, PortTypes acceptedTypes)
 {
   auto* port = new InputPort(name, acceptedTypes, this);

@@ -27,7 +27,7 @@ namespace pipeline {
 
 OutlineSink::OutlineSink(QObject* parent) : LegacyModuleSink(parent)
 {
-  addInput("volume", PortType::Volume);
+  addInput("volume", PortType::ImageData);
   setLabel("Outline");
 
   m_mapper->SetInputConnection(m_outlineFilter->GetOutputPort());

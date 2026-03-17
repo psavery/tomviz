@@ -15,8 +15,8 @@ namespace pipeline {
 
 ThresholdTransform::ThresholdTransform(QObject* parent) : TransformNode(parent)
 {
-  addInput("volume", PortType::Volume);
-  addOutput("mask", PortType::Volume);
+  addInput("volume", PortType::ImageData);
+  addOutput("mask", PortType::ImageData);
   setLabel("Threshold");
 }
 
@@ -80,7 +80,7 @@ QMap<QString, PortData> ThresholdTransform::transform(
   volume->setLabel("Threshold Mask");
   volume->setUnits(inputVolume->units());
 
-  result["mask"] = PortData(std::any(volume), PortType::Volume);
+  result["mask"] = PortData(std::any(volume), PortType::ImageData);
   return result;
 }
 

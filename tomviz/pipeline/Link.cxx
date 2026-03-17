@@ -5,6 +5,7 @@
 
 #include "InputPort.h"
 #include "OutputPort.h"
+#include "PortType.h"
 
 namespace tomviz {
 namespace pipeline {
@@ -18,6 +19,8 @@ Link::Link(OutputPort* from, InputPort* to, QObject* parent)
   if (m_to) {
     m_to->setLink(this);
   }
+  // Compute initial validity
+  m_valid = isConnected() && m_to->canConnectTo(m_from);
 }
 
 Link::~Link()
@@ -43,7 +46,21 @@ InputPort* Link::to() const
 
 bool Link::isValid() const
 {
+  return m_valid;
+}
+
+bool Link::isConnected() const
+{
   return m_from && m_to;
+}
+
+void Link::recheck()
+{
+  bool valid = isConnected() && m_to->canConnectTo(m_from);
+  if (m_valid != valid) {
+    m_valid = valid;
+    emit validityChanged(valid);
+  }
 }
 
 } // namespace pipeline

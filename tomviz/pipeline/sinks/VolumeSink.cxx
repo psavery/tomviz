@@ -30,7 +30,7 @@ namespace pipeline {
 
 VolumeSink::VolumeSink(QObject* parent) : LegacyModuleSink(parent)
 {
-  addInput("volume", PortType::Volume);
+  addInput("volume", PortType::ImageData);
   setLabel("Volume");
 
   m_volumeMapper->SetRequestedRenderModeToGPU();

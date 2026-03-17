@@ -24,7 +24,7 @@ bool InputPort::canConnectTo(const OutputPort* output) const
   if (!output) {
     return false;
   }
-  return m_acceptedTypes.testFlag(output->type());
+  return isPortTypeCompatible(output->type(), m_acceptedTypes);
 }
 
 Link* InputPort::link() const

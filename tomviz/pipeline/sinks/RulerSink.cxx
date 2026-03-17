@@ -19,7 +19,7 @@ namespace pipeline {
 
 RulerSink::RulerSink(QObject* parent) : LegacyModuleSink(parent)
 {
-  addInput("volume", PortType::Volume);
+  addInput("volume", PortType::ImageData);
   setLabel("Ruler");
 
   m_mapper->SetInputConnection(m_lineSource->GetOutputPort());

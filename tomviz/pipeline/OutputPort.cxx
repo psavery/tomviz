@@ -9,12 +9,25 @@ namespace tomviz {
 namespace pipeline {
 
 OutputPort::OutputPort(const QString& name, PortType type, QObject* parent)
-  : Port(name, parent), m_type(type)
+  : Port(name, parent), m_declaredType(type), m_effectiveType(type)
 {}
 
 PortType OutputPort::type() const
 {
-  return m_type;
+  return m_effectiveType;
+}
+
+PortType OutputPort::declaredType() const
+{
+  return m_declaredType;
+}
+
+void OutputPort::setEffectiveType(PortType type)
+{
+  if (m_effectiveType != type) {
+    m_effectiveType = type;
+    emit effectiveTypeChanged(type);
+  }
 }
 
 bool OutputPort::isTransient() const

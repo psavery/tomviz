@@ -22,7 +22,7 @@ namespace pipeline {
 
 ClipSink::ClipSink(QObject* parent) : LegacyModuleSink(parent)
 {
-  addInput("volume", PortType::Volume);
+  addInput("volume", PortType::ImageData);
   setLabel("Clip");
 }
 

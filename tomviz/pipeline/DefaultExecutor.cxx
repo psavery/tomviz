@@ -37,6 +37,13 @@ void DefaultExecutor::execute(const QList<Node*>& nodes, Pipeline* pipeline)
       continue;
     }
 
+    // Skip nodes with invalid (type-incompatible) input links
+    if (node->hasInvalidInputLinks()) {
+      emit nodeExecutionStarted(node);
+      emit nodeExecutionFinished(node, false);
+      continue;
+    }
+
     emit nodeExecutionStarted(node);
     bool success = node->execute();
     emit nodeExecutionFinished(node, success);

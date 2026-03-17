@@ -376,7 +376,11 @@ void PipelineStripWidget::connectPipeline()
     update();
   });
 
-  connect(m_pipeline, &Pipeline::linkCreated, this, [this](Link*) {
+  connect(m_pipeline, &Pipeline::linkCreated, this, [this](Link* link) {
+    connect(link, &Link::validityChanged, this, [this]() {
+      rebuildLayout();
+      update();
+    });
     rebuildLayout();
     update();
   });
@@ -389,6 +393,14 @@ void PipelineStripWidget::connectPipeline()
   // Connect existing nodes
   for (auto* node : m_pipeline->nodes()) {
     connectNode(node);
+  }
+
+  // Connect existing links for validity change notifications
+  for (auto* link : m_pipeline->links()) {
+    connect(link, &Link::validityChanged, this, [this]() {
+      rebuildLayout();
+      update();
+    });
   }
 }
 
@@ -728,13 +740,15 @@ void PipelineStripWidget::paintInputDots(QPainter& painter,
   for (int i = 0; i < inputs.size(); ++i) {
     auto* inPort = inputs[i];
     QColor color;
-    if (inPort->link()) {
+    bool validLink = inPort->link() && inPort->link()->isValid();
+    if (validLink) {
       color = portTypeColor(inPort->link()->from());
     } else {
       // Use the first accepted type's color for unconnected inputs
       PortTypes accepted = inPort->acceptedTypes();
       PortType primaryType = PortType::None;
-      for (auto t : { PortType::Volume, PortType::Image, PortType::Scalar,
+      for (auto t : { PortType::ImageData, PortType::TiltSeries,
+                      PortType::Volume, PortType::Image, PortType::Scalar,
                       PortType::Array, PortType::Table, PortType::Molecule }) {
         if (accepted.testFlag(t)) {
           primaryType = t;
@@ -743,11 +757,21 @@ void PipelineStripWidget::paintInputDots(QPainter& painter,
       }
       color = portTypeColor(primaryType);
     }
-    // Input dots filled with app background, stroke with port color
-    painter.setBrush(palette().window());
-    painter.setPen(QPen(color, 1.5));
     QPoint pos = inputDotPos(node, i, item.rect);
-    painter.drawEllipse(pos, DotRadius, DotRadius);
+    bool invalidLink = inPort->link() && !inPort->link()->isValid();
+    if (invalidLink) {
+      // Draw an "X" for invalid links
+      painter.setPen(QPen(color, 2.0, Qt::SolidLine, Qt::RoundCap));
+      painter.setBrush(Qt::NoBrush);
+      int r = DotRadius;
+      painter.drawLine(pos.x() - r, pos.y() - r, pos.x() + r, pos.y() + r);
+      painter.drawLine(pos.x() - r, pos.y() + r, pos.x() + r, pos.y() - r);
+    } else {
+      // Input dots filled with app background, stroke with port color
+      painter.setBrush(palette().window());
+      painter.setPen(QPen(color, 1.5));
+      painter.drawEllipse(pos, DotRadius, DotRadius);
+    }
   }
   painter.setBrush(Qt::NoBrush);
 }
@@ -921,7 +945,8 @@ void PipelineStripWidget::computeLinkGeometries()
     }
     QPainterPath path = buildLinkPath(outPort, link->to(), gutterX);
     if (!path.isEmpty()) {
-      m_linkGeometries.append({ link, path, portTypeColor(outPort) });
+      m_linkGeometries.append(
+        { link, path, portTypeColor(outPort), link->isValid() });
     }
   }
 }
@@ -1122,6 +1147,8 @@ QIcon PipelineStripWidget::portTypeIcon(OutputPort* port) const
     return QIcon(QStringLiteral(":/icons/pqInspect.png"));
   }
   switch (port->type()) {
+    case PortType::ImageData:
+    case PortType::TiltSeries:
     case PortType::Volume:
       return QIcon(QStringLiteral(":/icons/pqInspect.png"));
     case PortType::Table:
@@ -1138,8 +1165,12 @@ QColor PipelineStripWidget::portTypeColor(PortType type) const
   // Port type colors are chosen to be distinct from node badge colors
   // (Source=green, Transform=blue, Sink=orange).
   switch (type) {
+    case PortType::ImageData:
+      return QColor(158, 118, 47); // amber (generic volume data)
+    case PortType::TiltSeries:
+      return QColor(57, 73, 171);  // indigo (tilt series)
     case PortType::Volume:
-      return QColor(121, 85, 196); // purple
+      return QColor(171, 71, 188); // orchid (reconstructed volume)
     case PortType::Table:
       return QColor(0, 172, 172); // teal
     case PortType::Molecule:

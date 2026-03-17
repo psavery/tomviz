@@ -30,7 +30,7 @@ namespace pipeline {
 
 ContourSink::ContourSink(QObject* parent) : LegacyModuleSink(parent)
 {
-  addInput("volume", PortType::Volume);
+  addInput("volume", PortType::ImageData);
   setLabel("Contour");
 
   m_property->SetAmbient(0.0);

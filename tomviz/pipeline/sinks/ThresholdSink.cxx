@@ -19,7 +19,7 @@ namespace pipeline {
 
 ThresholdSink::ThresholdSink(QObject* parent) : LegacyModuleSink(parent)
 {
-  addInput("volume", PortType::Volume);
+  addInput("volume", PortType::ImageData);
   setLabel("Threshold");
 
   m_property->SetRepresentationToSurface();

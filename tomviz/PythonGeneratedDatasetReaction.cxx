@@ -240,12 +240,12 @@ void addGeneratedSource(DataSource* ds)
   }
   auto* source = new pipeline::SourceNode();
   source->setLabel(ds->label());
-  source->addOutput("volume", pipeline::PortType::Volume);
+  source->addOutput("volume", pipeline::PortType::ImageData);
   auto vol = std::make_shared<pipeline::VolumeData>(ds->imageData());
   vol->setLabel(ds->label());
   source->setOutputData(
     "volume",
-    pipeline::PortData(vol, pipeline::PortType::Volume));
+    pipeline::PortData(vol, pipeline::PortType::ImageData));
   LoadDataReaction::sourceNodeAdded(source, true, false);
   delete ds;
 }

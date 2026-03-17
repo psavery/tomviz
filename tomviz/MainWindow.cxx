@@ -1297,7 +1297,7 @@ void MainWindow::setPipeline(pipeline::Pipeline* p)
       return;
     }
     for (auto* port : node->outputPorts()) {
-      if (port->type() != pipeline::PortType::Volume || !port->hasData()) {
+      if (port->type() != pipeline::PortType::ImageData || !port->hasData()) {
         continue;
       }
       pipeline::VolumeDataPtr vol;
@@ -1321,7 +1321,7 @@ void MainWindow::setPipeline(pipeline::Pipeline* p)
       pipeline::VolumeDataPtr upstream;
       for (auto* port : node->inputPorts()) {
         if (port->hasData() &&
-            port->data().type() == pipeline::PortType::Volume) {
+            port->data().type() == pipeline::PortType::ImageData) {
           try {
             upstream = port->data().value<pipeline::VolumeDataPtr>();
           } catch (const std::bad_any_cast&) {
@@ -1333,7 +1333,7 @@ void MainWindow::setPipeline(pipeline::Pipeline* p)
       }
 
       for (auto* port : node->outputPorts()) {
-        if (port->type() != pipeline::PortType::Volume ||
+        if (port->type() != pipeline::PortType::ImageData ||
             !port->hasData()) {
           continue;
         }
@@ -1429,7 +1429,7 @@ void MainWindow::onNodeSelected(pipeline::Node* node)
     // For source/transform nodes, find VolumeData from first volume output port
     pipeline::VolumeDataPtr vol;
     for (auto* port : node->outputPorts()) {
-      if (port->type() == pipeline::PortType::Volume && port->hasData()) {
+      if (port->type() == pipeline::PortType::ImageData && port->hasData()) {
         vol = port->data().value<pipeline::VolumeDataPtr>();
         if (vol) {
           break;
@@ -1441,7 +1441,7 @@ void MainWindow::onNodeSelected(pipeline::Node* node)
       for (auto* port : node->inputPorts()) {
         if (port->hasData()) {
           auto pd = port->data();
-          if (pd.type() == pipeline::PortType::Volume) {
+          if (pd.type() == pipeline::PortType::ImageData) {
             vol = pd.value<pipeline::VolumeDataPtr>();
             if (vol) {
               break;
@@ -1468,7 +1468,7 @@ void MainWindow::onPortSelected(pipeline::OutputPort* port)
     m_dynamicPropertiesWidget = nullptr;
   }
 
-  if (port && port->type() == pipeline::PortType::Volume) {
+  if (port && port->type() == pipeline::PortType::ImageData) {
     auto* propsWidget =
       new pipeline::VolumePropertiesWidget(m_ui->propertiesPanelStackedWidget);
     propsWidget->setOutputPort(port);

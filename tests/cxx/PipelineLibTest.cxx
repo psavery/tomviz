@@ -68,8 +68,8 @@ class DoubleTransform : public TransformNode
 public:
   DoubleTransform() : TransformNode()
   {
-    addInput("in", PortType::Volume);
-    addOutput("out", PortType::Volume);
+    addInput("in", PortType::ImageData);
+    addOutput("out", PortType::ImageData);
   }
 
 protected:
@@ -78,7 +78,7 @@ protected:
   {
     int val = inputs["in"].value<int>();
     QMap<QString, PortData> result;
-    result["out"] = PortData(std::any(val * 2), PortType::Volume);
+    result["out"] = PortData(std::any(val * 2), PortType::ImageData);
     return result;
   }
 };
@@ -88,9 +88,9 @@ class AddTransform : public TransformNode
 public:
   AddTransform() : TransformNode()
   {
-    addInput("a", PortType::Volume);
-    addInput("b", PortType::Volume);
-    addOutput("out", PortType::Volume);
+    addInput("a", PortType::ImageData);
+    addInput("b", PortType::ImageData);
+    addOutput("out", PortType::ImageData);
   }
 
 protected:
@@ -100,15 +100,34 @@ protected:
     int a = inputs["a"].value<int>();
     int b = inputs["b"].value<int>();
     QMap<QString, PortData> result;
-    result["out"] = PortData(std::any(a + b), PortType::Volume);
+    result["out"] = PortData(std::any(a + b), PortType::ImageData);
     return result;
+  }
+};
+
+// A simple passthrough transform with configurable port types.
+class PassthroughTransform : public TransformNode
+{
+public:
+  PassthroughTransform(PortTypes inType, PortType outType)
+    : TransformNode()
+  {
+    addInput("in", inType);
+    addOutput("out", outType);
+  }
+
+protected:
+  QMap<QString, PortData> transform(
+    const QMap<QString, PortData>& inputs) override
+  {
+    return { { "out", inputs["in"] } };
   }
 };
 
 class CollectorSink : public SinkNode
 {
 public:
-  CollectorSink() : SinkNode() { addInput("in", PortType::Volume); }
+  CollectorSink() : SinkNode() { addInput("in", PortType::ImageData); }
 
   int lastValue = 0;
   bool consumed = false;
@@ -138,9 +157,9 @@ TEST_F(PipelineLibTest, PortDataBasics)
   EXPECT_FALSE(empty.isValid());
   EXPECT_EQ(empty.type(), PortType::None);
 
-  PortData data(std::any(42), PortType::Volume);
+  PortData data(std::any(42), PortType::ImageData);
   EXPECT_TRUE(data.isValid());
-  EXPECT_EQ(data.type(), PortType::Volume);
+  EXPECT_EQ(data.type(), PortType::ImageData);
   EXPECT_EQ(data.value<int>(), 42);
 
   data.clear();
@@ -150,13 +169,13 @@ TEST_F(PipelineLibTest, PortDataBasics)
 TEST_F(PipelineLibTest, PortTypeCompatibility)
 {
   auto* source = new SourceNode();
-  source->addOutput("out", PortType::Volume);
+  source->addOutput("out", PortType::ImageData);
   pipeline->addNode(source);
 
   auto* transform = new DoubleTransform();
   pipeline->addNode(transform);
 
-  // Volume -> Volume should work
+  // ImageData -> ImageData should work
   auto* outPort = source->outputPort("out");
   auto* inPort = transform->inputPort("in");
   EXPECT_TRUE(inPort->canConnectTo(outPort));
@@ -166,7 +185,7 @@ TEST_F(PipelineLibTest, PortTypeCompatibility)
   tableSource->addOutput("out", PortType::Table);
   pipeline->addNode(tableSource);
 
-  // Table -> Volume input should fail
+  // Table -> ImageData input should fail
   auto* tablePort = tableSource->outputPort("out");
   EXPECT_FALSE(inPort->canConnectTo(tablePort));
 }
@@ -174,7 +193,7 @@ TEST_F(PipelineLibTest, PortTypeCompatibility)
 TEST_F(PipelineLibTest, LinkCreation)
 {
   auto* source = new SourceNode();
-  source->addOutput("out", PortType::Volume);
+  source->addOutput("out", PortType::ImageData);
   pipeline->addNode(source);
 
   auto* transform = new DoubleTransform();
@@ -236,7 +255,7 @@ TEST_F(PipelineLibTest, SelfLoop)
 TEST_F(PipelineLibTest, StalenessPropagation)
 {
   auto* source = new SourceNode();
-  source->addOutput("out", PortType::Volume);
+  source->addOutput("out", PortType::ImageData);
   pipeline->addNode(source);
 
   auto* t1 = new DoubleTransform();
@@ -248,7 +267,7 @@ TEST_F(PipelineLibTest, StalenessPropagation)
   pipeline->createLink(t1->outputPort("out"), t2->inputPort("in"));
 
   // Set data on source (marks source Current, downstream Stale)
-  source->setOutputData("out", PortData(std::any(5), PortType::Volume));
+  source->setOutputData("out", PortData(std::any(5), PortType::ImageData));
 
   EXPECT_EQ(source->state(), NodeState::Current);
   EXPECT_EQ(t1->state(), NodeState::Stale);
@@ -258,7 +277,7 @@ TEST_F(PipelineLibTest, StalenessPropagation)
 TEST_F(PipelineLibTest, StalenessPropagationMultiBranch)
 {
   auto* source = new SourceNode();
-  source->addOutput("out", PortType::Volume);
+  source->addOutput("out", PortType::ImageData);
   pipeline->addNode(source);
 
   auto* t1 = new DoubleTransform();
@@ -270,7 +289,7 @@ TEST_F(PipelineLibTest, StalenessPropagationMultiBranch)
   pipeline->createLink(source->outputPort("out"), t1->inputPort("in"));
   pipeline->createLink(source->outputPort("out"), t2->inputPort("in"));
 
-  source->setOutputData("out", PortData(std::any(10), PortType::Volume));
+  source->setOutputData("out", PortData(std::any(10), PortType::ImageData));
 
   EXPECT_EQ(t1->state(), NodeState::Stale);
   EXPECT_EQ(t2->state(), NodeState::Stale);
@@ -280,7 +299,7 @@ TEST_F(PipelineLibTest, TopologicalSort)
 {
   auto* source = new SourceNode();
   source->setLabel("source");
-  source->addOutput("out", PortType::Volume);
+  source->addOutput("out", PortType::ImageData);
   pipeline->addNode(source);
 
   auto* t1 = new DoubleTransform();
@@ -307,7 +326,7 @@ TEST_F(PipelineLibTest, TopologicalSort)
 TEST_F(PipelineLibTest, SimpleExecution)
 {
   auto* source = new SourceNode();
-  source->addOutput("out", PortType::Volume);
+  source->addOutput("out", PortType::ImageData);
   pipeline->addNode(source);
 
   auto* transform = new DoubleTransform();
@@ -319,7 +338,7 @@ TEST_F(PipelineLibTest, SimpleExecution)
   pipeline->createLink(source->outputPort("out"), transform->inputPort("in"));
   pipeline->createLink(transform->outputPort("out"), sink->inputPort("in"));
 
-  source->setOutputData("out", PortData(std::any(7), PortType::Volume));
+  source->setOutputData("out", PortData(std::any(7), PortType::ImageData));
 
   auto* future = pipeline->execute();
 
@@ -334,7 +353,7 @@ TEST_F(PipelineLibTest, SimpleExecution)
 TEST_F(PipelineLibTest, ExecutionFromTarget)
 {
   auto* source = new SourceNode();
-  source->addOutput("out", PortType::Volume);
+  source->addOutput("out", PortType::ImageData);
   pipeline->addNode(source);
 
   auto* t1 = new DoubleTransform();
@@ -345,7 +364,7 @@ TEST_F(PipelineLibTest, ExecutionFromTarget)
   pipeline->createLink(source->outputPort("out"), t1->inputPort("in"));
   pipeline->createLink(t1->outputPort("out"), t2->inputPort("in"));
 
-  source->setOutputData("out", PortData(std::any(3), PortType::Volume));
+  source->setOutputData("out", PortData(std::any(3), PortType::ImageData));
 
   // Execute only up to t1
   auto* future = pipeline->execute(t1);
@@ -363,7 +382,7 @@ TEST_F(PipelineLibTest, ExecutionFromTarget)
 TEST_F(PipelineLibTest, ExecutionOrderWithStaleUpstream)
 {
   auto* source = new SourceNode();
-  source->addOutput("out", PortType::Volume);
+  source->addOutput("out", PortType::ImageData);
   pipeline->addNode(source);
 
   auto* t1 = new DoubleTransform();
@@ -374,7 +393,7 @@ TEST_F(PipelineLibTest, ExecutionOrderWithStaleUpstream)
   pipeline->createLink(source->outputPort("out"), t1->inputPort("in"));
   pipeline->createLink(t1->outputPort("out"), t2->inputPort("in"));
 
-  source->setOutputData("out", PortData(std::any(5), PortType::Volume));
+  source->setOutputData("out", PortData(std::any(5), PortType::ImageData));
 
   auto order = pipeline->executionOrder(t2);
   // Should include t1 and t2 (source is Current)
@@ -387,7 +406,7 @@ TEST_F(PipelineLibTest, ExecutionOrderWithStaleUpstream)
 TEST_F(PipelineLibTest, BreakpointStopsExecution)
 {
   auto* source = new SourceNode();
-  source->addOutput("out", PortType::Volume);
+  source->addOutput("out", PortType::ImageData);
   pipeline->addNode(source);
 
   auto* t1 = new DoubleTransform();
@@ -398,7 +417,7 @@ TEST_F(PipelineLibTest, BreakpointStopsExecution)
   pipeline->createLink(source->outputPort("out"), t1->inputPort("in"));
   pipeline->createLink(t1->outputPort("out"), t2->inputPort("in"));
 
-  source->setOutputData("out", PortData(std::any(5), PortType::Volume));
+  source->setOutputData("out", PortData(std::any(5), PortType::ImageData));
 
   // Set breakpoint on t1
   t1->setBreakpoint(true);
@@ -420,7 +439,7 @@ TEST_F(PipelineLibTest, BreakpointStopsExecution)
 TEST_F(PipelineLibTest, TransientDataRelease)
 {
   auto* source = new SourceNode();
-  source->addOutput("out", PortType::Volume);
+  source->addOutput("out", PortType::ImageData);
   pipeline->addNode(source);
 
   auto* transform = new DoubleTransform();
@@ -433,7 +452,7 @@ TEST_F(PipelineLibTest, TransientDataRelease)
   pipeline->createLink(source->outputPort("out"), transform->inputPort("in"));
   pipeline->createLink(transform->outputPort("out"), sink->inputPort("in"));
 
-  source->setOutputData("out", PortData(std::any(4), PortType::Volume));
+  source->setOutputData("out", PortData(std::any(4), PortType::ImageData));
 
   auto* future = pipeline->execute();
 
@@ -448,11 +467,11 @@ TEST_F(PipelineLibTest, TransientDataRelease)
 TEST_F(PipelineLibTest, FanInMultipleInputs)
 {
   auto* source1 = new SourceNode();
-  source1->addOutput("out", PortType::Volume);
+  source1->addOutput("out", PortType::ImageData);
   pipeline->addNode(source1);
 
   auto* source2 = new SourceNode();
-  source2->addOutput("out", PortType::Volume);
+  source2->addOutput("out", PortType::ImageData);
   pipeline->addNode(source2);
 
   auto* add = new AddTransform();
@@ -461,8 +480,8 @@ TEST_F(PipelineLibTest, FanInMultipleInputs)
   pipeline->createLink(source1->outputPort("out"), add->inputPort("a"));
   pipeline->createLink(source2->outputPort("out"), add->inputPort("b"));
 
-  source1->setOutputData("out", PortData(std::any(10), PortType::Volume));
-  source2->setOutputData("out", PortData(std::any(20), PortType::Volume));
+  source1->setOutputData("out", PortData(std::any(10), PortType::ImageData));
+  source2->setOutputData("out", PortData(std::any(20), PortType::ImageData));
 
   auto* future = pipeline->execute();
 
@@ -475,7 +494,7 @@ TEST_F(PipelineLibTest, FanInMultipleInputs)
 TEST_F(PipelineLibTest, PipelineValid)
 {
   auto* source = new SourceNode();
-  source->addOutput("out", PortType::Volume);
+  source->addOutput("out", PortType::ImageData);
   pipeline->addNode(source);
 
   auto* transform = new DoubleTransform();
@@ -489,9 +508,9 @@ TEST_F(PipelineLibTest, PipelineValid)
 TEST_F(PipelineLibTest, RootsDetection)
 {
   auto* source1 = new SourceNode();
-  source1->addOutput("out", PortType::Volume);
+  source1->addOutput("out", PortType::ImageData);
   auto* source2 = new SourceNode();
-  source2->addOutput("out", PortType::Volume);
+  source2->addOutput("out", PortType::ImageData);
   auto* transform = new DoubleTransform();
 
   pipeline->addNode(source1);
@@ -510,7 +529,7 @@ TEST_F(PipelineLibTest, RootsDetection)
 TEST_F(PipelineLibTest, RemoveNode)
 {
   auto* source = new SourceNode();
-  source->addOutput("out", PortType::Volume);
+  source->addOutput("out", PortType::ImageData);
   auto* transform = new DoubleTransform();
 
   pipeline->addNode(source);
@@ -529,7 +548,7 @@ TEST_F(PipelineLibTest, RemoveNode)
 TEST_F(PipelineLibTest, RemoveLink)
 {
   auto* source = new SourceNode();
-  source->addOutput("out", PortType::Volume);
+  source->addOutput("out", PortType::ImageData);
   auto* transform = new DoubleTransform();
 
   pipeline->addNode(source);
@@ -549,7 +568,7 @@ TEST_F(PipelineLibTest, RemoveLink)
 TEST_F(PipelineLibTest, UpstreamDownstreamNodes)
 {
   auto* source = new SourceNode();
-  source->addOutput("out", PortType::Volume);
+  source->addOutput("out", PortType::ImageData);
   auto* transform = new DoubleTransform();
   auto* sink = new CollectorSink();
 
@@ -585,7 +604,7 @@ TEST_F(PipelineLibTest, Signals)
                    [&linkCreatedCount](Link*) { linkCreatedCount++; });
 
   auto* source = new SourceNode();
-  source->addOutput("out", PortType::Volume);
+  source->addOutput("out", PortType::ImageData);
   auto* transform = new DoubleTransform();
 
   pipeline->addNode(source);
@@ -599,9 +618,9 @@ TEST_F(PipelineLibTest, Signals)
 TEST_F(PipelineLibTest, ReplaceLinkOnInput)
 {
   auto* source1 = new SourceNode();
-  source1->addOutput("out", PortType::Volume);
+  source1->addOutput("out", PortType::ImageData);
   auto* source2 = new SourceNode();
-  source2->addOutput("out", PortType::Volume);
+  source2->addOutput("out", PortType::ImageData);
   auto* transform = new DoubleTransform();
 
   pipeline->addNode(source1);
@@ -654,7 +673,7 @@ TEST_F(PipelineLibTest, SphereSourceGeneratesVolume)
 
   auto portData = source->outputPort("volume")->data();
   EXPECT_TRUE(portData.isValid());
-  EXPECT_EQ(portData.type(), PortType::Volume);
+  EXPECT_EQ(portData.type(), PortType::ImageData);
 
   auto volume = portData.value<VolumeDataPtr>();
   EXPECT_TRUE(volume->isValid());
@@ -807,7 +826,7 @@ TEST_F(PipelineLibTest, WidgetLayoutLinear)
 {
   auto* source = new SourceNode();
   source->setLabel("Source");
-  source->addOutput("out", PortType::Volume);
+  source->addOutput("out", PortType::ImageData);
   pipeline->addNode(source);
 
   auto* transform = new DoubleTransform();
@@ -840,7 +859,7 @@ TEST_F(PipelineLibTest, WidgetLayoutMultiOutput)
   // Create a node with multiple outputs
   auto* source = new SourceNode();
   source->setLabel("Source");
-  source->addOutput("vol", PortType::Volume);
+  source->addOutput("vol", PortType::ImageData);
   source->addOutput("table", PortType::Table);
   pipeline->addNode(source);
 
@@ -859,7 +878,7 @@ TEST_F(PipelineLibTest, WidgetExpandCollapse)
 {
   auto* source = new SourceNode();
   source->setLabel("Source");
-  source->addOutput("out", PortType::Volume);
+  source->addOutput("out", PortType::ImageData);
   pipeline->addNode(source);
 
   PipelineStripWidget widget;
@@ -887,7 +906,7 @@ TEST_F(PipelineLibTest, WidgetSignalWiring)
   // Adding nodes should trigger layout rebuild
   auto* source = new SourceNode();
   source->setLabel("Source");
-  source->addOutput("out", PortType::Volume);
+  source->addOutput("out", PortType::ImageData);
   pipeline->addNode(source);
 
   auto hint1 = widget.sizeHint();
@@ -906,12 +925,12 @@ TEST_F(PipelineLibTest, WidgetFanIn)
 {
   auto* source1 = new SourceNode();
   source1->setLabel("Source A");
-  source1->addOutput("out", PortType::Volume);
+  source1->addOutput("out", PortType::ImageData);
   pipeline->addNode(source1);
 
   auto* source2 = new SourceNode();
   source2->setLabel("Source B");
-  source2->addOutput("out", PortType::Volume);
+  source2->addOutput("out", PortType::ImageData);
   pipeline->addNode(source2);
 
   auto* add = new AddTransform();
@@ -1114,7 +1133,7 @@ TEST_F(PipelineLibTest, ReaderSourceNodeVTIRoundTrip)
   // Verify output
   auto portData = readerNode->outputPort("volume")->data();
   EXPECT_TRUE(portData.isValid());
-  EXPECT_EQ(portData.type(), PortType::Volume);
+  EXPECT_EQ(portData.type(), PortType::ImageData);
 
   auto readVolume = portData.value<VolumeDataPtr>();
   ASSERT_TRUE(readVolume && readVolume->isValid());
@@ -1238,8 +1257,8 @@ class SlowTransform : public TransformNode
 public:
   SlowTransform() : TransformNode()
   {
-    addInput("in", PortType::Volume);
-    addOutput("out", PortType::Volume);
+    addInput("in", PortType::ImageData);
+    addOutput("out", PortType::ImageData);
   }
 
 protected:
@@ -1249,7 +1268,7 @@ protected:
     QThread::msleep(50);
     int val = inputs["in"].value<int>();
     QMap<QString, PortData> result;
-    result["out"] = PortData(std::any(val * 2), PortType::Volume);
+    result["out"] = PortData(std::any(val * 2), PortType::ImageData);
     return result;
   }
 };
@@ -1259,7 +1278,7 @@ TEST_F(PipelineLibTest, ThreadedExecutorBasic)
   pipeline->setExecutor(new ThreadedExecutor(pipeline));
 
   auto* source = new SourceNode();
-  source->addOutput("out", PortType::Volume);
+  source->addOutput("out", PortType::ImageData);
   pipeline->addNode(source);
 
   auto* transform = new SlowTransform();
@@ -1271,7 +1290,7 @@ TEST_F(PipelineLibTest, ThreadedExecutorBasic)
   pipeline->createLink(source->outputPort("out"), transform->inputPort("in"));
   pipeline->createLink(transform->outputPort("out"), sink->inputPort("in"));
 
-  source->setOutputData("out", PortData(std::any(7), PortType::Volume));
+  source->setOutputData("out", PortData(std::any(7), PortType::ImageData));
 
   auto* future = pipeline->execute();
 
@@ -1292,7 +1311,7 @@ TEST_F(PipelineLibTest, ThreadedExecutorCancellation)
   pipeline->setExecutor(executor);
 
   auto* source = new SourceNode();
-  source->addOutput("out", PortType::Volume);
+  source->addOutput("out", PortType::ImageData);
   pipeline->addNode(source);
 
   // Chain of slow transforms — cancel should stop before all complete
@@ -1307,7 +1326,7 @@ TEST_F(PipelineLibTest, ThreadedExecutorCancellation)
   pipeline->createLink(t1->outputPort("out"), t2->inputPort("in"));
   pipeline->createLink(t2->outputPort("out"), t3->inputPort("in"));
 
-  source->setOutputData("out", PortData(std::any(1), PortType::Volume));
+  source->setOutputData("out", PortData(std::any(1), PortType::ImageData));
 
   auto* future = pipeline->execute();
   executor->cancel();
@@ -1326,7 +1345,7 @@ TEST_F(PipelineLibTest, ThreadedExecutorBreakpoint)
   pipeline->setExecutor(new ThreadedExecutor(pipeline));
 
   auto* source = new SourceNode();
-  source->addOutput("out", PortType::Volume);
+  source->addOutput("out", PortType::ImageData);
   pipeline->addNode(source);
 
   auto* t1 = new SlowTransform();
@@ -1337,7 +1356,7 @@ TEST_F(PipelineLibTest, ThreadedExecutorBreakpoint)
   pipeline->createLink(source->outputPort("out"), t1->inputPort("in"));
   pipeline->createLink(t1->outputPort("out"), t2->inputPort("in"));
 
-  source->setOutputData("out", PortData(std::any(5), PortType::Volume));
+  source->setOutputData("out", PortData(std::any(5), PortType::ImageData));
 
   t1->setBreakpoint(true);
 
@@ -1497,6 +1516,359 @@ TEST_F(PipelineLibTest, AllVolumeSinksAcceptVolume)
   for (auto* sink : sinks) {
     EXPECT_EQ(sink->state(), NodeState::Current) << sink->label().toStdString();
   }
+}
+
+// --- Volume port type hierarchy tests ---
+
+TEST_F(PipelineLibTest, SubtypeCompatibilityMatrix)
+{
+  // ImageData input accepts all three volume types
+  auto* imgInput = new SourceNode();
+  auto* imgTransform = new DoubleTransform(); // has ImageData in
+  pipeline->addNode(imgInput);
+  pipeline->addNode(imgTransform);
+  auto* inPort = imgTransform->inputPort("in");
+
+  // ImageData -> ImageData: OK
+  imgInput->addOutput("img", PortType::ImageData);
+  EXPECT_TRUE(inPort->canConnectTo(imgInput->outputPort("img")));
+
+  // TiltSeries -> ImageData: OK (subtype)
+  auto* tsSource = new SourceNode();
+  tsSource->addOutput("ts", PortType::TiltSeries);
+  pipeline->addNode(tsSource);
+  EXPECT_TRUE(inPort->canConnectTo(tsSource->outputPort("ts")));
+
+  // Volume -> ImageData: OK (subtype)
+  auto* volSource = new SourceNode();
+  volSource->addOutput("vol", PortType::Volume);
+  pipeline->addNode(volSource);
+  EXPECT_TRUE(inPort->canConnectTo(volSource->outputPort("vol")));
+
+  // TiltSeries input only accepts TiltSeries
+  class TsSink : public SinkNode
+  {
+  public:
+    TsSink() { addInput("in", PortType::TiltSeries); }
+
+  protected:
+    bool consume(const QMap<QString, PortData>&) override { return true; }
+  };
+  class VolSink : public SinkNode
+  {
+  public:
+    VolSink() { addInput("in", PortType::Volume); }
+
+  protected:
+    bool consume(const QMap<QString, PortData>&) override { return true; }
+  };
+
+  auto* tsSinkNode = new TsSink();
+  pipeline->addNode(tsSinkNode);
+  auto* tsIn = tsSinkNode->inputPort("in");
+
+  EXPECT_TRUE(tsIn->canConnectTo(tsSource->outputPort("ts")));     // TS -> TS
+  EXPECT_FALSE(tsIn->canConnectTo(volSource->outputPort("vol")));  // Vol -> TS
+  EXPECT_FALSE(tsIn->canConnectTo(imgInput->outputPort("img")));   // Img -> TS
+
+  // Volume input only accepts Volume
+  auto* volSinkNode = new VolSink();
+  pipeline->addNode(volSinkNode);
+  auto* volIn = volSinkNode->inputPort("in");
+
+  EXPECT_TRUE(volIn->canConnectTo(volSource->outputPort("vol")));   // Vol -> Vol
+  EXPECT_FALSE(volIn->canConnectTo(tsSource->outputPort("ts")));    // TS -> Vol
+  EXPECT_FALSE(volIn->canConnectTo(imgInput->outputPort("img")));   // Img -> Vol
+}
+
+TEST_F(PipelineLibTest, EffectiveTypeInference)
+{
+  // Source outputs TiltSeries
+  auto* source = new SourceNode();
+  source->addOutput("out", PortType::TiltSeries);
+  pipeline->addNode(source);
+
+  // Generic transform: ImageData -> ImageData
+  auto* transform = new DoubleTransform(); // ImageData in/out
+  pipeline->addNode(transform);
+
+  // Connect TiltSeries source to generic transform
+  pipeline->createLink(source->outputPort("out"),
+                       transform->inputPort("in"));
+
+  // The generic transform's output should now have effective type TiltSeries
+  auto* outPort = transform->outputPort("out");
+  EXPECT_EQ(outPort->declaredType(), PortType::ImageData);
+  EXPECT_EQ(outPort->type(), PortType::TiltSeries);
+}
+
+TEST_F(PipelineLibTest, EffectiveTypeInferenceVolume)
+{
+  // Source outputs Volume
+  auto* source = new SourceNode();
+  source->addOutput("out", PortType::Volume);
+  pipeline->addNode(source);
+
+  // Generic transform
+  auto* transform = new DoubleTransform();
+  pipeline->addNode(transform);
+
+  pipeline->createLink(source->outputPort("out"),
+                       transform->inputPort("in"));
+
+  EXPECT_EQ(transform->outputPort("out")->type(), PortType::Volume);
+}
+
+TEST_F(PipelineLibTest, EffectiveTypePropagationChain)
+{
+  // TiltSeries source -> generic1 -> generic2 -> should all infer TiltSeries
+  auto* source = new SourceNode();
+  source->addOutput("out", PortType::TiltSeries);
+  pipeline->addNode(source);
+
+  auto* t1 = new DoubleTransform();
+  pipeline->addNode(t1);
+  auto* t2 = new DoubleTransform();
+  pipeline->addNode(t2);
+
+  pipeline->createLink(source->outputPort("out"), t1->inputPort("in"));
+  pipeline->createLink(t1->outputPort("out"), t2->inputPort("in"));
+
+  EXPECT_EQ(t1->outputPort("out")->type(), PortType::TiltSeries);
+  EXPECT_EQ(t2->outputPort("out")->type(), PortType::TiltSeries);
+}
+
+TEST_F(PipelineLibTest, EffectiveTypeRevertsOnDisconnect)
+{
+  auto* source = new SourceNode();
+  source->addOutput("out", PortType::TiltSeries);
+  pipeline->addNode(source);
+
+  auto* transform = new DoubleTransform();
+  pipeline->addNode(transform);
+
+  auto* link = pipeline->createLink(source->outputPort("out"),
+                                    transform->inputPort("in"));
+  EXPECT_EQ(transform->outputPort("out")->type(), PortType::TiltSeries);
+
+  // Disconnect — effective type should revert to declared (ImageData)
+  pipeline->removeLink(link);
+  EXPECT_EQ(transform->outputPort("out")->type(), PortType::ImageData);
+}
+
+TEST_F(PipelineLibTest, LinkValidityWithInference)
+{
+  // TiltSeries source -> generic transform -> TiltSeries-requiring node
+  auto* source = new SourceNode();
+  source->addOutput("out", PortType::TiltSeries);
+  pipeline->addNode(source);
+
+  auto* generic = new DoubleTransform(); // ImageData -> ImageData
+  pipeline->addNode(generic);
+
+  auto* tsNode = new PassthroughTransform(PortType::TiltSeries,
+                                          PortType::TiltSeries);
+  pipeline->addNode(tsNode);
+
+  // Connect source -> generic (valid, TiltSeries -> ImageData)
+  auto* link1 = pipeline->createLink(source->outputPort("out"),
+                                     generic->inputPort("in"));
+  ASSERT_NE(link1, nullptr);
+  EXPECT_TRUE(link1->isValid());
+
+  // Generic's output is now effectively TiltSeries, so this should work
+  auto* link2 = pipeline->createLink(generic->outputPort("out"),
+                                     tsNode->inputPort("in"));
+  ASSERT_NE(link2, nullptr);
+  EXPECT_TRUE(link2->isValid());
+
+  // Now disconnect the source from generic — generic reverts to ImageData
+  // link2 should become invalid
+  pipeline->removeLink(link1);
+  EXPECT_FALSE(link2->isValid());
+
+  // Reconnect the source — link2 should become valid again
+  link1 = pipeline->createLink(source->outputPort("out"),
+                               generic->inputPort("in"));
+  EXPECT_TRUE(link2->isValid());
+}
+
+TEST_F(PipelineLibTest, LinkValidityChangedSignal)
+{
+  auto* source = new SourceNode();
+  source->addOutput("out", PortType::TiltSeries);
+  pipeline->addNode(source);
+
+  auto* generic = new DoubleTransform();
+  pipeline->addNode(generic);
+
+  auto* tsNode = new PassthroughTransform(PortType::TiltSeries,
+                                          PortType::TiltSeries);
+  pipeline->addNode(tsNode);
+
+  auto* link1 = pipeline->createLink(source->outputPort("out"),
+                                     generic->inputPort("in"));
+  auto* link2 = pipeline->createLink(generic->outputPort("out"),
+                                     tsNode->inputPort("in"));
+
+  QSignalSpy validitySpy(link2, &Link::validityChanged);
+
+  // Disconnect source — should trigger validityChanged(false)
+  pipeline->removeLink(link1);
+  EXPECT_EQ(validitySpy.count(), 1);
+  EXPECT_FALSE(validitySpy.at(0).at(0).toBool());
+}
+
+TEST_F(PipelineLibTest, ExecutionSkipsNodesWithInvalidLinks)
+{
+  // Build: TiltSeries source -> generic -> TiltSeries-requiring node
+  auto* source = new SourceNode();
+  source->addOutput("out", PortType::TiltSeries);
+  pipeline->addNode(source);
+  source->setOutputData("out", PortData(std::any(5), PortType::ImageData));
+
+  auto* generic = new DoubleTransform();
+  pipeline->addNode(generic);
+
+  auto* tsNode = new PassthroughTransform(PortType::TiltSeries,
+                                          PortType::TiltSeries);
+  pipeline->addNode(tsNode);
+
+  // source (TiltSeries) -> generic (OK, infers TiltSeries)
+  auto* link1 = pipeline->createLink(source->outputPort("out"),
+                                     generic->inputPort("in"));
+  ASSERT_NE(link1, nullptr);
+
+  // generic (effective: TiltSeries) -> tsNode (requires TiltSeries) — valid
+  auto* link2 = pipeline->createLink(generic->outputPort("out"),
+                                     tsNode->inputPort("in"));
+  ASSERT_NE(link2, nullptr);
+  EXPECT_TRUE(link2->isValid());
+
+  // Now disconnect source -> generic, making link2 invalid
+  pipeline->removeLink(link1);
+  EXPECT_FALSE(link2->isValid());
+
+  // Try to execute; tsNode should be skipped
+  auto* future = pipeline->execute();
+  EXPECT_TRUE(future->isFinished());
+
+  // tsNode should NOT have reached Current (skipped due to invalid link)
+  EXPECT_NE(tsNode->state(), NodeState::Current);
+}
+
+TEST_F(PipelineLibTest, ExplicitTypeInferenceSource)
+{
+  // Node with two ImageData inputs; explicit mapping says output follows "b"
+  class TwoInputTransform : public TransformNode
+  {
+  public:
+    TwoInputTransform()
+    {
+      addInput("a", PortType::ImageData);
+      addInput("b", PortType::ImageData);
+      addOutput("out", PortType::ImageData);
+      setTypeInferenceSource("out", "b");
+    }
+
+  protected:
+    QMap<QString, PortData> transform(
+      const QMap<QString, PortData>& inputs) override
+    {
+      return { { "out", inputs["a"] } };
+    }
+  };
+
+  auto* tsSource = new SourceNode();
+  tsSource->addOutput("out", PortType::TiltSeries);
+  pipeline->addNode(tsSource);
+
+  auto* volSource = new SourceNode();
+  volSource->addOutput("out", PortType::Volume);
+  pipeline->addNode(volSource);
+
+  auto* transform = new TwoInputTransform();
+  pipeline->addNode(transform);
+
+  // Connect TiltSeries to "a", Volume to "b"
+  pipeline->createLink(tsSource->outputPort("out"),
+                       transform->inputPort("a"));
+  pipeline->createLink(volSource->outputPort("out"),
+                       transform->inputPort("b"));
+
+  // Output should follow "b" (Volume), not "a" (TiltSeries)
+  EXPECT_EQ(transform->outputPort("out")->type(), PortType::Volume);
+}
+
+TEST_F(PipelineLibTest, DefaultInferenceUsesFirstImageDataInput)
+{
+  // Node with two ImageData inputs, no explicit mapping
+  class TwoInputTransform : public TransformNode
+  {
+  public:
+    TwoInputTransform()
+    {
+      addInput("a", PortType::ImageData);
+      addInput("b", PortType::ImageData);
+      addOutput("out", PortType::ImageData);
+    }
+
+  protected:
+    QMap<QString, PortData> transform(
+      const QMap<QString, PortData>& inputs) override
+    {
+      return { { "out", inputs["a"] } };
+    }
+  };
+
+  auto* tsSource = new SourceNode();
+  tsSource->addOutput("out", PortType::TiltSeries);
+  pipeline->addNode(tsSource);
+
+  auto* volSource = new SourceNode();
+  volSource->addOutput("out", PortType::Volume);
+  pipeline->addNode(volSource);
+
+  auto* transform = new TwoInputTransform();
+  pipeline->addNode(transform);
+
+  // Connect TiltSeries to "a" (first ImageData input), Volume to "b"
+  pipeline->createLink(tsSource->outputPort("out"),
+                       transform->inputPort("a"));
+  pipeline->createLink(volSource->outputPort("out"),
+                       transform->inputPort("b"));
+
+  // Output should follow "a" (first ImageData input) → TiltSeries
+  EXPECT_EQ(transform->outputPort("out")->type(), PortType::TiltSeries);
+}
+
+TEST_F(PipelineLibTest, ConcreteTypeNotInferred)
+{
+  // A node with TiltSeries output should always keep that type,
+  // regardless of what's connected to its input
+  auto* source = new SourceNode();
+  source->addOutput("out", PortType::Volume);
+  pipeline->addNode(source);
+
+  auto* tsTransform = new PassthroughTransform(PortType::ImageData,
+                                                PortType::TiltSeries);
+  pipeline->addNode(tsTransform);
+
+  pipeline->createLink(source->outputPort("out"),
+                       tsTransform->inputPort("in"));
+
+  // Output declared as TiltSeries — should stay TiltSeries, not inherit Volume
+  EXPECT_EQ(tsTransform->outputPort("out")->type(), PortType::TiltSeries);
+}
+
+TEST_F(PipelineLibTest, IsVolumeTypeHelper)
+{
+  EXPECT_TRUE(isVolumeType(PortType::ImageData));
+  EXPECT_TRUE(isVolumeType(PortType::TiltSeries));
+  EXPECT_TRUE(isVolumeType(PortType::Volume));
+  EXPECT_FALSE(isVolumeType(PortType::Table));
+  EXPECT_FALSE(isVolumeType(PortType::Molecule));
+  EXPECT_FALSE(isVolumeType(PortType::None));
 }
 
 int main(int argc, char** argv)

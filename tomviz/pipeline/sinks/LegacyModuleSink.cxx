@@ -214,12 +214,12 @@ bool LegacyModuleSink::execute()
 {
   // Before consuming, cache VolumeData from the first Volume-type input port
   for (auto* port : inputPorts()) {
-    if (port->acceptedTypes().testFlag(PortType::Volume)) {
+    if (port->acceptedTypes().testFlag(PortType::ImageData)) {
       auto* lnk = port->link();
       if (lnk) {
         auto* outPort = lnk->from();
         if (outPort && outPort->hasData() &&
-            outPort->type() == PortType::Volume) {
+            outPort->type() == PortType::ImageData) {
           auto vol = outPort->data().value<VolumeDataPtr>();
           if (vol) {
             m_volumeData = vol;

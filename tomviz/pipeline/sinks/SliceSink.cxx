@@ -34,7 +34,7 @@ namespace pipeline {
 
 SliceSink::SliceSink(QObject* parent) : LegacyModuleSink(parent)
 {
-  addInput("volume", PortType::Volume);
+  addInput("volume", PortType::ImageData);
   setLabel("Slice");
 }
 

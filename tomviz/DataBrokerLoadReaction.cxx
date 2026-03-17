@@ -60,13 +60,13 @@ void DataBrokerLoadReaction::loadData()
                              .arg(table)
                              .arg(variable);
               source->setLabel(label);
-              source->addOutput("volume", pipeline::PortType::Volume);
+              source->addOutput("volume", pipeline::PortType::ImageData);
               auto volumeData =
                 std::make_shared<pipeline::VolumeData>(imageData);
               volumeData->setLabel(label);
               source->setOutputData(
                 "volume",
-                pipeline::PortData(volumeData, pipeline::PortType::Volume));
+                pipeline::PortData(volumeData, pipeline::PortType::ImageData));
               source->setProperty("dataType", "tiltSeries");
 
               LoadDataReaction::sourceNodeAdded(source, true, false);

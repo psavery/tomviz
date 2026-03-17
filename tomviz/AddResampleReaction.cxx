@@ -127,13 +127,13 @@ void AddResampleReaction::resample(DataSource* source)
     auto* newSource = new pipeline::SourceNode();
     QString name = "Downsampled_" + source->label();
     newSource->setLabel(name);
-    newSource->addOutput("volume", pipeline::PortType::Volume);
+    newSource->addOutput("volume", pipeline::PortType::ImageData);
     vtkSmartPointer<vtkImageData> resampledImage = reslice->GetOutput();
     auto vol = std::make_shared<pipeline::VolumeData>(resampledImage);
     vol->setLabel(name);
     newSource->setOutputData(
       "volume",
-      pipeline::PortData(vol, pipeline::PortType::Volume));
+      pipeline::PortData(vol, pipeline::PortType::ImageData));
 
     LoadDataReaction::sourceNodeAdded(newSource);
   }

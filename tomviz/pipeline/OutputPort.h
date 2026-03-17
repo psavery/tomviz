@@ -26,7 +26,16 @@ public:
              QObject* parent = nullptr);
   ~OutputPort() override = default;
 
+  /// Effective type (may differ from declared type due to inference).
+  /// Most code should use this rather than declaredType().
   PortType type() const;
+
+  /// The type set at construction time, before any inference.
+  PortType declaredType() const;
+
+  /// Set the effective type.  Called by the owning Node during type
+  /// inference.  Only meaningful when declaredType() is ImageData.
+  void setEffectiveType(PortType type);
 
   bool isTransient() const;
   void setTransient(bool transient);
@@ -44,13 +53,15 @@ public:
 signals:
   void dataChanged();
   void staleChanged(bool stale);
+  void effectiveTypeChanged(PortType newType);
 
 private:
   friend class Link;
   void addLink(Link* link);
   void removeLink(Link* link);
 
-  PortType m_type;
+  PortType m_declaredType;
+  PortType m_effectiveType;
   PortData m_data;
   bool m_transient = false;
   bool m_stale = false;

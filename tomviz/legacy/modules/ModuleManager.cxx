@@ -1458,13 +1458,13 @@ DataSource* ModuleManager::loadDataSource(QJsonObject& dsObject)
     if (ds) {
       auto* sn = new pipeline::SourceNode();
       sn->setLabel(ds->label());
-      sn->addOutput("volume", pipeline::PortType::Volume);
+      sn->addOutput("volume", pipeline::PortType::ImageData);
       vtkSmartPointer<vtkImageData> img = ds->imageData();
       auto vol = std::make_shared<pipeline::VolumeData>(img);
       vol->setLabel(ds->label());
       sn->setOutputData(
         "volume",
-        pipeline::PortData(vol, pipeline::PortType::Volume));
+        pipeline::PortData(vol, pipeline::PortType::ImageData));
       LoadDataReaction::sourceNodeAdded(sn, false, false);
       sourceNode = sn;
       delete ds;

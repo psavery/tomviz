@@ -234,7 +234,7 @@ int main(int argc, char** argv)
   // Helper: show properties only for Volume-type output ports
   auto showPropsForPort = [&](OutputPort* port) {
     sinkPropsScroll->hide();
-    if (port && port->type() == PortType::Volume) {
+    if (port && port->type() == PortType::ImageData) {
       propsWidget->setOutputPort(port);
       propsScroll->show();
     } else {

@@ -62,13 +62,13 @@ void MergeImagesReaction::onTriggered()
     // Create a SourceNode from the merged DataSource
     auto* source = new pipeline::SourceNode();
     source->setLabel(newSource->label());
-    source->addOutput("volume", pipeline::PortType::Volume);
+    source->addOutput("volume", pipeline::PortType::ImageData);
     vtkSmartPointer<vtkImageData> img = newSource->imageData();
     auto vol = std::make_shared<pipeline::VolumeData>(img);
     vol->setLabel(newSource->label());
     source->setOutputData(
       "volume",
-      pipeline::PortData(vol, pipeline::PortType::Volume));
+      pipeline::PortData(vol, pipeline::PortType::ImageData));
     LoadDataReaction::sourceNodeAdded(source);
     delete newSource; // Clean up the temporary DataSource
   }

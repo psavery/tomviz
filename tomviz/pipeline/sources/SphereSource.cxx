@@ -19,7 +19,7 @@ namespace pipeline {
 
 SphereSource::SphereSource(QObject* parent) : SourceNode(parent)
 {
-  addOutput("volume", PortType::Volume);
+  addOutput("volume", PortType::ImageData);
   setLabel("Sphere Source");
 }
 
@@ -75,7 +75,7 @@ bool SphereSource::execute()
   volume->setLabel("Sphere");
 
   setOutputData("volume",
-                PortData(std::any(volume), PortType::Volume));
+                PortData(std::any(volume), PortType::ImageData));
 
   emit executionFinished(true);
   return true;

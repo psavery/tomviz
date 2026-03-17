@@ -50,8 +50,8 @@ LegacyPythonTransform::LegacyPythonTransform(QObject* parent)
   : TransformNode(parent)
 {
   // Always have volume in/out
-  addInput("volume", PortType::Volume);
-  addOutput("volume", PortType::Volume);
+  addInput("volume", PortType::ImageData);
+  addOutput("volume", PortType::ImageData);
 }
 
 void LegacyPythonTransform::setJSONDescription(const QString& json)
@@ -220,7 +220,7 @@ void LegacyPythonTransform::parseJSON()
 
       // Dataset parameters become additional input ports, not parameters.
       if (type == "dataset") {
-        addInput(name, PortType::Volume);
+        addInput(name, PortType::ImageData);
         m_datasetInputNames.append(name);
         continue;
       }
@@ -458,7 +458,7 @@ QMap<QString, PortData> LegacyPythonTransform::transform(
     volume->setLabel(inputVolume->label());
     volume->setUnits(inputVolume->units());
 
-    result["volume"] = PortData(std::any(volume), PortType::Volume);
+    result["volume"] = PortData(std::any(volume), PortType::ImageData);
 
   } catch (const py::error_already_set& e) {
     qWarning("LegacyPythonTransform Python error: %s", e.what());

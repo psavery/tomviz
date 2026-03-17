@@ -124,6 +124,9 @@ Link* Pipeline::createLink(OutputPort* from, InputPort* to)
   m_links.append(link);
   emit linkCreated(link);
 
+  // Propagate effective types and recheck link validity downstream
+  propagateEffectiveTypes(to->node());
+
   // Mark downstream nodes stale
   Node* downstream = to->node();
   if (downstream) {
@@ -139,9 +142,17 @@ void Pipeline::removeLink(Link* link)
     return;
   }
 
+  // Remember the downstream node before deleting the link
+  Node* downstream = link->to() ? link->to()->node() : nullptr;
+
   m_links.removeOne(link);
   emit linkRemoved(link);
   delete link;
+
+  // Propagate effective types from the formerly-downstream node
+  if (downstream) {
+    propagateEffectiveTypes(downstream);
+  }
 }
 
 QList<Link*> Pipeline::links() const
@@ -606,6 +617,42 @@ QList<Node*> Pipeline::executionOrder(Node* target)
   }
 
   return result;
+}
+
+void Pipeline::propagateEffectiveTypes(Node* startNode)
+{
+  if (!startNode) {
+    return;
+  }
+
+  // Forward BFS from startNode through the DAG
+  QQueue<Node*> queue;
+  QSet<Node*> visited;
+  queue.enqueue(startNode);
+
+  while (!queue.isEmpty()) {
+    Node* node = queue.dequeue();
+    if (visited.contains(node)) {
+      continue;
+    }
+    visited.insert(node);
+
+    node->recomputeEffectiveTypes();
+
+    // Recheck validity of all links from this node's outputs
+    for (auto* output : node->outputPorts()) {
+      for (auto* link : output->links()) {
+        link->recheck();
+        // Continue propagation to downstream nodes
+        if (link->to() && link->to()->node()) {
+          Node* downstream = link->to()->node();
+          if (!visited.contains(downstream)) {
+            queue.enqueue(downstream);
+          }
+        }
+      }
+    }
+  }
 }
 
 void Pipeline::releaseTransientData()

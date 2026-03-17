@@ -21,7 +21,7 @@ namespace pipeline {
 
 ScaleCubeSink::ScaleCubeSink(QObject* parent) : LegacyModuleSink(parent)
 {
-  addInput("volume", PortType::Volume);
+  addInput("volume", PortType::ImageData);
   setLabel("Scale Cube");
 
   m_cubeSource->SetXLength(m_sideLength);

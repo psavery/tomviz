@@ -132,12 +132,12 @@ pipeline::SourceNode* LoadDataReaction::createSourceFromImageData(
     nodeLabel = QFileInfo(fileNames[0]).completeBaseName();
   }
   source->setLabel(nodeLabel);
-  source->addOutput("volume", pipeline::PortType::Volume);
+  source->addOutput("volume", pipeline::PortType::ImageData);
   auto volumeData = std::make_shared<pipeline::VolumeData>(image);
   volumeData->setLabel(nodeLabel);
   source->setOutputData(
     "volume",
-    pipeline::PortData(volumeData, pipeline::PortType::Volume));
+    pipeline::PortData(volumeData, pipeline::PortType::ImageData));
   return source;
 }
 

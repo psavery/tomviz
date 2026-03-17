@@ -17,7 +17,7 @@ namespace pipeline {
 
 ReaderSourceNode::ReaderSourceNode(QObject* parent) : SourceNode(parent)
 {
-  addOutput("volume", PortType::Volume);
+  addOutput("volume", PortType::ImageData);
   setLabel("Reader Source");
 }
 
@@ -73,7 +73,7 @@ bool ReaderSourceNode::execute()
   }
 
   setOutputData("volume",
-                PortData(std::any(volume), PortType::Volume));
+                PortData(std::any(volume), PortType::ImageData));
 
   emit executionFinished(true);
   return true;

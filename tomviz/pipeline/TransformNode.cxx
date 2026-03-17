@@ -76,8 +76,8 @@ bool TransformNode::execute()
 
     // Reuse existing VolumeData on re-execution: update its imageData
     // rather than replacing it, so the color map and other state persist.
-    if (port->hasData() && port->data().type() == PortType::Volume &&
-        it.value().type() == PortType::Volume) {
+    if (port->hasData() && isVolumeType(port->data().type()) &&
+        isVolumeType(it.value().type())) {
       try {
         auto existing = port->data().value<VolumeDataPtr>();
         auto fresh = it.value().value<VolumeDataPtr>();
@@ -86,7 +86,7 @@ bool TransformNode::execute()
             vtkSmartPointer<vtkImageData>(fresh->imageData()));
           existing->setLabel(fresh->label());
           existing->setUnits(fresh->units());
-          port->setData(PortData(std::any(existing), PortType::Volume));
+          port->setData(PortData(std::any(existing), PortType::ImageData));
           continue;
         }
       } catch (const std::bad_any_cast&) {

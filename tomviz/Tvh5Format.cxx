@@ -200,13 +200,13 @@ bool Tvh5Format::loadDataSource(h5::H5ReadWrite& reader,
     // This is a root data source — create a SourceNode for the new pipeline
     auto* sourceNode = new pipeline::SourceNode();
     sourceNode->setLabel(dataSource->label());
-    sourceNode->addOutput("volume", pipeline::PortType::Volume);
+    sourceNode->addOutput("volume", pipeline::PortType::ImageData);
     vtkSmartPointer<vtkImageData> img = dataSource->imageData();
     auto vol = std::make_shared<pipeline::VolumeData>(img);
     vol->setLabel(dataSource->label());
     sourceNode->setOutputData(
       "volume",
-      pipeline::PortData(vol, pipeline::PortType::Volume));
+      pipeline::PortData(vol, pipeline::PortType::ImageData));
     LoadDataReaction::sourceNodeAdded(sourceNode, false, false);
     // TODO: dataSource->deserialize(dsObject) skipped — legacy
     // serialization not yet supported in new pipeline

@@ -12,7 +12,7 @@ namespace pipeline {
 
 VolumeStatsSink::VolumeStatsSink(QObject* parent) : SinkNode(parent)
 {
-  addInput("volume", PortType::Volume);
+  addInput("volume", PortType::ImageData);
   setLabel("Volume Stats");
 }
 

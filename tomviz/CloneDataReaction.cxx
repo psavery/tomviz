@@ -86,12 +86,12 @@ DataSource* CloneDataReaction::clone(DataSource* toClone)
 
     auto* newSource = new pipeline::SourceNode();
     newSource->setLabel(activeSource->label() + " (clone)");
-    newSource->addOutput("volume", pipeline::PortType::Volume);
+    newSource->addOutput("volume", pipeline::PortType::ImageData);
     auto newVol = std::make_shared<pipeline::VolumeData>(clonedImage);
     newVol->setLabel(newSource->label());
     newSource->setOutputData(
       "volume",
-      pipeline::PortData(newVol, pipeline::PortType::Volume));
+      pipeline::PortData(newVol, pipeline::PortType::ImageData));
 
     LoadDataReaction::sourceNodeAdded(newSource);
 
