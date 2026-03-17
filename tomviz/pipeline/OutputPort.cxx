@@ -22,6 +22,12 @@ PortType OutputPort::declaredType() const
   return m_declaredType;
 }
 
+void OutputPort::setDeclaredType(PortType type)
+{
+  m_declaredType = type;
+  setEffectiveType(type);
+}
+
 void OutputPort::setEffectiveType(PortType type)
 {
   if (m_effectiveType != type) {

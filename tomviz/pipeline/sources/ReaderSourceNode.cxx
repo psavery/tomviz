@@ -72,8 +72,10 @@ bool ReaderSourceNode::execute()
     volume->setLabel(QFileInfo(m_fileNames.first()).baseName());
   }
 
-  setOutputData("volume",
-                PortData(std::any(volume), PortType::ImageData));
+  PortType dataType =
+    volume->hasTiltAngles() ? PortType::TiltSeries : PortType::Volume;
+  outputPort("volume")->setDeclaredType(dataType);
+  setOutputData("volume", PortData(std::any(volume), dataType));
 
   emit executionFinished(true);
   return true;

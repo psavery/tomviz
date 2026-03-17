@@ -33,6 +33,9 @@ public:
   /// The type set at construction time, before any inference.
   PortType declaredType() const;
 
+  /// Change the declared type (also resets the effective type to match).
+  void setDeclaredType(PortType type);
+
   /// Set the effective type.  Called by the owning Node during type
   /// inference.  Only meaningful when declaredType() is ImageData.
   void setEffectiveType(PortType type);

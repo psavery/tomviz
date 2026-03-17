@@ -5,6 +5,7 @@
 
 #include "CustomPythonTransformWidget.h"
 #include "InputPort.h"
+#include "OutputPort.h"
 #include "PythonTransformEditorWidget.h"
 #include "TransformPropertiesWidget.h"
 #include "data/VolumeData.h"
@@ -32,6 +33,17 @@ namespace py = pybind11;
 
 namespace tomviz {
 namespace pipeline {
+
+static PortType portTypeFromString(const QString& str)
+{
+  if (str == "TiltSeries")
+    return PortType::TiltSeries;
+  if (str == "Volume")
+    return PortType::Volume;
+  if (str == "ImageData")
+    return PortType::ImageData;
+  return PortType::None;
+}
 
 QMap<QString, CustomWidgetInfo> LegacyPythonTransform::s_customWidgetMap;
 
@@ -288,6 +300,20 @@ void LegacyPythonTransform::parseJSON()
       }
     }
   }
+
+  // Override the primary volume port types if specified
+  if (obj.contains("inputType")) {
+    PortType pt = portTypeFromString(obj.value("inputType").toString());
+    if (pt != PortType::None) {
+      inputPort("volume")->setAcceptedTypes(pt);
+    }
+  }
+  if (obj.contains("outputType")) {
+    PortType pt = portTypeFromString(obj.value("outputType").toString());
+    if (pt != PortType::None) {
+      outputPort("volume")->setDeclaredType(pt);
+    }
+  }
 }
 
 QMap<QString, PortData> LegacyPythonTransform::transform(
@@ -458,7 +484,10 @@ QMap<QString, PortData> LegacyPythonTransform::transform(
     volume->setLabel(inputVolume->label());
     volume->setUnits(inputVolume->units());
 
-    result["volume"] = PortData(std::any(volume), PortType::ImageData);
+    auto* outPort = outputPort("volume");
+    PortType outType =
+      outPort ? outPort->declaredType() : PortType::ImageData;
+    result["volume"] = PortData(std::any(volume), outType);
 
   } catch (const py::error_already_set& e) {
     qWarning("LegacyPythonTransform Python error: %s", e.what());

@@ -19,6 +19,11 @@ PortTypes InputPort::acceptedTypes() const
   return m_acceptedTypes;
 }
 
+void InputPort::setAcceptedTypes(PortTypes types)
+{
+  m_acceptedTypes = types;
+}
+
 bool InputPort::canConnectTo(const OutputPort* output) const
 {
   if (!output) {

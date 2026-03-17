@@ -26,6 +26,7 @@ public:
   ~InputPort() override = default;
 
   PortTypes acceptedTypes() const;
+  void setAcceptedTypes(PortTypes types);
   bool canConnectTo(const OutputPort* output) const;
   Link* link() const;
   PortData data() const;
