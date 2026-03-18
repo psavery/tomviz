@@ -8,6 +8,7 @@
 
 #include <vector>
 
+#include <QPointer>
 #include <QScopedPointer>
 
 class QMenu;
@@ -20,7 +21,6 @@ class MainWindow;
 namespace tomviz {
 
 class AboutDialog;
-class DataPropertiesPanel;
 class DataSource;
 class MoleculeSource;
 class Module;
@@ -67,21 +67,6 @@ private slots:
   void openUserGuide();
   void openVisIntro();
 
-  /// Change the active data source in the UI.
-  void dataSourceChanged(DataSource* source);
-
-  /// Change the active molecule source in the UI.
-  void moleculeSourceChanged(MoleculeSource* moleculeSource);
-
-  /// Change the active module displayed in the UI.
-  void moduleChanged(Module* module);
-
-  /// Change the active module displayed in the properties panel.
-  void operatorChanged(Operator* op);
-
-  /// Change the active result displayed in the properties panel.
-  void operatorResultChanged(OperatorResult* result);
-
   /// Load a custom operator from a file
   void importCustomTransform();
 
@@ -124,7 +109,7 @@ private:
   // New pipeline infrastructure
   pipeline::PipelineStripWidget* m_pipelineStrip = nullptr;
   pipeline::Pipeline* m_pipeline = nullptr;
-  QWidget* m_dynamicPropertiesWidget = nullptr;
+  QPointer<QWidget> m_dynamicPropertiesWidget;
 
   // Lazily loaded dialogs
   QWidget* m_aboutDialog = nullptr;

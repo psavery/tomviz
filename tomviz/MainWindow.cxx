@@ -17,6 +17,8 @@
 #include <vtkSMViewProxy.h>
 #include <vtkVector.h>
 
+#include <QCheckBox>
+
 #include "AboutDialog.h"
 #include "AcquisitionWidget.h"
 #include "ActiveObjects.h"
@@ -30,7 +32,6 @@
 #include "DataBroker.h"
 #include "DataBrokerLoadReaction.h"
 #include "DataBrokerSaveReaction.h"
-#include "DataPropertiesPanel.h"
 #include "DataTransformMenu.h"
 #include "FileFormatManager.h"
 #include "LoadDataReaction.h"
@@ -55,7 +56,6 @@
 #include "pipeline/TransformPropertiesPanel.h"
 #include "pipeline/VolumePropertiesWidget.h"
 #include "CentralWidget.h"
-#include "ModulePropertiesPanel.h"
 #include "OperatorFactory.h"
 #include "OperatorProxy.h"
 #include "PassiveAcquisitionWidget.h"
@@ -207,18 +207,9 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   connect(m_ui->outputWidget, &pqOutputWidget::messageDisplayed, this,
           &MainWindow::handleMessage);
 
-  // Link the histogram in the central widget to the active data source.
-  m_ui->centralWidget->connect(
-    &ActiveObjects::instance(), &ActiveObjects::transformedDataSourceActivated,
-    m_ui->centralWidget, &CentralWidget::setActiveColorMapDataSource);
-  connect(&ActiveObjects::instance(), &ActiveObjects::moduleActivated,
-          m_ui->centralWidget, &CentralWidget::setActiveModule);
-  connect(&ActiveObjects::instance(), &ActiveObjects::colorMapChanged,
-          m_ui->centralWidget, &CentralWidget::setActiveColorMapDataSource);
-  connect(m_ui->dataPropertiesPanel, &DataPropertiesPanel::colorMapUpdated,
-          m_ui->centralWidget, &CentralWidget::onColorMapUpdated);
-  connect(&ActiveObjects::instance(), &ActiveObjects::operatorActivated,
-          m_ui->centralWidget, &CentralWidget::setActiveOperator);
+  // The color map / histogram updates are now driven by onNodeSelected()
+  // and onPortSelected() which call CentralWidget::setActiveSinkNode()
+  // and CentralWidget::setActiveVolumeData().
 
   // Create pipeline strip widget in the left dock
   m_pipelineStrip = new pipeline::PipelineStripWidget(this);
@@ -281,17 +272,8 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   // connect quit.
   connect(m_ui->actionExit, &QAction::triggered, this, &MainWindow::close);
 
-  // Connect up the module/data changed to the appropriate slots.
-  connect(&ActiveObjects::instance(), &ActiveObjects::dataSourceActivated, this,
-          &MainWindow::dataSourceChanged);
-  connect(&ActiveObjects::instance(), &ActiveObjects::moleculeSourceActivated,
-          this, &MainWindow::moleculeSourceChanged);
-  connect(&ActiveObjects::instance(), &ActiveObjects::moduleActivated, this,
-          &MainWindow::moduleChanged);
-  connect(&ActiveObjects::instance(), &ActiveObjects::operatorActivated, this,
-          &MainWindow::operatorChanged);
-  connect(&ActiveObjects::instance(), &ActiveObjects::resultActivated, this,
-          &MainWindow::operatorResultChanged);
+  // Panel switching is now handled by onNodeSelected() / onPortSelected()
+  // which are connected to the PipelineStripWidget signals above.
 
   // Connect the about dialog up too.
   connect(m_ui->actionAbout, &QAction::triggered, this,
@@ -650,7 +632,7 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
               dataBroker->installed());
             m_ui->actionExportToDataBroker->setEnabled(
               dataBroker->installed() &&
-              ActiveObjects::instance().activeDataSource() != nullptr);
+              ActiveObjects::instance().activeNode() != nullptr);
             dataBrokerSaveReaction->setDataBrokerInstalled(
               dataBroker->installed());
             dataBroker->deleteLater();
@@ -802,47 +784,7 @@ void MainWindow::openVisIntro()
   openUrl(link);
 }
 
-void MainWindow::dataSourceChanged(DataSource* dataSource)
-{
-  m_ui->propertiesPanelStackedWidget->setCurrentWidget(
-    m_ui->dataPropertiesScrollArea);
-  if (dataSource) {
-    bool canAdd = !dataSource->pipeline()->editingOperators();
-    m_ui->menuData->setEnabled(canAdd);
-    m_ui->menuSegmentation->setEnabled(canAdd);
-    m_ui->menuTomography->setEnabled(canAdd);
-    m_customTransformsMenu->setEnabled(canAdd);
-    foreach(QAction* action, m_pipelineTemplates->actions()) {
-      action->setEnabled(canAdd);
-    }
-  }
-}
-
-void MainWindow::moleculeSourceChanged(MoleculeSource*)
-{
-  m_ui->propertiesPanelStackedWidget->setCurrentWidget(
-    m_ui->moleculePropertiesScrollArea);
-}
-
-void MainWindow::moduleChanged(Module*)
-{
-  m_ui->propertiesPanelStackedWidget->setCurrentWidget(
-    m_ui->modulePropertiesScrollArea);
-}
-
-void MainWindow::operatorChanged(Operator*)
-{
-  m_ui->propertiesPanelStackedWidget->setCurrentWidget(
-    m_ui->operatorPropertiesScrollArea);
-}
-
-void MainWindow::operatorResultChanged(OperatorResult* res)
-{
-  if (res) {
-    m_ui->propertiesPanelStackedWidget->setCurrentWidget(
-      m_ui->operatorResultPropertiesScrollArea);
-  }
-}
+// Panel switching is now handled by onNodeSelected() / onPortSelected()
 
 void MainWindow::importCustomTransform()
 {
@@ -1384,9 +1326,10 @@ void MainWindow::onNodeSelected(pipeline::Node* node)
 
   // Clear previous dynamic widget
   if (m_dynamicPropertiesWidget) {
-    m_ui->propertiesPanelStackedWidget->removeWidget(m_dynamicPropertiesWidget);
-    delete m_dynamicPropertiesWidget;
+    auto* w = m_dynamicPropertiesWidget.data();
     m_dynamicPropertiesWidget = nullptr;
+    m_ui->propertiesPanelStackedWidget->removeWidget(w);
+    w->deleteLater();
   }
 
   if (!node) {
@@ -1463,15 +1406,24 @@ void MainWindow::onPortSelected(pipeline::OutputPort* port)
 
   // Clear previous dynamic widget
   if (m_dynamicPropertiesWidget) {
-    m_ui->propertiesPanelStackedWidget->removeWidget(m_dynamicPropertiesWidget);
-    delete m_dynamicPropertiesWidget;
+    auto* w = m_dynamicPropertiesWidget.data();
     m_dynamicPropertiesWidget = nullptr;
+    m_ui->propertiesPanelStackedWidget->removeWidget(w);
+    w->deleteLater();
   }
 
   if (port && port->type() == pipeline::PortType::ImageData) {
     auto* propsWidget =
       new pipeline::VolumePropertiesWidget(m_ui->propertiesPanelStackedWidget);
     propsWidget->setOutputPort(port);
+    // Wire the time series label checkbox to ActiveObjects
+    connect(propsWidget->showTimeSeriesLabelCheckBox(), &QCheckBox::toggled,
+            &ActiveObjects::instance(),
+            &ActiveObjects::setShowTimeSeriesLabel);
+    connect(&ActiveObjects::instance(),
+            &ActiveObjects::showTimeSeriesLabelChanged,
+            propsWidget->showTimeSeriesLabelCheckBox(),
+            &QCheckBox::setChecked);
     m_dynamicPropertiesWidget = propsWidget;
     m_ui->propertiesPanelStackedWidget->addWidget(propsWidget);
     m_ui->propertiesPanelStackedWidget->setCurrentWidget(propsWidget);

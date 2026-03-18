@@ -2,14 +2,15 @@
    It is released under the 3-Clause BSD License, see "LICENSE". */
 
 #include "ActiveObjects.h"
-#include "ModuleManager.h"
-#include "Pipeline.h"
 #include "Utilities.h"
+
+#include "pipeline/Node.h"
+#include "pipeline/OutputPort.h"
+#include "pipeline/Pipeline.h"
 
 #include <pqActiveObjects.h>
 #include <pqApplicationCore.h>
 #include <pqObjectBuilder.h>
-#include <pqPipelineSource.h>
 #include <pqRenderView.h>
 #include <pqServer.h>
 #include <pqView.h>
@@ -17,10 +18,7 @@
 #include <vtkNew.h>
 #include <vtkSMProxyIterator.h>
 #include <vtkSMRenderViewProxy.h>
-#include <vtkSMSourceProxy.h>
 #include <vtkSMViewProxy.h>
-
-#include <functional>
 
 namespace tomviz {
 
@@ -28,12 +26,6 @@ ActiveObjects::ActiveObjects() : QObject()
 {
   connect(&pqActiveObjects::instance(), &pqActiveObjects::viewChanged, this,
           QOverload<pqView*>::of(&ActiveObjects::viewChanged));
-  connect(&ModuleManager::instance(), &ModuleManager::dataSourceRemoved, this,
-          &ActiveObjects::dataSourceRemoved);
-  connect(&ModuleManager::instance(), &ModuleManager::moleculeSourceRemoved,
-          this, &ActiveObjects::moleculeSourceRemoved);
-  connect(&ModuleManager::instance(), &ModuleManager::moduleRemoved, this,
-          &ActiveObjects::moduleRemoved);
 }
 
 ActiveObjects::~ActiveObjects() = default;
@@ -70,141 +62,10 @@ void ActiveObjects::viewChanged(pqView* view)
   emit viewChanged(view ? view->getViewProxy() : nullptr);
 }
 
-void ActiveObjects::dataSourceRemoved(DataSource* ds)
-{
-  if (m_activeDataSource == ds) {
-    setActiveDataSource(nullptr);
-  }
-}
-
-void ActiveObjects::moleculeSourceRemoved(MoleculeSource* ms)
-{
-  if (m_activeMoleculeSource == ms) {
-    setActiveMoleculeSource(nullptr);
-  }
-}
-
-void ActiveObjects::moduleRemoved(Module* mdl)
-{
-  if (m_activeModule == mdl) {
-    setActiveModule(nullptr);
-  }
-}
-
-void ActiveObjects::setActiveDataSource(DataSource* source)
-{
-  if (source) {
-    setActiveMoleculeSource(nullptr);
-  }
-  if (m_activeDataSource != source) {
-    if (m_activeDataSource) {
-      disconnect(m_activeDataSource, &DataSource::dataChanged, this,
-                 static_cast<void (ActiveObjects::*)()>(
-                   &ActiveObjects::dataSourceChanged));
-    }
-    if (source) {
-      connect(source, &DataSource::dataChanged, this,
-              static_cast<void (ActiveObjects::*)()>(
-                &ActiveObjects::dataSourceChanged));
-      m_activeDataSourceType = source->type();
-    }
-    m_activeDataSource = source;
-
-    // Setting to nullptr so the traverse logic is re-run.
-    m_activeParentDataSource = nullptr;
-  }
-  emit dataSourceActivated(m_activeDataSource);
-  emit dataSourceChanged(m_activeDataSource);
-
-  if (!m_activeDataSource.isNull() &&
-      m_activeDataSource->pipeline() != nullptr) {
-    setActiveTransformedDataSource(
-      m_activeDataSource->pipeline()->transformedDataSource());
-  }
-}
-
-void ActiveObjects::setSelectedDataSource(DataSource* source)
-{
-  m_selectedDataSource = source;
-
-  if (!m_selectedDataSource.isNull()) {
-    setActiveDataSource(m_selectedDataSource);
-  }
-}
-
-void ActiveObjects::setActiveTransformedDataSource(DataSource* source)
-{
-  if (m_activeTransformedDataSource != source) {
-    m_activeTransformedDataSource = source;
-  }
-  emit transformedDataSourceActivated(m_activeTransformedDataSource);
-}
-
-void ActiveObjects::dataSourceChanged()
-{
-  if (m_activeDataSource->type() != m_activeDataSourceType) {
-    m_activeDataSourceType = m_activeDataSource->type();
-    emit dataSourceChanged(m_activeDataSource);
-  }
-}
-
 vtkSMSessionProxyManager* ActiveObjects::proxyManager() const
 {
   pqServer* server = pqActiveObjects::instance().activeServer();
   return server ? server->proxyManager() : nullptr;
-}
-
-void ActiveObjects::setActiveMoleculeSource(MoleculeSource* source)
-{
-  if (source) {
-    setActiveDataSource(nullptr);
-  }
-  if (m_activeMoleculeSource != source) {
-    m_activeMoleculeSource = source;
-    emit moleculeSourceChanged(source);
-  }
-  emit moleculeSourceActivated(source);
-}
-
-void ActiveObjects::setActiveModule(Module* module)
-{
-  if (module) {
-    setActiveView(module->view());
-    setActiveDataSource(module->dataSource());
-  }
-  if (m_activeModule != module) {
-    m_activeModule = module;
-    emit moduleChanged(module);
-  }
-  emit moduleActivated(module);
-}
-
-void ActiveObjects::setActiveOperator(Operator* op)
-{
-  if (op) {
-    setActiveDataSource(op->dataSource());
-  }
-  if (m_activeOperator != op) {
-    m_activeOperator = op;
-    emit operatorChanged(op);
-  }
-  emit operatorActivated(op);
-}
-
-void ActiveObjects::setActiveOperatorResult(OperatorResult* result)
-{
-  if (result) {
-    auto op = qobject_cast<Operator*>(result->parent());
-    if (op) {
-      setActiveOperator(op);
-      setActiveDataSource(op->dataSource());
-    }
-  }
-  if (m_activeOperatorResult != result) {
-    m_activeOperatorResult = result;
-    emit resultChanged(result);
-  }
-  emit resultActivated(result);
 }
 
 void ActiveObjects::createRenderViewIfNeeded()
@@ -246,86 +107,34 @@ void ActiveObjects::renderAllViews()
   pqApplicationCore::instance()->render();
 }
 
-DataSource* ActiveObjects::activeParentDataSource()
-{
-
-  if (m_activeParentDataSource == nullptr) {
-    auto pipeline = activePipeline();
-    auto dataSource = activeDataSource();
-
-    if (dataSource == nullptr) {
-      return nullptr;
-    }
-
-    if (dataSource->forkable()) {
-      return dataSource;
-    }
-
-    std::function<QList<DataSource*>(DataSource*, DataSource*,
-                                     QList<DataSource*>)>
-      dfs = [&dfs](DataSource* currentDataSource, DataSource* targetDataSource,
-                   QList<DataSource*> path) {
-        path.append(currentDataSource);
-        if (currentDataSource == targetDataSource) {
-          return path;
-        }
-
-        foreach (Operator* op, currentDataSource->operators()) {
-          if (op->childDataSource() != nullptr) {
-            QList<DataSource*> p =
-              dfs(op->childDataSource(), targetDataSource, path);
-            if (!p.isEmpty()) {
-              return p;
-            }
-          }
-        }
-
-        return QList<DataSource*>();
-      };
-
-    // Find path to the active datasource
-    auto path = dfs(pipeline->dataSource(), dataSource, QList<DataSource*>());
-
-    // Return the first non output data source
-    for (auto itr = path.rbegin(); itr != path.rend(); ++itr) {
-      auto ds = *itr;
-      if (ds->forkable()) {
-        m_activeParentDataSource = ds;
-        break;
-      }
-    }
-  }
-
-  return m_activeParentDataSource;
-}
-
 pqTimeKeeper* ActiveObjects::activeTimeKeeper() const
 {
   pqServer* server = pqActiveObjects::instance().activeServer();
   return server ? server->getTimeKeeper() : nullptr;
 }
 
-Pipeline* ActiveObjects::activePipeline() const
-{
-
-  if (m_activeDataSource != nullptr) {
-    return m_activeDataSource->pipeline();
-  }
-
-  return nullptr;
-}
-
 void ActiveObjects::setActivePipeline(pipeline::Pipeline* p)
 {
-  if (m_activeNewPipeline != p) {
-    m_activeNewPipeline = p;
+  if (m_activePipeline != p) {
+    if (m_activePipeline) {
+      disconnect(m_activePipeline, nullptr, this, nullptr);
+    }
+    m_activePipeline = p;
+    if (p) {
+      connect(p, &pipeline::Pipeline::nodeRemoved, this,
+              [this](pipeline::Node* node) {
+                if (m_activeNode == node) {
+                  setActiveNode(nullptr);
+                }
+              });
+    }
     emit activePipelineChanged(p);
   }
 }
 
-pipeline::Pipeline* ActiveObjects::activeNewPipeline() const
+pipeline::Pipeline* ActiveObjects::activePipeline() const
 {
-  return m_activeNewPipeline;
+  return m_activePipeline;
 }
 
 void ActiveObjects::setActiveNode(pipeline::Node* node)

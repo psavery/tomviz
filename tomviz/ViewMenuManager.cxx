@@ -77,11 +77,11 @@ ViewMenuManager::ViewMenuManager(QMainWindow* mainWindow, QMenu* menu)
             &ActiveObjects::viewChanged),
           this, &ViewMenuManager::onViewChanged);
 
-  connect(&ActiveObjects::instance(), &ActiveObjects::dataSourceActivated, this,
-          &ViewMenuManager::updateDataSource);
-  connect(&ActiveObjects::instance(),
-          &ActiveObjects::transformedDataSourceActivated, this,
-          &ViewMenuManager::updateDataSource);
+  connect(&ActiveObjects::instance(), &ActiveObjects::activeNodeChanged, this,
+          [this]() {
+            // TODO: extract DataSource from active node/port
+            updateDataSource(nullptr);
+          });
   connect(&ActiveObjects::instance(), &ActiveObjects::setImageViewerMode, this,
           &ViewMenuManager::setImageViewerMode);
 
@@ -352,7 +352,8 @@ void ViewMenuManager::setImageViewerMode(bool enable)
     return;
   }
 
-  auto* ds = ActiveObjects::instance().activeDataSource();
+  // TODO: retrieve DataSource from active node/port
+  auto* ds = static_cast<DataSource*>(nullptr);
   auto* view =
     vtkSMRenderViewProxy::SafeDownCast(ActiveObjects::instance().activeView());
   auto* camera = view->GetActiveCamera();

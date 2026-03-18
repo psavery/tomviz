@@ -631,7 +631,8 @@ void Pipeline::addDefaultModules(DataSource* dataSource)
     module =
       ModuleManager::instance().createAndAddModule(name, dataSource, view);
   }
-  ActiveObjects::instance().setActiveModule(module);
+  // LEGACY STUB: setActiveModule() removed from ActiveObjects
+  ActiveObjects::instance().setActiveNode(nullptr);
 
   auto pqview = tomviz::convert<pqView*>(view);
   pqview->resetDisplay();

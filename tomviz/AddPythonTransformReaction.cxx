@@ -8,6 +8,7 @@
 
 #include "pipeline/DeferredLinkInfo.h"
 #include "pipeline/Pipeline.h"
+#include "pipeline/PipelineUtils.h"
 #include "pipeline/InputPort.h"
 #include "pipeline/Link.h"
 #include "pipeline/Node.h"
@@ -41,78 +42,8 @@
 
 namespace tomviz {
 
-/// Find the tip output port of the branch containing the given node.
-/// Walks downstream from the node through TransformNodes to find the end
-/// of that specific branch. If the node is a SinkNode, walks upstream first
-/// to find the feeding source/transform, then walks downstream from there.
-static pipeline::OutputPort* findBranchTip(pipeline::Node* node)
-{
-  if (!node) {
-    return nullptr;
-  }
-
-  // If it's a sink, step upstream to the node feeding it
-  pipeline::Node* start = node;
-  while (dynamic_cast<pipeline::SinkNode*>(start)) {
-    auto upstream = start->upstreamNodes();
-    if (upstream.isEmpty()) {
-      return nullptr;
-    }
-    start = upstream.first();
-  }
-
-  if (start->outputPorts().isEmpty()) {
-    return nullptr;
-  }
-
-  pipeline::OutputPort* tip = start->outputPorts()[0];
-
-  // Walk downstream through transforms to the end of this branch
-  pipeline::Node* current = start;
-  while (true) {
-    pipeline::TransformNode* nextTransform = nullptr;
-    for (auto* downstream : current->downstreamNodes()) {
-      if (auto* xf = dynamic_cast<pipeline::TransformNode*>(downstream)) {
-        nextTransform = xf;
-        break;
-      }
-    }
-    if (!nextTransform || nextTransform->outputPorts().isEmpty()) {
-      break;
-    }
-    tip = nextTransform->outputPorts()[0];
-    current = nextTransform;
-  }
-
-  return tip;
-}
-
-/// Find the tip output port using contextNode to select the right branch.
-/// If contextNode is null, falls back to the first source in the pipeline.
-static pipeline::OutputPort* findTipOutputPort(
-  pipeline::Pipeline* pip, pipeline::Node* contextNode)
-{
-  if (!pip) {
-    return nullptr;
-  }
-
-  // If we have context, find the tip of the branch containing that node
-  if (contextNode && pip->nodes().contains(contextNode)) {
-    auto* tip = findBranchTip(contextNode);
-    if (tip) {
-      return tip;
-    }
-  }
-
-  // Fallback: first source's branch
-  for (auto* node : pip->nodes()) {
-    if (auto* src = dynamic_cast<pipeline::SourceNode*>(node)) {
-      return findBranchTip(src);
-    }
-  }
-
-  return nullptr;
-}
+using pipeline::findBranchTip;
+using pipeline::findTipOutputPort;
 
 /// Append a transform at the given targetPort, moving sink links to the
 /// new transform's output.
@@ -380,7 +311,7 @@ AddPythonTransformReaction::AddPythonTransformReaction(
 
 void AddPythonTransformReaction::updateEnableState()
 {
-  auto* pip = ActiveObjects::instance().activeNewPipeline();
+  auto* pip = ActiveObjects::instance().activePipeline();
   parentAction()->setEnabled(pip != nullptr);
 }
 

@@ -47,17 +47,18 @@ namespace tomviz {
 SaveDataReaction::SaveDataReaction(QAction* parentObject)
   : pqReaction(parentObject)
 {
-  connect(&ActiveObjects::instance(),
-          static_cast<void (ActiveObjects::*)(DataSource*)>(
-            &ActiveObjects::dataSourceChanged),
-          this, &SaveDataReaction::updateEnableState);
+  // TODO: migrate to new pipeline
+  // Old code connected to ActiveObjects::dataSourceChanged
+  connect(&ActiveObjects::instance(), &ActiveObjects::activeNodeChanged, this,
+          &SaveDataReaction::updateEnableState);
   updateEnableState();
 }
 
 void SaveDataReaction::updateEnableState()
 {
-  parentAction()->setEnabled(ActiveObjects::instance().activeDataSource() !=
-                             nullptr);
+  // TODO: migrate to new pipeline
+  // Old code checked activeDataSource() != nullptr
+  parentAction()->setEnabled(false);
 }
 
 void SaveDataReaction::onTriggered()
@@ -109,121 +110,12 @@ void SaveDataReaction::onTriggered()
 
 bool SaveDataReaction::saveData(const QString& filename)
 {
-  auto server = pqActiveObjects::instance().activeServer();
-  auto source = ActiveObjects::instance().activeDataSource();
-  auto result = ActiveObjects::instance().activeOperatorResult();
-
-  auto updateSource = [](QString fileName, DataSource* ds) {
-    ds->setPersistenceState(DataSource::PersistenceState::Saved);
-    ds->setFileName(fileName);
-  };
-
-  if (!server) {
-    qCritical("No active server located.");
-    return false;
-  }
-
-  if (!source && !result) {
-    qCritical("No active source located.");
-    return false;
-  }
-
-  QFileInfo info(filename);
-  if (info.suffix() == "emd") {
-    if (!EmdFormat::write(filename.toLatin1().data(), source)) {
-      qCritical() << "Failed to write out data.";
-      return false;
-    } else {
-      updateSource(filename, source);
-      return true;
-    }
-  } else if (info.suffix() == "h5") {
-    DataExchangeFormat writer;
-    if (!writer.write(filename.toLatin1().data(), source)) {
-      qCritical() << "Failed to write out data.";
-      return false;
-    } else {
-      updateSource(filename, source);
-      return true;
-    }
-  } else if (FileFormatManager::instance().pythonWriterFactory(
-               info.suffix().toLower()) != nullptr) {
-    auto factory = FileFormatManager::instance().pythonWriterFactory(
-      info.suffix().toLower());
-    Q_ASSERT(factory != nullptr);
-    auto writer = factory->createWriter();
-    auto t = source->producer();
-    auto data = vtkImageData::SafeDownCast(t->GetOutputDataObject(0));
-    if (!writer.write(filename, data)) {
-      qCritical() << "Failed to write out data.";
-      return false;
-    } else {
-      updateSource(filename, source);
-      return true;
-    }
-  }
-
-  vtkSMSourceProxy* producer = nullptr;
-  if (source) {
-    producer = source->proxy();
-  }
-  // If an operator result is active, save it. Otherwise, save the source.
-  if (result) {
-    producer = result->producerProxy();
-  }
-
-  auto writerFactory = vtkSMProxyManager::GetProxyManager()->GetWriterFactory();
-  vtkSmartPointer<vtkSMProxy> proxy;
-  proxy.TakeReference(
-    writerFactory->CreateWriter(filename.toLatin1().data(), producer));
-  auto writer = vtkSMSourceProxy::SafeDownCast(proxy);
-  if (!writer) {
-    qCritical() << "Failed to create writer for: " << filename;
-    return false;
-  }
-
-  // Convert to float if the type is found to be a double.
-  if (strcmp(writer->GetClientSideObject()->GetClassName(), "vtkTIFFWriter") ==
-      0) {
-    auto t = vtkTrivialProducer::SafeDownCast(producer->GetClientSideObject());
-    auto imageData = vtkImageData::SafeDownCast(t->GetOutputDataObject(0));
-    if (imageData->GetPointData()->GetScalars()->GetDataType() == VTK_DOUBLE) {
-      vtkNew<vtkImageData> fImage;
-      fImage->DeepCopy(imageData);
-      ConvertToFloatOperator convertFloat;
-      convertFloat.applyTransform(fImage);
-
-      vtkNew<vtkTIFFWriter> tiff;
-      tiff->SetInputData(fImage);
-      tiff->SetFileName(filename.toLatin1().data());
-      tiff->Write();
-
-      updateSource(filename, source);
-      return true;
-    }
-  }
-
-  pqProxyWidgetDialog dialog(writer, tomviz::mainWidget());
-  dialog.setObjectName("WriterSettingsDialog");
-  dialog.setEnableSearchBar(true);
-  dialog.setWindowTitle(
-    QString("Configure Writer (%1)").arg(writer->GetXMLLabel()));
-
-  // Check to see if this writer has any properties that can be configured by
-  // the user. If it does, display the dialog.
-  if (dialog.hasVisibleWidgets()) {
-    dialog.exec();
-    if (dialog.result() == QDialog::Rejected) {
-      // The user pressed Cancel so don't write
-      return false;
-    }
-  }
-  writer->UpdateVTKObjects();
-  writer->UpdatePipeline();
-
-  updateSource(filename, source);
-
-  return true;
+  // TODO: migrate to new pipeline
+  // Old code used ActiveObjects::activeDataSource() and activeOperatorResult()
+  // to get the data to save. Stubbed out until new pipeline provides equivalent.
+  Q_UNUSED(filename);
+  qCritical("SaveDataReaction::saveData not yet migrated to new pipeline.");
+  return false;
 }
 
 } // end of namespace tomviz

@@ -5,6 +5,7 @@
 
 #include "ActiveObjects.h"
 #include "LoadDataReaction.h"
+#include "MoleculeSource.h"
 #include "SaveLoadStateReaction.h"
 #include "Utilities.h"
 

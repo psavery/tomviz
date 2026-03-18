@@ -35,16 +35,15 @@ AddResampleReaction::AddResampleReaction(QAction* parentObject)
   : pqReaction(parentObject)
 {
   connect(&ActiveObjects::instance(),
-          static_cast<void (ActiveObjects::*)(DataSource*)>(
-            &ActiveObjects::dataSourceChanged),
+          &ActiveObjects::activePipelineChanged,
           this, &AddResampleReaction::updateEnableState);
   updateEnableState();
 }
 
 void AddResampleReaction::updateEnableState()
 {
-  parentAction()->setEnabled(ActiveObjects::instance().activeDataSource() !=
-                             nullptr);
+  parentAction()->setEnabled(
+    ActiveObjects::instance().activePipeline() != nullptr);
 }
 
 namespace {
@@ -57,7 +56,6 @@ vtkImageData* imageData(DataSource* source)
 
 void AddResampleReaction::resample(DataSource* source)
 {
-  source = source ? source : ActiveObjects::instance().activeParentDataSource();
   if (!source) {
     qDebug() << "Exiting early - no data :-(";
     return;

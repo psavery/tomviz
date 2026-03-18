@@ -43,18 +43,21 @@ namespace tomviz {
 ExportDataReaction::ExportDataReaction(QAction* parentAction, Module* module)
   : pqReaction(parentAction), m_module(module)
 {
-  connect(&ActiveObjects::instance(), &ActiveObjects::moduleChanged, this,
+  // TODO: migrate to new pipeline
+  // Old code connected to ActiveObjects::moduleChanged
+  connect(&ActiveObjects::instance(), &ActiveObjects::activeNodeChanged, this,
           &ExportDataReaction::updateEnableState);
   updateEnableState();
 }
 
 void ExportDataReaction::updateEnableState()
 {
-  if (!m_module) {
-    parentAction()->setEnabled(ActiveObjects::instance().activeModule() !=
-                               nullptr);
-  } else {
+  // TODO: migrate to new pipeline
+  // Old code checked ActiveObjects::activeModule() != nullptr
+  if (m_module) {
     parentAction()->setEnabled(true);
+  } else {
+    parentAction()->setEnabled(false);
   }
 }
 
@@ -62,9 +65,8 @@ void ExportDataReaction::onTriggered()
 {
   Module* module = m_module;
   if (!module) {
-    module = ActiveObjects::instance().activeModule();
-  }
-  if (!module) {
+    // TODO: migrate to new pipeline
+    // Old code used ActiveObjects::activeModule()
     return;
   }
   QString exportType = module->exportDataTypeString();

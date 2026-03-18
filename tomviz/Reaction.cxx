@@ -4,31 +4,22 @@
 #include "Reaction.h"
 
 #include "ActiveObjects.h"
-#include "DataSource.h"
-#include "PipelineManager.h"
 
 namespace tomviz {
 
 Reaction::Reaction(QAction* parentObject) : pqReaction(parentObject)
 {
-  connect(&ActiveObjects::instance(),
-          static_cast<void (ActiveObjects::*)(DataSource*)>(
-            &ActiveObjects::dataSourceChanged),
-          this, &Reaction::updateEnableState);
-  connect(&PipelineManager::instance(), &PipelineManager::executionModeUpdated,
-          this, &Reaction::updateEnableState);
+  connect(&ActiveObjects::instance(), &ActiveObjects::activeNodeChanged, this,
+          &Reaction::updateEnableState);
 
   updateEnableState();
 }
 
 void Reaction::updateEnableState()
 {
-  auto compatibleExecutionMode = PipelineManager::instance().executionMode() ==
-                                 Pipeline::ExecutionMode::Threaded;
-
-  parentAction()->setEnabled(ActiveObjects::instance().activeDataSource() !=
-                               nullptr &&
-                             compatibleExecutionMode);
+  // TODO: migrate to new pipeline
+  // Old code checked PipelineManager::executionMode() == Threaded
+  parentAction()->setEnabled(ActiveObjects::instance().activeNode() != nullptr);
 }
 
 } // namespace tomviz

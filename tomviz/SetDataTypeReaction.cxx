@@ -5,7 +5,6 @@
 
 #include "ActiveObjects.h"
 #include "OperatorFactory.h"
-#include "Pipeline.h"
 #include "SetTiltAnglesReaction.h"
 
 #include <cassert>
@@ -16,10 +15,10 @@ SetDataTypeReaction::SetDataTypeReaction(QAction* action, QMainWindow* mw,
                                          DataSource::DataSourceType t)
   : pqReaction(action), m_mainWindow(mw), m_type(t)
 {
-  connect(&ActiveObjects::instance(),
-          static_cast<void (ActiveObjects::*)(DataSource*)>(
-            &ActiveObjects::dataSourceChanged),
-          this, &SetDataTypeReaction::updateEnableState);
+  // TODO: migrate to new pipeline
+  // Old code connected to ActiveObjects::dataSourceChanged
+  connect(&ActiveObjects::instance(), &ActiveObjects::activeNodeChanged, this,
+          &SetDataTypeReaction::updateEnableState);
   setWidgetText(t);
   updateEnableState();
 }
@@ -27,10 +26,8 @@ SetDataTypeReaction::SetDataTypeReaction(QAction* action, QMainWindow* mw,
 void SetDataTypeReaction::setDataType(QMainWindow* mw, DataSource* dsource,
                                       DataSource::DataSourceType t)
 {
-  if (dsource == nullptr) {
-    dsource = ActiveObjects::instance().activeDataSource();
-  }
-  // if it is still null, give up
+  // TODO: migrate to new pipeline
+  // Old code used ActiveObjects::activeDataSource() as fallback
   if (dsource == nullptr) {
     return;
   }
@@ -48,24 +45,17 @@ void SetDataTypeReaction::setDataType(QMainWindow* mw, DataSource* dsource,
 
 void SetDataTypeReaction::onTriggered()
 {
-  DataSource* dsource = ActiveObjects::instance().activeParentDataSource();
+  // TODO: migrate to new pipeline
+  // Old code used ActiveObjects::activeParentDataSource()
+  DataSource* dsource = nullptr;
   setDataType(m_mainWindow, dsource, m_type);
-  // setWidgetText(dsource);
 }
 
 void SetDataTypeReaction::updateEnableState()
 {
-  // auto dsource = ActiveObjects::instance().activeDataSource();
-  auto pipeline = ActiveObjects::instance().activePipeline();
-  bool enable = pipeline != nullptr;
-  if (enable) {
-    auto dsource = pipeline->transformedDataSource();
-    enable = dsource != nullptr;
-    if (enable) {
-      enable = dsource->type() != m_type;
-    }
-  }
-  parentAction()->setEnabled(enable);
+  // TODO: migrate to new pipeline
+  // Old code used activePipeline()->transformedDataSource() to check type
+  parentAction()->setEnabled(false);
 }
 
 void SetDataTypeReaction::setWidgetText(DataSource::DataSourceType t)

@@ -4,13 +4,14 @@
 #include "SaveLoadTemplateReaction.h"
 
 #include "ActiveObjects.h"
+#include "DataSource.h"
 #include "ModuleManager.h"
-#include "Pipeline.h"
 #include "RecentFilesMenu.h"
 #include "Utilities.h"
 
 #include <QApplication>
 #include <QDebug>
+#include <QDir>
 #include <QInputDialog>
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -61,88 +62,22 @@ bool SaveLoadTemplateReaction::saveTemplate()
 
 bool SaveLoadTemplateReaction::loadTemplate(const QString& fileName)
 {
-  if (tomviz::userDataPath().isEmpty()) {
-    return false;
-  }
-
-  QString location = tomviz::userDataPath() + "/templates";
-  QString path = QString("%1%2%3.tvsm").arg(location).arg(QDir::separator()).arg(fileName);
-  if (!QFile(path).exists()) {
-    location = QApplication::applicationDirPath() + "/../share/tomviz/templates";
-    path = QString("%1%2%3.tvsm").arg(location).arg(QDir::separator()).arg(fileName);
-  }
-
-  QFile openFile(path);
-  if (!openFile.open(QIODevice::ReadOnly)) {
-    qWarning("Could not open template.");
-    return false;
-  }
-
-  QJsonParseError error;
-  auto contents = openFile.readAll();
-  auto doc = QJsonDocument::fromJson(contents, &error);
-
-  // Get the parent data source, as well as the active (i.e. data and output)
-  auto activeParent = ActiveObjects::instance().activeParentDataSource();
-  auto activeData = ActiveObjects::instance().activeDataSource();
-
-  if (!activeParent) {
-    qWarning("No active data source to apply template to.");
-    return false;
-  }
-
-  // Read in the template file and apply it to the current data source
-  activeParent->deserialize(doc.object());
-  // Load the default modules on the output if there are none
-  bool noModules = ModuleManager::instance().findModulesGeneric(activeData, nullptr).isEmpty();
-  if (noModules && activeData && activeData != activeParent) {
-    activeParent->pipeline()->addDefaultModules(activeData);
-  }
-  
-  return true;
+  // TODO: migrate to new pipeline
+  // Old code used ActiveObjects::activeParentDataSource() and
+  // activeDataSource() to apply template to the current data source.
+  Q_UNUSED(fileName);
+  qWarning("SaveLoadTemplateReaction::loadTemplate not yet migrated to new pipeline.");
+  return false;
 }
 
 bool SaveLoadTemplateReaction::saveTemplate(const QString& fileName)
 {
-  QFileInfo info(fileName);
-  QFile saveFile(fileName);
-  if (!saveFile.open(QIODevice::WriteOnly)) {
-    qWarning("Couldn't open save file.");
-    return false;
-  }
-
-  DataSource* activeParent = ActiveObjects::instance().activeParentDataSource();
-  QJsonObject state = activeParent->serialize();
-  QJsonObject json;
-  // Save any modules loaded on the parent data source
-  if (state.contains("modules")) {
-    json["modules"] = state.value("modules");
-  }
-
-  if (state.contains("operators")) {
-    QJsonArray ops;
-    foreach (QJsonValue val, state["operators"].toArray()) {
-      QJsonObject temp;
-      foreach (QString key, val.toObject().keys()) {
-        // Save the operators
-        if (key != QString("dataSources")) {
-          temp.insert(key, val.toObject().value(key));
-        } else {
-          // If there are modules loaded on the child data source, save those as well
-          QJsonValue dataSources = val.toObject().value("dataSources");
-          QJsonObject modules = {{"modules", dataSources.toArray()[0].toObject().value("modules")}};
-          QJsonArray arr = { modules };
-          temp.insert("dataSources", arr);
-        }
-      }
-      ops.push_back(temp);
-    }
-    json["operators"] = ops;
-  }
-
-  QJsonDocument doc(json);
-  auto writeSuccess = saveFile.write(doc.toJson());
-  return !json.isEmpty() && writeSuccess != -1;
+  // TODO: migrate to new pipeline
+  // Old code used ActiveObjects::activeParentDataSource() to serialize
+  // the pipeline state into a template file.
+  Q_UNUSED(fileName);
+  qWarning("SaveLoadTemplateReaction::saveTemplate not yet migrated to new pipeline.");
+  return false;
 }
 
 } // namespace tomviz

@@ -5,6 +5,7 @@
 #define tomvizPipelineManager_h
 
 #include <QObject>
+#include <QPointer>
 
 #include "Pipeline.h"
 

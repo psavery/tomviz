@@ -3,35 +3,34 @@
 
 #include "OperatorDialog.h"
 
-#include "OperatorWidget.h"
-
 #include <QDialogButtonBox>
+#include <QLabel>
 #include <QVBoxLayout>
 
 namespace tomviz {
 
 OperatorDialog::OperatorDialog(QWidget* parentObject) : Superclass(parentObject)
 {
-  m_ui = new OperatorWidget(this);
   QVBoxLayout* layout = new QVBoxLayout(this);
+  layout->addWidget(new QLabel("(Operator parameters not available)", this));
   QDialogButtonBox* buttons = new QDialogButtonBox(
     QDialogButtonBox::Ok | QDialogButtonBox::Cancel, Qt::Horizontal, this);
   connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
   connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
   this->setLayout(layout);
-  layout->addWidget(m_ui);
   layout->addWidget(buttons);
 }
 
 OperatorDialog::~OperatorDialog() {}
 
-void OperatorDialog::setJSONDescription(const QString& json)
+void OperatorDialog::setJSONDescription(const QString& /*json*/)
 {
-  m_ui->setupUI(json);
+  // Stubbed out: OperatorWidget has been removed.
 }
 
 QMap<QString, QVariant> OperatorDialog::values() const
 {
-  return m_ui->values();
+  // Stubbed out: OperatorWidget has been removed.
+  return {};
 }
 } // namespace tomviz

@@ -5,13 +5,6 @@
 #define tomvizActiveObjects_h
 
 #include <QObject>
-#include <QPointer>
-
-#include "DataSource.h"
-#include "Module.h"
-#include "MoleculeSource.h"
-#include "Operator.h"
-#include "OperatorResult.h"
 
 class pqRenderView;
 class pqTimeKeeper;
@@ -20,8 +13,6 @@ class vtkSMSessionProxyManager;
 class vtkSMViewProxy;
 
 namespace tomviz {
-
-class Pipeline;
 
 namespace pipeline {
 class Pipeline;
@@ -49,84 +40,25 @@ public:
   /// Returns the active pqRenderView object.
   pqRenderView* activePqRenderView() const;
 
-  /// Returns the active data source.
-  DataSource* activeDataSource() const { return m_activeDataSource; }
-
-  /// Returns the selected data source, nullptr if no data source is selected.
-  DataSource* selectedDataSource() const { return m_selectedDataSource; }
-
-  /// Returns the active operator.
-  Operator* activeOperator() const { return m_activeOperator; }
-
-  /// Returns the active data source.
-  MoleculeSource* activeMoleculeSource() const
-  {
-    return m_activeMoleculeSource;
-  }
-
-  /// Returns the active transformed data source.
-  DataSource* activeTransformedDataSource() const
-  {
-    return m_activeTransformedDataSource;
-  }
-
-  /// Returns the active module.
-  Module* activeModule() const { return m_activeModule; }
-
-  /// Returns the active OperatorResult
-  OperatorResult* activeOperatorResult() const
-  {
-    return m_activeOperatorResult;
-  }
-
   /// Returns the vtkSMSessionProxyManager from the active server/session.
   /// Provided here for convenience, since we need to access the proxy manager
   /// often.
   vtkSMSessionProxyManager* proxyManager() const;
 
-  /// Returns the active legacy pipeline.
-  Pipeline* activePipeline() const;
+  /// Returns the active time keeper
+  pqTimeKeeper* activeTimeKeeper() const;
 
-  /// New pipeline tracking
+  /// Pipeline tracking
   void setActivePipeline(pipeline::Pipeline* p);
-  pipeline::Pipeline* activeNewPipeline() const;
+  pipeline::Pipeline* activePipeline() const;
   void setActiveNode(pipeline::Node* node);
   pipeline::Node* activeNode() const;
   void setActivePort(pipeline::OutputPort* port);
   pipeline::OutputPort* activePort() const;
 
-  /// The "parent" data source is the data source that new operators will be
-  /// appended to. i.e. The closes parent of the currently active data source
-  /// that is not an "Output" data source.
-  DataSource* activeParentDataSource();
-
-  /// Returns the active time keeper
-  pqTimeKeeper* activeTimeKeeper() const;
-
 public slots:
   /// Set the active view;
   void setActiveView(vtkSMViewProxy*);
-
-  /// Set the active data source.
-  void setActiveDataSource(DataSource* source);
-
-  /// Set the selected data source.
-  void setSelectedDataSource(DataSource* source);
-
-  /// Set the active molecule source
-  void setActiveMoleculeSource(MoleculeSource* source);
-
-  /// Set the active transformed data source.
-  void setActiveTransformedDataSource(DataSource* source);
-
-  /// Set the active module.
-  void setActiveModule(Module* module);
-
-  /// Set the active operator result.
-  void setActiveOperatorResult(OperatorResult* result);
-
-  /// Set the active operator.
-  void setActiveOperator(Operator* op);
 
   /// Create a render view if needed.
   void createRenderViewIfNeeded();
@@ -156,55 +88,9 @@ public slots:
   }
   bool showTimeSeriesLabel() const { return m_showTimeSeriesLabel; }
 
-  void setFixedInteractionDataSource(DataSource* ds)
-  {
-    m_fixedInteractionDataSource = ds;
-    emit interactionDataSourceFixed(ds);
-  }
-
-  DataSource* fixedInteractionDataSource() const
-  {
-    return m_fixedInteractionDataSource;
-  };
-
 signals:
   /// Fired whenever the active view changes.
   void viewChanged(vtkSMViewProxy*);
-
-  /// Fired whenever the active data source changes (or changes type).
-  void dataSourceChanged(DataSource*);
-
-  /// Fired whenever the data source is activated, i.e. selected in the
-  /// pipeline.
-  void dataSourceActivated(DataSource*);
-
-  /// Fired whenever the data source is activated, i.e. selected in the
-  /// pipeline. This signal emits the transformed data source.
-  void transformedDataSourceActivated(DataSource*);
-
-  /// Fired whenever the active module changes.
-  void moleculeSourceChanged(MoleculeSource*);
-
-  /// Fired whenever a module is activated, i.e. selected in the pipeline.
-  void moleculeSourceActivated(MoleculeSource*);
-
-  /// Fired whenever the active module changes.
-  void moduleChanged(Module*);
-
-  /// Fired whenever a module is activated, i.e. selected in the pipeline.
-  void moduleActivated(Module*);
-
-  /// Fired whenever the active operator changes.
-  void operatorChanged(Operator*);
-
-  /// Fired whenever an operator is activated, i.e. selected in the pipeline.
-  void operatorActivated(Operator*);
-
-  /// Fired whenever the active operator changes.
-  void resultChanged(OperatorResult*);
-
-  /// Fired whenever an OperatorResult is activated.
-  void resultActivated(OperatorResult*);
 
   /// Fired when interaction modes change
   void translationStateChanged(bool b);
@@ -217,13 +103,10 @@ signals:
   /// Fired when time series label visibility changes
   void showTimeSeriesLabelChanged(bool b);
 
-  /// Fired whenever the color map has changed
-  void colorMapChanged(DataSource*);
-
   /// Fired to set image viewer mode
   void setImageViewerMode(bool b);
 
-  /// Fired whenever the active new pipeline changes.
+  /// Fired whenever the active pipeline changes.
   void activePipelineChanged(pipeline::Pipeline*);
 
   /// Fired whenever the active node changes.
@@ -232,33 +115,15 @@ signals:
   /// Fired whenever the active output port changes.
   void activePortChanged(pipeline::OutputPort*);
 
-  /// Fired when the interaction data source was fixed.
-  void interactionDataSourceFixed(DataSource*);
-
 private slots:
   void viewChanged(pqView*);
-  void dataSourceRemoved(DataSource*);
-  void moleculeSourceRemoved(MoleculeSource*);
-  void moduleRemoved(Module*);
-  void dataSourceChanged();
 
 protected:
   ActiveObjects();
   ~ActiveObjects() override;
 
-  QPointer<DataSource> m_activeDataSource = nullptr;
-  QPointer<DataSource> m_activeTransformedDataSource = nullptr;
-  QPointer<DataSource> m_selectedDataSource = nullptr;
-  DataSource::DataSourceType m_activeDataSourceType = DataSource::Volume;
-  QPointer<DataSource> m_activeParentDataSource = nullptr;
-  QPointer<MoleculeSource> m_activeMoleculeSource = nullptr;
-  QPointer<Module> m_activeModule = nullptr;
-  QPointer<Operator> m_activeOperator = nullptr;
-  QPointer<OperatorResult> m_activeOperatorResult = nullptr;
-  QPointer<DataSource> m_fixedInteractionDataSource = nullptr;
-
-  /// New pipeline tracking
-  pipeline::Pipeline* m_activeNewPipeline = nullptr;
+  /// Pipeline tracking
+  pipeline::Pipeline* m_activePipeline = nullptr;
   pipeline::Node* m_activeNode = nullptr;
   pipeline::OutputPort* m_activePort = nullptr;
 

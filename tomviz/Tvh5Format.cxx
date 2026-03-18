@@ -8,6 +8,7 @@
 #include "EmdFormat.h"
 #include "LoadDataReaction.h"
 #include "ModuleManager.h"
+#include "Operator.h"
 #include "Pipeline.h"
 
 #include "pipeline/PortData.h"
@@ -37,7 +38,8 @@ namespace tomviz {
 bool Tvh5Format::write(const std::string& fileName)
 {
   // First, write the standard EMD file
-  DataSource* source = ActiveObjects::instance().activeDataSource();
+  // TODO: retrieve DataSource from active node/port
+  DataSource* source = nullptr;
 
   if (!EmdFormat::write(fileName, source)) {
     cerr << "Failed to write the standard EMD node" << endl;
@@ -143,11 +145,9 @@ bool Tvh5Format::read(const std::string& fileName)
   ModuleManager::instance().executePipelinesOnLoad(prev);
 
   if (active) {
-    // Set the active data source if one was flagged as active
-    // We have to use "setSelectedDataSource" instead of
-    // "setActiveDataSource" or else the Histogram color map won't
-    // match.
-    ActiveObjects::instance().setSelectedDataSource(active);
+    // TODO: set active node/port from restored DataSource
+    // Previously used ActiveObjects::setSelectedDataSource(active)
+    (void)active;
   }
 
   // Loading the modules most likely modified the view. Restore

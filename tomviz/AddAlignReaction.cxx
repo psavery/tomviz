@@ -3,9 +3,7 @@
 
 #include "AddAlignReaction.h"
 
-#include "ActiveObjects.h"
 #include "DataSource.h"
-#include "EditOperatorDialog.h"
 #include "Pipeline.h"
 #include "TranslateAlignOperator.h"
 #include "Utilities.h"
@@ -21,18 +19,7 @@ AddAlignReaction::AddAlignReaction(QAction* parentObject)
 
 void AddAlignReaction::align(DataSource* source)
 {
-  source = source ? source : ActiveObjects::instance().activeParentDataSource();
-  if (!source) {
-    qDebug() << "Exiting early - no data found.";
-    return;
-  }
-
-  auto Op = new TranslateAlignOperator(source);
-  auto dialog = new EditOperatorDialog(Op, source, true, tomviz::mainWidget());
-
-  dialog->setAttribute(Qt::WA_DeleteOnClose);
-  dialog->setWindowTitle("Manual Image Alignment");
-  dialog->show();
-  connect(Op, &QObject::destroyed, dialog, &QDialog::reject);
+  // TODO: migrate to new pipeline
+  Q_UNUSED(source);
 }
 } // namespace tomviz

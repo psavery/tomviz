@@ -262,27 +262,6 @@
           <number>0</number>
          </property>
          <widget class="QWidget" name="empty"/>
-         <widget class="QScrollArea" name="dataPropertiesScrollArea">
-          <property name="frameShape">
-           <enum>QFrame::NoFrame</enum>
-          </property>
-          <property name="horizontalScrollBarPolicy">
-           <enum>Qt::ScrollBarAlwaysOff</enum>
-          </property>
-          <property name="widgetResizable">
-           <bool>true</bool>
-          </property>
-          <widget class="tomviz::DataPropertiesPanel" name="dataPropertiesPanel">
-           <property name="geometry">
-            <rect>
-             <x>0</x>
-             <y>0</y>
-             <width>100</width>
-             <height>30</height>
-            </rect>
-           </property>
-          </widget>
-         </widget>
          <widget class="QScrollArea" name="moleculePropertiesScrollArea">
           <property name="frameShape">
            <enum>QFrame::NoFrame</enum>
@@ -294,69 +273,6 @@
            <bool>true</bool>
           </property>
           <widget class="tomviz::MoleculePropertiesPanel" name="moleculePropertiesPanel">
-           <property name="geometry">
-            <rect>
-             <x>0</x>
-             <y>0</y>
-             <width>100</width>
-             <height>30</height>
-            </rect>
-           </property>
-          </widget>
-         </widget>
-         <widget class="QScrollArea" name="modulePropertiesScrollArea">
-          <property name="frameShape">
-           <enum>QFrame::NoFrame</enum>
-          </property>
-          <property name="horizontalScrollBarPolicy">
-           <enum>Qt::ScrollBarAlwaysOff</enum>
-          </property>
-          <property name="widgetResizable">
-           <bool>true</bool>
-          </property>
-          <widget class="tomviz::ModulePropertiesPanel" name="modulePropertiesPanel">
-           <property name="geometry">
-            <rect>
-             <x>0</x>
-             <y>0</y>
-             <width>100</width>
-             <height>30</height>
-            </rect>
-           </property>
-          </widget>
-         </widget>
-         <widget class="QScrollArea" name="operatorPropertiesScrollArea">
-          <property name="frameShape">
-           <enum>QFrame::NoFrame</enum>
-          </property>
-          <property name="horizontalScrollBarPolicy">
-           <enum>Qt::ScrollBarAlwaysOff</enum>
-          </property>
-          <property name="widgetResizable">
-           <bool>true</bool>
-          </property>
-          <widget class="tomviz::OperatorPropertiesPanel" name="operatorPropertiesPanel">
-           <property name="geometry">
-            <rect>
-             <x>0</x>
-             <y>0</y>
-             <width>100</width>
-             <height>30</height>
-            </rect>
-           </property>
-          </widget>
-         </widget>
-         <widget class="QScrollArea" name="operatorResultPropertiesScrollArea">
-          <property name="frameShape">
-           <enum>QFrame::NoFrame</enum>
-          </property>
-          <property name="horizontalScrollBarPolicy">
-           <enum>Qt::ScrollBarAlwaysOff</enum>
-          </property>
-          <property name="widgetResizable">
-           <bool>true</bool>
-          </property>
-          <widget class="tomviz::OperatorResultPropertiesPanel" name="operatorResultPropertiesPanel">
            <property name="geometry">
             <rect>
              <x>0</x>
@@ -564,33 +480,9 @@
    <header>pqVCRToolbar.h</header>
   </customwidget>
   <customwidget>
-   <class>tomviz::DataPropertiesPanel</class>
-   <extends>QWidget</extends>
-   <header>DataPropertiesPanel.h</header>
-   <container>1</container>
-  </customwidget>
-  <customwidget>
    <class>tomviz::MoleculePropertiesPanel</class>
    <extends>QWidget</extends>
    <header>MoleculePropertiesPanel.h</header>
-   <container>1</container>
-  </customwidget>
-  <customwidget>
-   <class>tomviz::ModulePropertiesPanel</class>
-   <extends>QWidget</extends>
-   <header>ModulePropertiesPanel.h</header>
-   <container>1</container>
-  </customwidget>
-  <customwidget>
-   <class>tomviz::OperatorPropertiesPanel</class>
-   <extends>QWidget</extends>
-   <header>OperatorPropertiesPanel.h</header>
-   <container>1</container>
-  </customwidget>
-  <customwidget>
-   <class>tomviz::OperatorResultPropertiesPanel</class>
-   <extends>QWidget</extends>
-   <header>OperatorResultPropertiesPanel.h</header>
    <container>1</container>
   </customwidget>
   <customwidget>

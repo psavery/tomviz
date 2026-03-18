@@ -5,10 +5,9 @@
 
 #include "ActiveObjects.h"
 #include "DataSource.h"
-#include "Module.h"
-#include "ModuleManager.h"
-#include "Pipeline.h"
 #include "Utilities.h"
+#include "pipeline/Pipeline.h"
+#include "pipeline/PipelineExecutor.h"
 
 #include <pqView.h>
 
@@ -45,14 +44,18 @@ MoveActiveObject::MoveActiveObject(QObject* p) : Superclass(p)
   this->BoxWidget->SetRepresentation(this->BoxRep.GetPointer());
   this->BoxWidget->SetPriority(1);
 
-  this->connect(&activeObjs, &ActiveObjects::dataSourceActivated,
-                this, &MoveActiveObject::dataSourceActivated);
+  // TODO: dataSourceActivated no longer exists. Using activeNodeChanged
+  // as a proxy, but the handler needs rework since it receives a Node*
+  // instead of a DataSource*.
+  this->connect(&activeObjs, &ActiveObjects::activeNodeChanged,
+                this, &MoveActiveObject::onActiveNodeChanged);
   this->connect(&activeObjs,
                 QOverload<vtkSMViewProxy*>::of(&ActiveObjects::viewChanged),
                 this, &MoveActiveObject::onViewChanged);
 
-  this->connect(&activeObjs, &ActiveObjects::interactionDataSourceFixed, this,
-                &MoveActiveObject::onInteractionDataSourceFixed);
+  // TODO: interactionDataSourceFixed signal no longer exists on ActiveObjects.
+  // The fixed-interaction-data-source concept needs to be reworked for the
+  // new pipeline architecture.
 
   this->connect(&activeObjs, &ActiveObjects::translationStateChanged, this,
                 &MoveActiveObject::updateInteractionStates);
@@ -108,35 +111,23 @@ void MoveActiveObject::interactionEnd(vtkObject* caller)
   render();
 }
 
-void MoveActiveObject::dataSourceActivated(DataSource* ds)
+void MoveActiveObject::onActiveNodeChanged(pipeline::Node* /*node*/)
 {
-  auto* fixedDs = ActiveObjects::instance().fixedInteractionDataSource();
-  if (fixedDs && ds != fixedDs) {
-    // Don't allow a different data source to be activated if we are using
-    // a fixed data source.
-    return;
-  }
+  // TODO: The old dataSourceActivated took a DataSource* and connected to
+  // its signals (displayPositionChanged, displayOrientationChanged,
+  // dataPropertiesChanged). The new pipeline uses Node* which doesn't
+  // have the same signals. This needs rework to extract a DataSource
+  // from the node (if applicable) to manage widget interaction.
 
-  if (ds == this->currentDataSource) {
-    return;
-  }
+  // TODO: fixedInteractionDataSource() no longer exists on ActiveObjects.
+  // The fixed-interaction concept needs rework for the new pipeline.
 
+  // For now, clear the current data source and disable the widget.
   if (this->currentDataSource) {
     this->disconnect(this->currentDataSource);
   }
 
-  this->currentDataSource = ds;
-  resetWidgetPlacement();
-
-  if (ds) {
-    connect(ds, &DataSource::displayPositionChanged, this,
-            &MoveActiveObject::onDataPositionChanged);
-    connect(ds, &DataSource::displayOrientationChanged, this,
-            &MoveActiveObject::onDataOrientationChanged);
-    connect(ds, &DataSource::dataPropertiesChanged, this,
-            &MoveActiveObject::onDataPropertiesChanged);
-  }
-
+  this->currentDataSource = nullptr;
   updateInteractionStates();
 }
 
@@ -204,11 +195,9 @@ void MoveActiveObject::onDataOrientationChanged(double, double, double)
   this->onDataPropertiesChanged();
 }
 
-void MoveActiveObject::onInteractionDataSourceFixed(DataSource* ds)
-{
-  // This has the logic we need
-  this->dataSourceActivated(ds);
-}
+// TODO: onInteractionDataSourceFixed was connected to the removed
+// interactionDataSourceFixed signal. This method is no longer called.
+// Kept as dead code until the interaction-fixing concept is reworked.
 
 void MoveActiveObject::updateInteractionStates()
 {
@@ -261,7 +250,11 @@ void MoveActiveObject::render()
 bool MoveActiveObject::activePipelineIsRunning() const
 {
   auto* pipeline = ActiveObjects::instance().activePipeline();
-  return pipeline && pipeline->isRunning();
+  if (!pipeline) {
+    return false;
+  }
+  auto* exec = pipeline->executor();
+  return exec && exec->isRunning();
 }
 
 } // namespace tomviz

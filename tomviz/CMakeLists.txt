@@ -71,8 +71,6 @@ set(SOURCES
   DataExchangeFormat.h
   DataPropertiesModel.cxx
   DataPropertiesModel.h
-  DataPropertiesPanel.cxx
-  DataPropertiesPanel.h
   legacy/DataSource.cxx
   legacy/DataSource.h
   DataTransformMenu.cxx
@@ -159,8 +157,6 @@ set(SOURCES
   legacy/PipelineModel.h
   legacy/PipelineProxy.cxx
   legacy/PipelineProxy.h
-  legacy/PipelineView.cxx
-  legacy/PipelineView.h
   legacy/PipelineWorker.cxx
   legacy/PipelineWorker.h
   legacy/PipelineSettingsDialog.cxx
@@ -308,8 +304,6 @@ list(APPEND SOURCES
   legacy/modules/ModuleOutline.h
   legacy/modules/ModulePlot.cxx
   legacy/modules/ModulePlot.h
-  legacy/modules/ModulePropertiesPanel.cxx
-  legacy/modules/ModulePropertiesPanel.h
   legacy/modules/ModuleRuler.cxx
   legacy/modules/ModuleRuler.h
   legacy/modules/ModuleSegment.cxx
@@ -380,8 +374,6 @@ list(APPEND SOURCES
   legacy/operators/CustomPythonOperatorWidget.h
   legacy/operators/CropOperator.cxx
   legacy/operators/CropOperator.h
-  legacy/operators/EditOperatorDialog.cxx
-  legacy/operators/EditOperatorDialog.h
   legacy/operators/EditOperatorWidget.cxx
   legacy/operators/EditOperatorWidget.h
   legacy/operators/Operator.cxx
@@ -390,18 +382,12 @@ list(APPEND SOURCES
   legacy/operators/OperatorDialog.h
   legacy/operators/OperatorFactory.cxx
   legacy/operators/OperatorFactory.h
-  legacy/operators/OperatorPropertiesPanel.cxx
-  legacy/operators/OperatorPropertiesPanel.h
   legacy/operators/OperatorProxy.cxx
   legacy/operators/OperatorProxy.h
   legacy/operators/OperatorPython.cxx
   legacy/operators/OperatorPython.h
   legacy/operators/OperatorResult.cxx
   legacy/operators/OperatorResult.h
-  legacy/operators/OperatorResultPropertiesPanel.cxx
-  legacy/operators/OperatorResultPropertiesPanel.h
-  legacy/operators/OperatorWidget.cxx
-  legacy/operators/OperatorWidget.h
   legacy/operators/ReconstructionOperator.cxx
   legacy/operators/ReconstructionOperator.h
   legacy/operators/SetTiltAnglesOperator.cxx

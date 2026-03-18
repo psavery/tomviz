@@ -9,11 +9,10 @@
 #include "ColorMapSettingsWidget.h"
 #include "DataSource.h"
 #include "DoubleSliderWidget.h"
-#include "ModuleContour.h"
-#include "ModuleManager.h"
 #include "PresetDialog.h"
 #include "QVTKGLWidget.h"
 #include "Utilities.h"
+#include "pipeline/Node.h"
 
 #include "vtkChartHistogramColorOpacityEditor.h"
 
@@ -150,11 +149,14 @@ HistogramWidget::HistogramWidget(QWidget* parent)
   connect(&ActiveObjects::instance(),
           QOverload<vtkSMViewProxy*>::of(&ActiveObjects::viewChanged),
           this, [this](vtkSMViewProxy*) { updateUI(); });
+  // TODO: activeNodeChanged provides pipeline::Node*, need to extract
+  // DataSource context for updateColorMapDialogs when needed.
   connect(&ActiveObjects::instance(),
-          QOverload<DataSource*>::of(&ActiveObjects::dataSourceChanged), this,
-          &HistogramWidget::updateColorMapDialogs);
-  connect(&ModuleManager::instance(), &ModuleManager::dataSourceRemoved,
-	  this, [this](DataSource*) { updateUI(); });
+          &ActiveObjects::activeNodeChanged, this,
+          [this](pipeline::Node*) { updateColorMapDialogs(); });
+  // TODO: ModuleManager::dataSourceRemoved signal no longer available.
+  // Need to listen for node removal from the pipeline instead.
+  // connect to pipeline's nodeRemoved signal when available.
   connect(this, &HistogramWidget::colorMapUpdated, this, &HistogramWidget::updateUI);
 
   setLayout(hLayout);
@@ -239,7 +241,10 @@ void HistogramWidget::updateLUTProxy()
 
 void HistogramWidget::updateColorMapDialogs()
 {
-  auto* ds = ActiveObjects::instance().activeDataSource();
+  // TODO: activeDataSource() no longer exists on ActiveObjects.
+  // The DataSource for BrightnessContrastWidget needs to come from
+  // the active node's associated data. For now, pass nullptr.
+  DataSource* ds = nullptr; // TODO: obtain DataSource from active node
   auto* lut = m_LUT.Get();
 
   if (m_colorMapSettingsWidget) {
@@ -371,40 +376,24 @@ void HistogramWidget::onCurrentPointEditEvent()
 
 void HistogramWidget::histogramClicked(vtkObject*)
 {
-  auto activeDataSource = ActiveObjects::instance().activeDataSource();
-  Q_ASSERT(activeDataSource);
+  // TODO: This method relied heavily on activeDataSource(), activeModule(),
+  // setActiveModule(), ModuleManager::findModules(), and
+  // ModuleManager::createAndAddModule(). These need to be reworked
+  // for the new pipeline architecture with nodes and ports.
 
   auto view = ActiveObjects::instance().activeView();
   if (!view) {
     return;
   }
 
-  // Use active ModuleContour is possible. Otherwise, find the first existing
-  // ModuleContour instance or just create a new one, if none exists.
-  typedef ModuleContour ModuleContourType;
-
   auto isoValue = m_histogramColorOpacityEditor->GetContourValue();
-  auto contour =
-    qobject_cast<ModuleContourType*>(ActiveObjects::instance().activeModule());
-  if (!contour) {
-    QList<ModuleContourType*> contours =
-      ModuleManager::instance().findModules<ModuleContourType*>(
-        activeDataSource, view);
-    if (contours.size() == 0) {
-      auto res = createContourDialog(isoValue);
-      if (!res) {
-        return;
-      }
-      contour = qobject_cast<ModuleContourType*>(
-        ModuleManager::instance().createAndAddModule("Contour",
-                                                     activeDataSource, view));
-    } else {
-      contour = contours[0];
-    }
-    ActiveObjects::instance().setActiveModule(contour);
-  }
-  Q_ASSERT(contour);
-  contour->setIsoValue(isoValue);
+
+  // TODO: Rework contour creation for new pipeline architecture.
+  // Previously this found or created a ModuleContour on the active
+  // DataSource and set the iso value. The new pipeline uses SinkNodes
+  // for visualization modules.
+  Q_UNUSED(isoValue);
+
   tomviz::convert<pqView*>(view)->render();
 }
 
@@ -417,10 +406,10 @@ bool HistogramWidget::createContourDialog(double& isoValue)
     return true;
   }
 
-  auto ds = ActiveObjects::instance().activeDataSource();
-  if (!ds) {
-    return false;
-  }
+  // TODO: activeDataSource() no longer exists on ActiveObjects.
+  // Need to obtain DataSource from active node to get data range.
+  // For now, use a placeholder range.
+  double range[2] = { 0.0, 1.0 }; // TODO: obtain range from active node data
 
   QDialog dialog;
   dialog.setFixedWidth(300);
@@ -433,10 +422,6 @@ bool HistogramWidget::createContourDialog(double& isoValue)
 
   QFormLayout formLayout;
   vLayout.addLayout(&formLayout);
-
-  // Get the range of the dataset
-  double range[2];
-  ds->getRange(range);
 
   DoubleSliderWidget w(true);
   w.setMinimum(range[0]);
@@ -479,7 +464,10 @@ void HistogramWidget::onResetRangeClicked()
 
 void HistogramWidget::resetRange()
 {
-  auto activeDataSource = ActiveObjects::instance().activeDataSource();
+  // TODO: activeDataSource() no longer exists on ActiveObjects.
+  // Need to obtain DataSource from active node to get data range.
+  // For now, this is a no-op without a DataSource.
+  DataSource* activeDataSource = nullptr; // TODO: obtain from active node
   if (!activeDataSource)
     return;
 
@@ -497,8 +485,10 @@ void HistogramWidget::resetRange(double range[2])
 
 void HistogramWidget::onCustomRangeClicked()
 {
-  // Get the max allowable range
-  auto activeDataSource = ActiveObjects::instance().activeDataSource();
+  // TODO: activeDataSource() no longer exists on ActiveObjects.
+  // Need to obtain DataSource from active node to get data range and type.
+  // For now, this is a no-op without a DataSource.
+  DataSource* activeDataSource = nullptr; // TODO: obtain from active node
   if (!activeDataSource)
     return;
 
@@ -689,7 +679,9 @@ void HistogramWidget::onBrightnessAndContrastClicked()
   dialog.setLayout(new QVBoxLayout);
   dialog.setWindowTitle("Brightness and Contrast");
 
-  auto* ds = ActiveObjects::instance().activeDataSource();
+  // TODO: activeDataSource() no longer exists on ActiveObjects.
+  // BrightnessContrastWidget needs a DataSource from the active node.
+  DataSource* ds = nullptr; // TODO: obtain from active node
   m_brightnessContrastWidget = new BrightnessContrastWidget(ds, m_LUT, this);
   dialog.layout()->addWidget(m_brightnessContrastWidget);
 
@@ -712,7 +704,9 @@ void HistogramWidget::autoAdjustContrast()
   // For now, auto adjust contrast for the whole data source. We can
   // also do it for individual slices in the future (in which case
   // we should generate a histogram for an individual slice).
-  auto* ds = ActiveObjects::instance().activeDataSource();
+  // TODO: activeDataSource() no longer exists on ActiveObjects.
+  // Need to obtain DataSource from active node for auto-contrast.
+  DataSource* ds = nullptr; // TODO: obtain from active node
 
   if (!table || !ds || !m_LUT) {
     return;
@@ -830,8 +824,11 @@ void HistogramWidget::updateUI()
     }
   }
 
-  auto dataSource = ActiveObjects::instance().activeDataSource();
-  if (!dataSource) {
+  // TODO: activeDataSource() no longer exists on ActiveObjects.
+  // The check below disables buttons when there's no data source.
+  // Use activeNode() as a proxy: if no active node, disable.
+  auto* activeNode = ActiveObjects::instance().activeNode();
+  if (!activeNode) {
     QSignalBlocker blocker1(m_colorLegendToolButton);
     QSignalBlocker blocker2(m_colorMapSettingsButton);
     QSignalBlocker blocker3(m_savePresetButton);
@@ -876,7 +873,10 @@ void HistogramWidget::addPlaceholderNodes()
 {
   auto* lut = m_LUT.Get();
   auto* opacity = m_scalarOpacityFunction.Get();
-  auto* ds = ActiveObjects::instance().activeDataSource();
+  // TODO: activeDataSource() no longer exists on ActiveObjects.
+  // addPlaceholderNodes() requires a DataSource* for range information.
+  // Need to obtain DataSource from active node.
+  DataSource* ds = nullptr; // TODO: obtain from active node
 
   if (lut && ds) {
     tomviz::addPlaceholderNodes(lut, ds);

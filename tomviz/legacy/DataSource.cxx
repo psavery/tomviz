@@ -539,7 +539,8 @@ QJsonObject DataSource::serialize() const
 
   json["id"] = id();
 
-  if (this == ActiveObjects::instance().activeDataSource()) {
+  // LEGACY STUB: activeDataSource() removed from ActiveObjects
+  if (false) {
     // Label itself as the active data source
     json["active"] = true;
   }
@@ -1034,7 +1035,8 @@ int DataSource::addOperator(Operator* op, bool append)
   op->setParent(this);
   int index = -1;
   if (!append) {
-    auto activeOp = ActiveObjects::instance().activeOperator();
+    // LEGACY STUB: activeOperator() removed from ActiveObjects
+    Operator* activeOp = nullptr;
     if (activeOp && activeOp->dataSource() == this) {
       index = this->Internals->Operators.indexOf(activeOp);
     }

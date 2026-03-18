@@ -45,6 +45,7 @@ set(SOURCES
   PythonTransformEditorWidget.cxx
   TransformPropertiesPanel.cxx
   TransformEditDialog.cxx
+  PipelineUtils.cxx
   PipelineStripWidget.cxx
   VolumeScalarsModel.cxx
   VolumePropertiesWidget.cxx
@@ -96,6 +97,7 @@ set(HEADERS
   TransformPropertiesPanel.h
   TransformEditDialog.h
   DeferredLinkInfo.h
+  PipelineUtils.h
   PipelineStripWidget.h
   VolumeScalarsModel.h
   VolumePropertiesWidget.h

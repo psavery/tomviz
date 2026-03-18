@@ -6,6 +6,7 @@
 
 #include "ActiveObjects.h"
 #include "ContourAnimation.h"
+#include "DataSource.h"
 #include "ModuleManager.h"
 #include "SliceAnimation.h"
 #include "Utilities.h"

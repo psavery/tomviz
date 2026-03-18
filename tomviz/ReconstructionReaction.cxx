@@ -24,7 +24,8 @@ ReconstructionReaction::ReconstructionReaction(QAction* parentObject)
 
 void ReconstructionReaction::recon(DataSource* input)
 {
-  input = input ? input : ActiveObjects::instance().activeParentDataSource();
+  // TODO: migrate to new pipeline
+  // Old code used ActiveObjects::activeParentDataSource() as fallback
   if (!input) {
     qDebug() << "Exiting early - no data :-(";
     return;

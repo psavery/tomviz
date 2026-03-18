@@ -130,9 +130,8 @@ ModuleMenu::ModuleMenu(QToolBar* toolBar, QMenu* menu, QObject* parentObject)
   Q_ASSERT(menu);
   Q_ASSERT(toolBar);
   connect(menu, &QMenu::triggered, this, &ModuleMenu::triggered);
-  connect(&ActiveObjects::instance(), QOverload<DataSource*>::of(&ActiveObjects::dataSourceChanged), this, &ModuleMenu::updateActions);
-  connect(&ActiveObjects::instance(), &ActiveObjects::moleculeSourceChanged, this, &ModuleMenu::updateActions);
-  connect(&ActiveObjects::instance(), &ActiveObjects::resultChanged, this, &ModuleMenu::updateActions);
+  // LEGACY STUB: removed signal connections to deleted ActiveObjects signals
+  // (dataSourceChanged, moleculeSourceChanged, resultChanged)
   connect(&ActiveObjects::instance(), QOverload<vtkSMViewProxy*>::of(&ActiveObjects::viewChanged), this, &ModuleMenu::updateActions);
   updateActions();
 }
@@ -149,9 +148,11 @@ void ModuleMenu::updateActions()
   menu->clear();
   toolBar->clear();
 
-  auto activeDataSource = ActiveObjects::instance().activeDataSource();
-  auto activeMoleculeSource = ActiveObjects::instance().activeMoleculeSource();
-  auto activeOperatorResult = ActiveObjects::instance().activeOperatorResult();
+  // LEGACY STUB: activeDataSource/activeMoleculeSource/activeOperatorResult
+  // removed from ActiveObjects
+  DataSource* activeDataSource = nullptr;
+  MoleculeSource* activeMoleculeSource = nullptr;
+  OperatorResult* activeOperatorResult = nullptr;
   auto activeView = ActiveObjects::instance().activeView();
   QList<QString> modules = ModuleFactory::moduleTypes();
 
@@ -175,9 +176,11 @@ void ModuleMenu::updateActions()
 void ModuleMenu::triggered(QAction* maction)
 {
   auto type = maction->data().toString();
-  auto dataSource = ActiveObjects::instance().activeDataSource();
-  auto moleculeSource = ActiveObjects::instance().activeMoleculeSource();
-  auto operatorResult = ActiveObjects::instance().activeOperatorResult();
+  // LEGACY STUB: activeDataSource/activeMoleculeSource/activeOperatorResult
+  // removed from ActiveObjects
+  DataSource* dataSource = nullptr;
+  MoleculeSource* moleculeSource = nullptr;
+  OperatorResult* operatorResult = nullptr;
 
   auto* view = resolveView(type);
   if (!view) {
@@ -202,7 +205,8 @@ void ModuleMenu::triggered(QAction* maction)
   }
 
   if (module) {
-    ActiveObjects::instance().setActiveModule(module);
+    // LEGACY STUB: setActiveModule() removed from ActiveObjects
+    ActiveObjects::instance().setActiveNode(nullptr);
   } else {
     qCritical("Failed to create requested module.");
   }

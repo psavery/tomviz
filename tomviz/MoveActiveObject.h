@@ -23,6 +23,10 @@ class pqView;
 namespace tomviz {
 class DataSource;
 
+namespace pipeline {
+class Node;
+} // namespace pipeline
+
 class MoveActiveObject : public QObject
 {
   Q_OBJECT
@@ -33,7 +37,7 @@ public:
   ~MoveActiveObject();
 
 private slots:
-  void dataSourceActivated(DataSource* ds);
+  void onActiveNodeChanged(pipeline::Node* node);
   void onDataPropertiesChanged();
   void onDataPositionChanged(double x, double y, double z);
   void onDataOrientationChanged(double x, double y, double z);
@@ -42,8 +46,6 @@ private slots:
   void interactionEnd(vtkObject* obj);
 
   void updateInteractionStates();
-
-  void onInteractionDataSourceFixed(DataSource* ds);
 
 private:
   void render();

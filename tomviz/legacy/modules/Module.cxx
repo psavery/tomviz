@@ -91,7 +91,8 @@ bool Module::initialize(OperatorResult* result, vtkSMViewProxy* vtkView)
 {
   m_view = vtkView;
   m_operatorResult = result;
-  m_activeDataSource = ActiveObjects::instance().activeDataSource();
+  // LEGACY STUB: activeDataSource() removed from ActiveObjects
+  m_activeDataSource = nullptr;
   return (m_view && m_view->IsA("vtkSMRenderViewProxy") && m_operatorResult);
 }
 
@@ -99,7 +100,8 @@ bool Module::initialize(MoleculeSource* data, vtkSMViewProxy* vtkView)
 {
   m_view = vtkView;
   m_activeMoleculeSource = data;
-  m_activeDataSource = ActiveObjects::instance().activeDataSource();
+  // LEGACY STUB: activeDataSource() removed from ActiveObjects
+  m_activeDataSource = nullptr;
   return (m_view && m_view->IsA("vtkSMRenderViewProxy") &&
           m_activeMoleculeSource);
 }

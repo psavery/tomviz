@@ -3,9 +3,7 @@
 
 #include "AddExpressionReaction.h"
 
-#include "ActiveObjects.h"
 #include "DataSource.h"
-#include "EditOperatorDialog.h"
 #include "OperatorPython.h"
 #include "PipelineManager.h"
 #include "Utilities.h"
@@ -19,24 +17,8 @@ AddExpressionReaction::AddExpressionReaction(QAction* parentObject)
 
 OperatorPython* AddExpressionReaction::addExpression(DataSource* source)
 {
-  source = source ? source : ActiveObjects::instance().activeParentDataSource();
-  if (!source) {
-    return nullptr;
-  }
-
-  QString script = getDefaultExpression(source);
-
-  OperatorPython* opPython = new OperatorPython(source);
-  opPython->setScript(script);
-  opPython->setLabel("Transform Data");
-  opPython->setHelpUrl("operator");
-
-  // Create a non-modal dialog, delete it once it has been closed.
-  auto dialog =
-    new EditOperatorDialog(opPython, source, true, tomviz::mainWidget());
-  dialog->setAttribute(Qt::WA_DeleteOnClose, true);
-  dialog->show();
-  connect(opPython, &QObject::destroyed, dialog, &QDialog::reject);
+  // TODO: migrate to new pipeline
+  Q_UNUSED(source);
   return nullptr;
 }
 
@@ -78,12 +60,9 @@ QString AddExpressionReaction::getDefaultExpression(DataSource* source)
 
 void AddExpressionReaction::updateEnableState()
 {
-  // This is currently compatible in all execution environments
-  auto compatibleExecutionMode = true;
-
-  parentAction()->setEnabled(ActiveObjects::instance().activeDataSource() !=
-                               nullptr &&
-                             compatibleExecutionMode);
+  // TODO: migrate to new pipeline
+  // was: enabled when ActiveObjects::instance().activeDataSource() != nullptr
+  parentAction()->setEnabled(false);
 }
 
 } // namespace tomviz

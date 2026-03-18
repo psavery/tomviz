@@ -21,12 +21,9 @@
 class vtkImageData;
 class QWidget;
 
-Q_DECLARE_METATYPE(vtkSmartPointer<vtkDataObject>)
-
 namespace tomviz {
 class EditOperatorWidget;
 class OperatorResult;
-class EditOperatorDialog;
 
 enum class OperatorState
 {
@@ -126,13 +123,6 @@ public:
   /// getEditorContents.
   virtual bool hasCustomUI() const { return false; }
 
-  /// If this operator has a dialog active, this should return that dialog (the
-  /// dialog will register itself using setCustomDialog in its constructor).
-  /// Otherwise this will return nullptr.
-  EditOperatorDialog* customDialog() const;
-
-  /// Set the custom dialog associated with this operator
-  void setCustomDialog(EditOperatorDialog*);
 
   /// If the operator has some custom progress UI, then return that UI from this
   /// function.  This custom UI must be parented to the given widget and should
@@ -323,7 +313,6 @@ private:
   QString m_helpUrl;
   bool m_breakpoint = false;
   std::atomic<OperatorState> m_state{ OperatorState::Queued };
-  QPointer<EditOperatorDialog> m_customDialog;
 };
 } // namespace tomviz
 

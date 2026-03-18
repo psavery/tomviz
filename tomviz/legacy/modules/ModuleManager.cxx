@@ -5,6 +5,7 @@
 
 #include "ActiveObjects.h"
 #include "DataSource.h"
+#include "operators/Operator.h"
 #include "LoadDataReaction.h"
 #include "ModuleFactory.h"
 #include "MoleculeSource.h"
@@ -696,7 +697,8 @@ bool ModuleManager::serialize(QJsonObject& doc, const QDir& stateDir,
   QJsonArray jMoleculeSources;
   foreach (MoleculeSource* ms, d->MoleculeSources) {
     auto jMoleculeSource = ms->serialize();
-    if (ms == ActiveObjects::instance().activeMoleculeSource()) {
+    // LEGACY STUB: activeMoleculeSource() removed from ActiveObjects
+    if (false) {
       jMoleculeSource["active"] = true;
     }
 
@@ -1239,7 +1241,8 @@ void ModuleManager::onPVStateLoaded(vtkPVXMLElement*,
         // FIXME: I think we need to collect the active objects and set them at
         // the end, as the act of adding generally implies setting to active.
         if (dsObject["active"].toBool()) {
-          ActiveObjects::instance().setActiveMoleculeSource(moleculeSource);
+          // LEGACY STUB: setActiveMoleculeSource() removed from ActiveObjects
+          // ActiveObjects::instance().setActiveMoleculeSource(moleculeSource);
         }
       }
     }

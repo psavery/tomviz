@@ -12,15 +12,26 @@
 #include <vtkImageData.h>
 #include <vtkPointData.h>
 
+#include <QCheckBox>
+#include <QClipboard>
 #include <QComboBox>
+#include <QDialog>
+#include <QDialogButtonBox>
 #include <QDoubleValidator>
+#include <QFileDialog>
 #include <QFrame>
 #include <QGridLayout>
+#include <QGuiApplication>
 #include <QHeaderView>
+#include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
+#include <QMimeData>
+#include <QPushButton>
 #include <QSignalBlocker>
 #include <QTableView>
+#include <QTableWidget>
 #include <QVBoxLayout>
 
 #include <algorithm>
@@ -225,6 +236,33 @@ VolumePropertiesWidget::VolumePropertiesWidget(QWidget* parent)
 
   mainLayout->addWidget(originWidget);
 
+  // --- Tilt Angles section (initially hidden) ---
+  m_tiltAnglesHeader = createSectionHeader("Tilt Angles", this);
+  mainLayout->addWidget(m_tiltAnglesHeader);
+  m_tiltAnglesTable = new QTableWidget(this);
+  m_tiltAnglesTable->setMaximumHeight(200);
+  m_tiltAnglesTable->installEventFilter(this);
+  mainLayout->addWidget(m_tiltAnglesTable);
+  m_saveTiltAnglesButton = new QPushButton("Save Tilt Angles...", this);
+  mainLayout->addWidget(m_saveTiltAnglesButton);
+  m_tiltAnglesHeader->hide();
+  m_tiltAnglesTable->hide();
+  m_saveTiltAnglesButton->hide();
+
+  // --- Time Series section (initially hidden) ---
+  m_timeSeriesHeader = createSectionHeader("Time Series", this);
+  mainLayout->addWidget(m_timeSeriesHeader);
+  m_timeSeriesGroup = new QWidget(this);
+  auto* tsLayout = new QVBoxLayout(m_timeSeriesGroup);
+  tsLayout->setContentsMargins(0, 0, 0, 0);
+  m_showTimeSeriesLabel = new QCheckBox("Show Time Series Label", this);
+  tsLayout->addWidget(m_showTimeSeriesLabel);
+  m_editTimeSeriesButton = new QPushButton("Edit Time Series...", this);
+  tsLayout->addWidget(m_editTimeSeriesButton);
+  mainLayout->addWidget(m_timeSeriesGroup);
+  m_timeSeriesHeader->hide();
+  m_timeSeriesGroup->hide();
+
   // --- Vertical spacer ---
   mainLayout->addStretch();
 
@@ -250,6 +288,14 @@ VolumePropertiesWidget::VolumePropertiesWidget(QWidget* parent)
     connect(m_originBoxes[i], &QLineEdit::editingFinished, this,
             [this, i]() { onOriginEdited(i); });
   }
+
+  // Tilt angles signals
+  connect(m_saveTiltAnglesButton, &QPushButton::clicked, this,
+          &VolumePropertiesWidget::saveTiltAngles);
+
+  // Time series signals
+  connect(m_editTimeSeriesButton, &QPushButton::clicked, this,
+          &VolumePropertiesWidget::editTimeSeries);
 
   clear();
 }
@@ -369,6 +415,10 @@ void VolumePropertiesWidget::updateData()
         compName ? QString(compName) : QString("Component %1").arg(i));
     }
   }
+
+  // Tilt angles and time series
+  updateTiltAnglesSection();
+  updateTimeSeriesSection();
 }
 
 void VolumePropertiesWidget::gatherAndUpdateArraysInfo()
@@ -473,6 +523,13 @@ void VolumePropertiesWidget::clear()
     m_voxelSizeBoxes[i]->clear();
     m_originBoxes[i]->clear();
   }
+  m_tiltAnglesHeader->hide();
+  m_tiltAnglesTable->clear();
+  m_tiltAnglesTable->setRowCount(0);
+  m_tiltAnglesTable->hide();
+  m_saveTiltAnglesButton->hide();
+  m_timeSeriesHeader->hide();
+  m_timeSeriesGroup->hide();
 }
 
 void VolumePropertiesWidget::onLabelEdited()
@@ -615,6 +672,209 @@ void VolumePropertiesWidget::onScalarsRenamed(const QString& oldName,
 
   updateData();
   emit volumeDataModified();
+}
+
+void VolumePropertiesWidget::updateTiltAnglesSection()
+{
+  auto* vol = volumeData();
+  if (!vol || !vol->hasTiltAngles()) {
+    m_tiltAnglesHeader->hide();
+    m_tiltAnglesTable->hide();
+    m_saveTiltAnglesButton->hide();
+    return;
+  }
+
+  disconnect(m_tiltAnglesTable, &QTableWidget::cellChanged, this,
+             &VolumePropertiesWidget::onTiltAnglesModified);
+
+  m_tiltAnglesHeader->show();
+  m_tiltAnglesTable->show();
+  m_saveTiltAnglesButton->show();
+
+  QVector<double> tiltAngles = vol->tiltAngles();
+  m_tiltAnglesTable->setRowCount(tiltAngles.size());
+  m_tiltAnglesTable->setColumnCount(1);
+  for (int i = 0; i < tiltAngles.size(); ++i) {
+    auto* item = new QTableWidgetItem();
+    item->setData(Qt::DisplayRole, QString::number(tiltAngles[i]));
+    m_tiltAnglesTable->setItem(i, 0, item);
+  }
+  m_tiltAnglesTable->setHorizontalHeaderLabels({ "Tilt Angle" });
+  m_tiltAnglesTable->horizontalHeader()->setStretchLastSection(true);
+
+  connect(m_tiltAnglesTable, &QTableWidget::cellChanged, this,
+          &VolumePropertiesWidget::onTiltAnglesModified);
+}
+
+void VolumePropertiesWidget::onTiltAnglesModified(int row, int column)
+{
+  if (column != 0) {
+    return;
+  }
+  auto* vol = volumeData();
+  if (!vol) {
+    return;
+  }
+  auto* item = m_tiltAnglesTable->item(row, column);
+  bool ok = false;
+  double value = item->data(Qt::DisplayRole).toDouble(&ok);
+  if (ok) {
+    auto angles = vol->tiltAngles();
+    if (row < angles.size()) {
+      angles[row] = value;
+      vol->setTiltAngles(angles);
+      emit volumeDataModified();
+    }
+  }
+}
+
+void VolumePropertiesWidget::saveTiltAngles()
+{
+  auto* vol = volumeData();
+  if (!vol || !vol->hasTiltAngles()) {
+    return;
+  }
+
+  QString fileName = QFileDialog::getSaveFileName(
+    this, "Save Tilt Angles", QString(),
+    "TXT Files (*.txt);;All Files (*)");
+  if (fileName.isEmpty()) {
+    return;
+  }
+  if (!fileName.endsWith(".txt", Qt::CaseInsensitive)) {
+    fileName += ".txt";
+  }
+
+  QFile file(fileName);
+  if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+    QMessageBox::warning(this, "Error",
+      "Could not open file for writing: " + file.errorString());
+    return;
+  }
+
+  QTextStream out(&file);
+  for (double angle : vol->tiltAngles()) {
+    out << angle << "\n";
+  }
+}
+
+bool VolumePropertiesWidget::eventFilter(QObject* obj, QEvent* event)
+{
+  auto* ke = dynamic_cast<QKeyEvent*>(event);
+  if (ke && obj == m_tiltAnglesTable) {
+    if (ke->matches(QKeySequence::Paste) && ke->type() == QEvent::KeyPress) {
+      auto* clipboard = QGuiApplication::clipboard();
+      const auto* mimeData = clipboard->mimeData();
+      if (mimeData->hasText()) {
+        QStringList rows = mimeData->text().split("\n");
+        QStringList angleStrings;
+        for (const QString& row : rows) {
+          QString trimmed = row.trimmed();
+          if (!trimmed.isEmpty()) {
+            angleStrings << trimmed.split("\t")[0];
+          }
+        }
+        // Validate all values are numbers
+        for (const QString& s : angleStrings) {
+          bool ok;
+          s.toDouble(&ok);
+          if (!ok) {
+            QMessageBox::warning(this, "Error",
+              QString("Pasted tilt angle \"%1\" is not a number").arg(s));
+            return true;
+          }
+        }
+        auto ranges = m_tiltAnglesTable->selectedRanges();
+        if (ranges.size() != 1) {
+          QMessageBox::warning(this, "Error",
+            "Pasting is not supported with non-continuous selections");
+          return true;
+        }
+        if (ranges[0].rowCount() > 1 &&
+            ranges[0].rowCount() != angleStrings.size()) {
+          QMessageBox::warning(this, "Error",
+            QString("Cells selected (%1) does not match angles to paste (%2)")
+              .arg(ranges[0].rowCount())
+              .arg(angleStrings.size()));
+          return true;
+        }
+
+        auto* vol = volumeData();
+        if (!vol) {
+          return true;
+        }
+        auto angles = vol->tiltAngles();
+        int startRow = ranges[0].topRow();
+        for (int i = 0;
+             i < angleStrings.size() && i + startRow < angles.size(); ++i) {
+          angles[i + startRow] = angleStrings[i].toDouble();
+        }
+        vol->setTiltAngles(angles);
+        updateTiltAnglesSection();
+        emit volumeDataModified();
+      }
+      return true;
+    }
+  }
+  return QWidget::eventFilter(obj, event);
+}
+
+void VolumePropertiesWidget::updateTimeSeriesSection()
+{
+  auto* vol = volumeData();
+  bool visible = vol && vol->hasTimeSteps();
+
+  m_timeSeriesHeader->setVisible(visible);
+  m_timeSeriesGroup->setVisible(visible);
+}
+
+void VolumePropertiesWidget::editTimeSeries()
+{
+  auto* vol = volumeData();
+  if (!vol || !vol->hasTimeSteps()) {
+    return;
+  }
+
+  auto steps = vol->timeSteps();
+  QStringList labels;
+  for (const auto& step : steps) {
+    labels.append(step.label);
+  }
+
+  // Simple edit dialog for time series labels
+  auto* dlg = new QDialog(this);
+  dlg->setWindowTitle("Edit Time Series Labels");
+  dlg->setAttribute(Qt::WA_DeleteOnClose);
+  auto* layout = new QVBoxLayout(dlg);
+
+  auto* table = new QTableWidget(labels.size(), 1, dlg);
+  table->setHorizontalHeaderLabels({ "Label" });
+  table->horizontalHeader()->setStretchLastSection(true);
+  for (int i = 0; i < labels.size(); ++i) {
+    table->setItem(i, 0, new QTableWidgetItem(labels[i]));
+  }
+  layout->addWidget(table);
+
+  auto* buttons = new QDialogButtonBox(
+    QDialogButtonBox::Ok | QDialogButtonBox::Cancel, dlg);
+  layout->addWidget(buttons);
+  connect(buttons, &QDialogButtonBox::accepted, dlg, &QDialog::accept);
+  connect(buttons, &QDialogButtonBox::rejected, dlg, &QDialog::reject);
+
+  connect(dlg, &QDialog::accepted, this, [this, vol, table, steps]() {
+    auto newSteps = steps;
+    for (int i = 0; i < newSteps.size() && i < table->rowCount(); ++i) {
+      auto* item = table->item(i, 0);
+      if (item) {
+        newSteps[i].label = item->text();
+      }
+    }
+    vol->setTimeSteps(newSteps);
+    emit volumeDataModified();
+  });
+
+  dlg->resize(300, 400);
+  dlg->show();
 }
 
 } // namespace pipeline

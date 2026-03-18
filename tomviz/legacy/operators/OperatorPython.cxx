@@ -18,7 +18,6 @@
 #include "EditOperatorWidget.h"
 #include "ModuleManager.h"
 #include "OperatorResult.h"
-#include "OperatorWidget.h"
 #include "Pipeline.h"
 #include "PythonUtilities.h"
 #include "Utilities.h"
@@ -48,7 +47,7 @@ public:
     QWidget* p, tomviz::OperatorPython* o,
     tomviz::CustomPythonOperatorWidget* customWidget = nullptr)
     : tomviz::EditOperatorWidget(p), m_op(o), m_ui(),
-      m_customWidget(customWidget), m_opWidget(nullptr)
+      m_customWidget(customWidget)
   {
     m_ui.setupUi(this);
     m_ui.name->setText(o->label());
@@ -68,9 +67,6 @@ public:
       m_ui.argumentsWidget->setLayout(layout);
     } else {
       QVBoxLayout* layout = new QVBoxLayout();
-      m_opWidget = new tomviz::OperatorWidget(this);
-      m_opWidget->setupUI(m_op);
-      layout->addWidget(m_opWidget);
       layout->addStretch();
       m_ui.argumentsWidget->setLayout(layout);
     }
@@ -104,9 +100,6 @@ public:
         m_customWidget->getValues(args);
         m_op->setArguments(args);
         m_customWidget->writeSettings();
-      } else if (m_opWidget) {
-        QMap<QString, QVariant> args = m_opWidget->values();
-        m_op->setArguments(args);
       }
     }
   }
@@ -192,7 +185,6 @@ private:
   QPointer<tomviz::OperatorPython> m_op;
   Ui::EditPythonOperatorWidget m_ui;
   tomviz::CustomPythonOperatorWidget* m_customWidget;
-  tomviz::OperatorWidget* m_opWidget;
 };
 
 QMap<QString, QPair<bool, tomviz::OperatorPython::CustomWidgetFunction>>

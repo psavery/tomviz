@@ -5,7 +5,6 @@
 
 #include <QDebug>
 
-#include "ActiveObjects.h"
 #include "ConvertToFloatOperator.h"
 #include "DataSource.h"
 
@@ -18,7 +17,8 @@ ConvertToFloatReaction::ConvertToFloatReaction(QAction* parentObject)
 
 void ConvertToFloatReaction::convertToFloat()
 {
-  DataSource* source = ActiveObjects::instance().activeParentDataSource();
+  // TODO: migrate to new pipeline
+  DataSource* source = nullptr; // was: ActiveObjects::instance().activeParentDataSource()
   if (!source) {
     qDebug() << "Exiting early - no data found.";
     return;
