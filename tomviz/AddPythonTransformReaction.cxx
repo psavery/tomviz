@@ -311,7 +311,7 @@ AddPythonTransformReaction::AddPythonTransformReaction(
 
 void AddPythonTransformReaction::updateEnableState()
 {
-  auto* pip = ActiveObjects::instance().activePipeline();
+  auto* pip = ActiveObjects::instance().pipeline();
   parentAction()->setEnabled(pip != nullptr);
 }
 

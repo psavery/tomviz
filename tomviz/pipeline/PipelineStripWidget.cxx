@@ -105,6 +105,19 @@ Link* PipelineStripWidget::selectedLink() const
   return m_selectedLink;
 }
 
+void PipelineStripWidget::setTipOutputPort(OutputPort* port)
+{
+  if (m_tipOutputPort != port) {
+    m_tipOutputPort = port;
+    update();
+  }
+}
+
+OutputPort* PipelineStripWidget::tipOutputPort() const
+{
+  return m_tipOutputPort;
+}
+
 void PipelineStripWidget::setNodeMenuProvider(NodeMenuProvider provider)
 {
   m_nodeMenuProvider = std::move(provider);
@@ -827,16 +840,22 @@ void PipelineStripWidget::paintOutputDots(QPainter& painter,
   for (int i = 0; i < outputs.size(); ++i) {
     QColor color = portTypeColor(outputs[i]);
     bool isSelected = (m_selectedPort == outputs[i]);
+    bool isTip = (m_tipOutputPort == outputs[i]);
+    QPoint pos = outputDotPos(node, i, item.rect);
     // Output dots are filled; draw larger with highlight ring when selected
     painter.setBrush(color);
     if (isSelected) {
       painter.setPen(QPen(palette().highlight().color(), 2.0));
-      painter.drawEllipse(outputDotPos(node, i, item.rect),
-                          DotRadius + 2, DotRadius + 2);
+      painter.drawEllipse(pos, DotRadius + 2, DotRadius + 2);
     } else {
       painter.setPen(Qt::NoPen);
-      painter.drawEllipse(outputDotPos(node, i, item.rect),
-                          DotRadius, DotRadius);
+      painter.drawEllipse(pos, DotRadius, DotRadius);
+    }
+    // Thin red outline for tip output port (hidden when already selected)
+    if (isTip && !isSelected) {
+      painter.setBrush(Qt::NoBrush);
+      painter.setPen(QPen(Qt::red, 1.5));
+      painter.drawEllipse(pos, DotRadius + 2, DotRadius + 2);
     }
   }
   painter.setBrush(Qt::NoBrush);
@@ -852,6 +871,15 @@ void PipelineStripWidget::paintPortCardDot(QPainter& painter,
   painter.setPen(Qt::NoPen);
   QPoint pos(item.rect.left(), item.rect.center().y());
   painter.drawEllipse(pos, DotRadius, DotRadius);
+  // Thin red outline for tip output port (hidden when port card is selected)
+  bool portCardSelected = (m_selectedIndex >= 0 &&
+                           m_selectedIndex < m_layout.size() &&
+                           m_layout[m_selectedIndex].port == port);
+  if (m_tipOutputPort == port && !portCardSelected) {
+    painter.setBrush(Qt::NoBrush);
+    painter.setPen(QPen(Qt::red, 1.5));
+    painter.drawEllipse(pos, DotRadius + 2, DotRadius + 2);
+  }
   painter.setBrush(Qt::NoBrush);
 }
 

@@ -29,7 +29,6 @@
 #include "pipeline/PortType.h"
 #include "pipeline/PortUtils.h"
 #include "pipeline/SourceNode.h"
-#include "pipeline/ThreadedExecutor.h"
 #include "pipeline/data/VolumeData.h"
 #include "pipeline/sinks/OutlineSink.h"
 #include "pipeline/sinks/VolumeSink.h"
@@ -581,14 +580,9 @@ void LoadDataReaction::sourceNodeAdded(pipeline::SourceNode* source,
   }
 
   auto* mainWindow = qobject_cast<MainWindow*>(QApplication::activeWindow());
-
-  // Reuse existing pipeline or create a new one
-  pipeline::Pipeline* pip = mainWindow ? mainWindow->pipeline() : nullptr;
-  bool isNewPipeline = false;
+  auto* pip = mainWindow ? mainWindow->pipeline() : nullptr;
   if (!pip) {
-    pip = new pipeline::Pipeline(mainWindow);
-    pip->setExecutor(new pipeline::ThreadedExecutor(pip));
-    isNewPipeline = true;
+    return;
   }
 
   pip->addNode(source);
@@ -623,12 +617,6 @@ void LoadDataReaction::sourceNodeAdded(pipeline::SourceNode* source,
     volume->initialize(view);
     pip->addNode(volume);
     pip->createLink(source->outputPorts()[0], volume->inputPorts()[0]);
-  }
-
-  // Set on main window before executing so the executionFinished handler
-  // (which propagates color maps) is connected in time.
-  if (isNewPipeline && mainWindow) {
-    mainWindow->setPipeline(pip);
   }
 
   // Execute the pipeline (renders the data)

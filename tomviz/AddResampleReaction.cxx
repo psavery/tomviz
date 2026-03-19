@@ -43,7 +43,7 @@ AddResampleReaction::AddResampleReaction(QAction* parentObject)
 void AddResampleReaction::updateEnableState()
 {
   parentAction()->setEnabled(
-    ActiveObjects::instance().activePipeline() != nullptr);
+    ActiveObjects::instance().pipeline() != nullptr);
 }
 
 namespace {

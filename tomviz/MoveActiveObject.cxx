@@ -249,7 +249,7 @@ void MoveActiveObject::render()
 
 bool MoveActiveObject::activePipelineIsRunning() const
 {
-  auto* pipeline = ActiveObjects::instance().activePipeline();
+  auto* pipeline = ActiveObjects::instance().pipeline();
   if (!pipeline) {
     return false;
   }

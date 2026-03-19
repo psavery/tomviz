@@ -45,7 +45,6 @@ public:
   ~MainWindow() override;
   void openFiles(int argc, char** argv);
 
-  void setPipeline(pipeline::Pipeline* p);
   pipeline::Pipeline* pipeline() const;
 
 protected:
@@ -99,6 +98,8 @@ private:
   void syncPythonToApp();
   void updateSaveStateEnableState();
   QString mostRecentStateFile() const;
+
+  void initPipeline();
 
   QScopedPointer<Ui::MainWindow> m_ui;
   QMenu* m_customTransformsMenu = nullptr;

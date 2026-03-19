@@ -7,6 +7,7 @@
 #include "pipeline/Node.h"
 #include "pipeline/OutputPort.h"
 #include "pipeline/Pipeline.h"
+#include "pipeline/PipelineUtils.h"
 
 #include <pqActiveObjects.h>
 #include <pqApplicationCore.h>
@@ -113,35 +114,47 @@ pqTimeKeeper* ActiveObjects::activeTimeKeeper() const
   return server ? server->getTimeKeeper() : nullptr;
 }
 
-void ActiveObjects::setActivePipeline(pipeline::Pipeline* p)
+void ActiveObjects::setPipeline(pipeline::Pipeline* p)
 {
-  if (m_activePipeline != p) {
-    if (m_activePipeline) {
-      disconnect(m_activePipeline, nullptr, this, nullptr);
-    }
-    m_activePipeline = p;
-    if (p) {
-      connect(p, &pipeline::Pipeline::nodeRemoved, this,
-              [this](pipeline::Node* node) {
-                if (m_activeNode == node) {
-                  setActiveNode(nullptr);
-                }
-              });
-    }
-    emit activePipelineChanged(p);
-  }
+  Q_ASSERT(!m_pipeline && "Pipeline should only be set once");
+  m_pipeline = p;
+  connect(p, &pipeline::Pipeline::nodeRemoved, this,
+          [this](pipeline::Node* node) {
+            if (m_activeNode == node) {
+              setActiveNode(nullptr);
+            }
+            if (m_activeTipOutputPort &&
+                m_activeTipOutputPort->node() == node) {
+              setActiveTipOutputPort(
+                pipeline::findTipOutputPort(m_pipeline, nullptr));
+            }
+          });
+  emit activePipelineChanged(p);
 }
 
-pipeline::Pipeline* ActiveObjects::activePipeline() const
+pipeline::Pipeline* ActiveObjects::pipeline() const
 {
-  return m_activePipeline;
+  return m_pipeline;
 }
 
 void ActiveObjects::setActiveNode(pipeline::Node* node)
 {
+  auto* prevNode = m_activeNode;
   if (m_activeNode != node) {
     m_activeNode = node;
     emit activeNodeChanged(node);
+  }
+  if (node) {
+    auto outputs = node->outputPorts();
+    if (outputs.isEmpty()) {
+      setActiveTipOutputPort(
+        pipeline::findTipOutputPort(m_pipeline, node));
+    } else {
+      setActiveTipOutputPort(outputs.first());
+    }
+  } else if (prevNode) {
+    setActiveTipOutputPort(
+      pipeline::findTipOutputPort(m_pipeline, prevNode));
   }
 }
 
@@ -156,11 +169,27 @@ void ActiveObjects::setActivePort(pipeline::OutputPort* port)
     m_activePort = port;
     emit activePortChanged(port);
   }
+  if (port) {
+    setActiveTipOutputPort(port);
+  }
 }
 
 pipeline::OutputPort* ActiveObjects::activePort() const
 {
   return m_activePort;
+}
+
+pipeline::OutputPort* ActiveObjects::activeTipOutputPort() const
+{
+  return m_activeTipOutputPort;
+}
+
+void ActiveObjects::setActiveTipOutputPort(pipeline::OutputPort* port)
+{
+  if (m_activeTipOutputPort != port) {
+    m_activeTipOutputPort = port;
+    emit activeTipOutputPortChanged(port);
+  }
 }
 
 } // end of namespace tomviz

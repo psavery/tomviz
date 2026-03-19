@@ -71,7 +71,8 @@ private:
     auto* pipeline = new Pipeline(ds);
     PipelineManager::instance().addPipeline(pipeline);
     ModuleManager::instance().addDataSource(ds);
-    ActiveObjects::instance().setActiveDataSource(ds);
+    // LEGACY STUB: setActiveDataSource() removed from ActiveObjects
+    // ActiveObjects::instance().setActiveDataSource(ds);
     return ds;
   }
 

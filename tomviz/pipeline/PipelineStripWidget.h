@@ -70,6 +70,9 @@ public:
   OutputPort* selectedPort() const;
   Link* selectedLink() const;
 
+  void setTipOutputPort(OutputPort* port);
+  OutputPort* tipOutputPort() const;
+
   bool isExpanded(Node* node) const;
   void setExpanded(Node* node, bool expanded);
 
@@ -162,6 +165,7 @@ private:
   QList<LinkGeometry> m_linkGeometries;
   int m_selectedIndex = -1;
   OutputPort* m_selectedPort = nullptr; // selected output dot (collapsed nodes)
+  OutputPort* m_tipOutputPort = nullptr;
   Link* m_selectedLink = nullptr;
   Link* m_hoveredLink = nullptr;
   QSet<Node*> m_expandedNodes;

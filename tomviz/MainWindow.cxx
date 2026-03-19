@@ -43,6 +43,7 @@
 #include "PipelineModuleMenu.h"
 #include "pipeline/Pipeline.h"
 #include "pipeline/PipelineExecutor.h"
+#include "pipeline/ThreadedExecutor.h"
 #include "pipeline/PipelineStripWidget.h"
 #include "pipeline/Node.h"
 #include "pipeline/TransformNode.h"
@@ -268,6 +269,15 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
         }
       });
     });
+
+  // Sync tip output port from ActiveObjects to the strip widget
+  connect(&ActiveObjects::instance(),
+          &ActiveObjects::activeTipOutputPortChanged,
+          m_pipelineStrip,
+          &pipeline::PipelineStripWidget::setTipOutputPort);
+
+  // Create the single application pipeline
+  initPipeline();
 
   // connect quit.
   connect(m_ui->actionExit, &QAction::triggered, this, &MainWindow::close);
@@ -1195,11 +1205,13 @@ void MainWindow::findPipelineTemplates() {
   connect(actionSaveTemplate, &QAction::triggered, this, &MainWindow::findPipelineTemplates);
 }
 
-void MainWindow::setPipeline(pipeline::Pipeline* p)
+void MainWindow::initPipeline()
 {
+  auto* p = new pipeline::Pipeline(this);
+  p->setExecutor(new pipeline::ThreadedExecutor(p));
   m_pipeline = p;
   m_pipelineStrip->setPipeline(p);
-  ActiveObjects::instance().setActivePipeline(p);
+  ActiveObjects::instance().setPipeline(p);
 
   // Wire renderNeeded() → pqView::render() for all sink nodes.
   // pqView::render() coalesces multiple calls via an internal timer
@@ -1215,10 +1227,11 @@ void MainWindow::setPipeline(pipeline::Pipeline* p)
       }
     }
   };
-  for (auto* node : p->nodes()) {
-    connectSinkRender(node);
-  }
   connect(p, &pipeline::Pipeline::nodeAdded, this, connectSinkRender);
+
+  // Select newly added nodes so the tip output port updates
+  connect(p, &pipeline::Pipeline::nodeAdded, this,
+          &MainWindow::onNodeSelected);
 
   // Color map propagation after pipeline execution completes.
   // SM proxy creation is NOT safe while the ThreadedExecutor's worker thread
@@ -1402,7 +1415,6 @@ void MainWindow::onNodeSelected(pipeline::Node* node)
 void MainWindow::onPortSelected(pipeline::OutputPort* port)
 {
   ActiveObjects::instance().setActivePort(port);
-  ActiveObjects::instance().setActiveNode(port ? port->node() : nullptr);
 
   // Clear previous dynamic widget
   if (m_dynamicPropertiesWidget) {

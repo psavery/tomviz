@@ -48,13 +48,16 @@ public:
   /// Returns the active time keeper
   pqTimeKeeper* activeTimeKeeper() const;
 
-  /// Pipeline tracking
-  void setActivePipeline(pipeline::Pipeline* p);
-  pipeline::Pipeline* activePipeline() const;
+  /// Pipeline (single, set once at startup)
+  void setPipeline(pipeline::Pipeline* p);
+  pipeline::Pipeline* pipeline() const;
+
+  /// Active selection tracking
   void setActiveNode(pipeline::Node* node);
   pipeline::Node* activeNode() const;
   void setActivePort(pipeline::OutputPort* port);
   pipeline::OutputPort* activePort() const;
+  pipeline::OutputPort* activeTipOutputPort() const;
 
 public slots:
   /// Set the active view;
@@ -115,6 +118,9 @@ signals:
   /// Fired whenever the active output port changes.
   void activePortChanged(pipeline::OutputPort*);
 
+  /// Fired whenever the active tip output port changes.
+  void activeTipOutputPortChanged(pipeline::OutputPort*);
+
 private slots:
   void viewChanged(pqView*);
 
@@ -122,10 +128,10 @@ protected:
   ActiveObjects();
   ~ActiveObjects() override;
 
-  /// Pipeline tracking
-  pipeline::Pipeline* m_activePipeline = nullptr;
+  pipeline::Pipeline* m_pipeline = nullptr;
   pipeline::Node* m_activeNode = nullptr;
   pipeline::OutputPort* m_activePort = nullptr;
+  pipeline::OutputPort* m_activeTipOutputPort = nullptr;
 
   /// interaction states
   bool m_translationEnabled = false;
@@ -137,6 +143,7 @@ protected:
   bool m_showTimeSeriesLabel = true;
 
 private:
+  void setActiveTipOutputPort(pipeline::OutputPort* port);
   Q_DISABLE_COPY(ActiveObjects)
 };
 
