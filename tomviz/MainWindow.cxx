@@ -445,105 +445,101 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
 
   new AddPythonTransformReaction(
     generateTiltSeriesAction, "Generate Tilt Series",
-    readInPythonScript("GenerateTiltSeries"), false, true, false,
+    readInPythonScript("GenerateTiltSeries"),
     readInJSONDescription("GenerateTiltSeries"));
 
   new AddAlignReaction(alignAction);
   new AddPythonTransformReaction(downsampleByTwoAction, "Bin Tilt Image x2",
-                                 readInPythonScript("BinTiltSeriesByTwo"),
-                                 false, false, false);
+                                 readInPythonScript("BinTiltSeriesByTwo"));
   new AddPythonTransformReaction(
     removeBadPixelsAction, "Remove Bad Pixels",
-    readInPythonScript("RemoveBadPixelsTiltSeries"), false, false, false);
+    readInPythonScript("RemoveBadPixelsTiltSeries"));
   new AddPythonTransformReaction(
     gaussianFilterAction, "Gaussian Filter Tilt Series",
-    readInPythonScript("GaussianFilterTiltSeries"), false, false, false,
+    readInPythonScript("GaussianFilterTiltSeries"),
     readInJSONDescription("GaussianFilterTiltSeries"));
   new AddPythonTransformReaction(
     autoSubtractBackgroundAction, "Background Subtraction (Auto)",
-    readInPythonScript("Subtract_TiltSer_Background_Auto"), false, false,
-    false);
+    readInPythonScript("Subtract_TiltSer_Background_Auto"));
   new AddPythonTransformReaction(
     subtractBackgroundAction, "Background Subtraction (Manual)",
-    readInPythonScript("Subtract_TiltSer_Background"), false, false, false);
+    readInPythonScript("Subtract_TiltSer_Background"));
   new AddPythonTransformReaction(normalizationAction, "Normalize Tilt Series",
-                                 readInPythonScript("NormalizeTiltSeries"),
-                                 false, false, false);
+                                 readInPythonScript("NormalizeTiltSeries"));
   new AddPythonTransformReaction(
     gradientMagnitude2DSobelAction, "Gradient Magnitude 2D",
-    readInPythonScript("GradientMagnitude2D_Sobel"), false, false, false);
+    readInPythonScript("GradientMagnitude2D_Sobel"));
   new AddPythonTransformReaction(ctfCorrectAction, "CTF Correction",
-                                 readInPythonScript("ctf_correct"), true, false,
-                                 false, readInJSONDescription("ctf_correct"));
+                                 readInPythonScript("ctf_correct"),
+                                 readInJSONDescription("ctf_correct"));
   new AddPythonTransformReaction(
     rotateAlignAction, "Tilt Axis Alignment (manual)",
-    readInPythonScript("RotationAlign"), true, false, false,
+    readInPythonScript("RotationAlign"),
     readInJSONDescription("RotationAlign"));
   new AddPythonTransformReaction(
     autoRotateAlignAction, "Auto Tilt Axis Align",
-    readInPythonScript("AutoTiltAxisRotationAlignment"), true, false, false,
+    readInPythonScript("AutoTiltAxisRotationAlignment"),
     readInJSONDescription("AutoTiltAxisRotationAlignment"));
   new AddPythonTransformReaction(
     autoRotateAlignShiftAction, "Auto Tilt Axis Shift Align",
-    readInPythonScript("AutoTiltAxisShiftAlignment"), true, false, false,
+    readInPythonScript("AutoTiltAxisShiftAlignment"),
     readInJSONDescription("AutoTiltAxisShiftAlignment"));
 
   new AddPythonTransformReaction(
     autoAlignCCAction, "Auto Tilt Image Align (XCORR)",
-    readInPythonScript("AutoCrossCorrelationTiltImageAlignment"), false, false,
-    false, readInJSONDescription("AutoCrossCorrelationTiltImageAlignment"));
+    readInPythonScript("AutoCrossCorrelationTiltImageAlignment"),
+    readInJSONDescription("AutoCrossCorrelationTiltImageAlignment"));
   new AddPythonTransformReaction(
     autoAlignCOMAction, "Auto Tilt Image Align (CoM)",
-    readInPythonScript("AutoCenterOfMassTiltImageAlignment"), false, false,
-    false, readInJSONDescription("AutoCenterOfMassTiltImageAlignment"));
+    readInPythonScript("AutoCenterOfMassTiltImageAlignment"),
+    readInJSONDescription("AutoCenterOfMassTiltImageAlignment"));
   new AddPythonTransformReaction(
     autoAlignPyStackRegAction, "Auto Tilt Image Align (PyStackReg)",
-    readInPythonScript("PyStackRegImageAlignment"), false, false,
-    false, readInJSONDescription("PyStackRegImageAlignment"));
+    readInPythonScript("PyStackRegImageAlignment"),
+    readInJSONDescription("PyStackRegImageAlignment"));
   new AddPythonTransformReaction(
     shiftRotationCenterAction, "Shift Rotation Center",
-    readInPythonScript("ShiftRotationCenter_tomopy"), true, false, false,
+    readInPythonScript("ShiftRotationCenter_tomopy"),
     readInJSONDescription("ShiftRotationCenter_tomopy"));
 
   new AddPythonTransformReaction(reconDFMAction, "Reconstruct (Direct Fourier)",
-                                 readInPythonScript("Recon_DFT"), true, false,
-                                 false, readInJSONDescription("Recon_DFT"));
+                                 readInPythonScript("Recon_DFT"),
+                                 readInJSONDescription("Recon_DFT"));
   new AddPythonTransformReaction(reconWBPAction,
                                  "Reconstruct (Back Projection)",
-                                 readInPythonScript("Recon_WBP"), true, false,
-                                 false, readInJSONDescription("Recon_WBP"));
+                                 readInPythonScript("Recon_WBP"),
+                                 readInJSONDescription("Recon_WBP"));
   new AddPythonTransformReaction(reconARTAction, "Reconstruct (ART)",
-                                 readInPythonScript("Recon_ART"), true, false,
-                                 false, readInJSONDescription("Recon_ART"));
+                                 readInPythonScript("Recon_ART"),
+                                 readInJSONDescription("Recon_ART"));
   new AddPythonTransformReaction(reconSIRTAction, "Reconstruct (SIRT)",
-                                 readInPythonScript("Recon_SIRT"), true, false,
-                                 false, readInJSONDescription("Recon_SIRT"));
+                                 readInPythonScript("Recon_SIRT"),
+                                 readInJSONDescription("Recon_SIRT"));
   new AddPythonTransformReaction(
     reconDFMConstraintAction, "Reconstruct (Constraint-based Direct Fourier)",
-    readInPythonScript("Recon_DFT_constraint"), true, false, false,
+    readInPythonScript("Recon_DFT_constraint"),
     readInJSONDescription("Recon_DFT_constraint"));
   new AddPythonTransformReaction(
     reconTVMinimizationAction, "Reconstruct (TV Minimization)",
-    readInPythonScript("Recon_TV_minimization"), true, false, false,
+    readInPythonScript("Recon_TV_minimization"),
     readInJSONDescription("Recon_TV_minimization"));
   new AddPythonTransformReaction(
     reconTomoPyGridRecAction, "Reconstruct (TomoPy)",
-    readInPythonScript("Recon_tomopy"), true, false, false,
+    readInPythonScript("Recon_tomopy"),
     readInJSONDescription("Recon_tomopy"));
 
   new ReconstructionReaction(reconWBP_CAction);
 
   new AddPythonTransformReaction(
     randomShiftsAction, "Shift Tilt Series Randomly",
-    readInPythonScript("ShiftTiltSeriesRandomly"), true, false, false,
+    readInPythonScript("ShiftTiltSeriesRandomly"),
     readInJSONDescription("ShiftTiltSeriesRandomly"));
   new AddPythonTransformReaction(
     reconRealTimeAction, "Initialize Real-Time Tomography",
-    readInPythonScript("Recon_real_time_tomography"), true, false, false,
+    readInPythonScript("Recon_real_time_tomography"),
     readInJSONDescription("Recon_real_time_tomography"));
   new AddPythonTransformReaction(addPoissonNoiseAction, "Add Poisson Noise",
-                                 readInPythonScript("AddPoissonNoise"), true,
-                                 false, false,
+                                 readInPythonScript("AddPoissonNoise"),
                                  readInJSONDescription("AddPoissonNoise"));
 
   //#################################################################
@@ -1108,8 +1104,7 @@ void MainWindow::registerCustomOperators(
           qCritical() << QString("Unable to read '%1'.").arg(op.jsonPath);
         }
       }
-      new AddPythonTransformReaction(action, op.label, source, false, false,
-                                     false, json);
+      new AddPythonTransformReaction(action, op.label, source, json);
     }
   }
   m_customTransformsMenu->setEnabled(true);

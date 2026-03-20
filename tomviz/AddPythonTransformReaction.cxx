@@ -18,6 +18,8 @@
 #include "pipeline/transforms/LegacyPythonTransform.h"
 
 #include <QApplication>
+#include <QEvent>
+#include <QKeyEvent>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -195,41 +197,84 @@ static bool insertTransformIntoPipeline(
   return true;
 }
 
+static pipeline::PortType portTypeFromString(const QString& str)
+{
+  if (str == "TiltSeries")
+    return pipeline::PortType::TiltSeries;
+  if (str == "Volume")
+    return pipeline::PortType::Volume;
+  if (str == "ImageData")
+    return pipeline::PortType::ImageData;
+  return pipeline::PortType::None;
+}
+
 AddPythonTransformReaction::AddPythonTransformReaction(
-  QAction* parentObject, const QString& l, const QString& s, bool rts, bool rv,
-  bool rf, const QString& json)
+  QAction* parentObject, const QString& l, const QString& s,
+  const QString& json)
   : pqReaction(parentObject), jsonSource(json), scriptLabel(l), scriptSource(s),
-    interactive(false), requiresTiltSeries(rts), requiresVolume(rv),
-    requiresFib(rf)
+    interactive(false)
 {
   connect(&ActiveObjects::instance(),
           &ActiveObjects::activePipelineChanged,
           this, &AddPythonTransformReaction::updateEnableState);
+  connect(&ActiveObjects::instance(),
+          &ActiveObjects::activeTipOutputPortChanged,
+          this, &AddPythonTransformReaction::updateEnableState);
 
-  // If we have JSON, check whether the operator is compatible with being run
-  // in an external pipeline.
+  // Parse JSON to extract inputType and externalCompatible.
   if (!json.isEmpty()) {
     auto document = QJsonDocument::fromJson(json.toLatin1());
     if (!document.isObject()) {
       qCritical() << "Failed to parse operator JSON";
       qCritical() << json;
       return;
-    } else {
-      QJsonObject root = document.object();
-      QJsonValueRef externalNode = root["externalCompatible"];
-      if (!externalNode.isUndefined() && !externalNode.isNull()) {
-        this->externalCompatible = externalNode.toBool();
+    }
+    QJsonObject root = document.object();
+    QJsonValueRef externalNode = root["externalCompatible"];
+    if (!externalNode.isUndefined() && !externalNode.isNull()) {
+      this->externalCompatible = externalNode.toBool();
+    }
+    if (root.contains("inputType")) {
+      auto pt = portTypeFromString(root.value("inputType").toString());
+      if (pt != pipeline::PortType::None) {
+        m_acceptedInputTypes = pt;
       }
     }
   }
 
+  qApp->installEventFilter(this);
   updateEnableState();
+}
+
+bool AddPythonTransformReaction::eventFilter(QObject* obj, QEvent* event)
+{
+  if (event->type() == QEvent::KeyPress ||
+      event->type() == QEvent::KeyRelease) {
+    auto* ke = static_cast<QKeyEvent*>(event);
+    if (ke->key() == Qt::Key_Control) {
+      m_ctrlHeld = (event->type() == QEvent::KeyPress);
+      updateEnableState();
+    }
+  }
+  return pqReaction::eventFilter(obj, event);
 }
 
 void AddPythonTransformReaction::updateEnableState()
 {
-  auto* pip = ActiveObjects::instance().pipeline();
-  parentAction()->setEnabled(pip != nullptr);
+  // Ctrl held: user wants to add an unconnected node, so always enable.
+  if (m_ctrlHeld) {
+    parentAction()->setEnabled(true);
+    return;
+  }
+
+  auto& ao = ActiveObjects::instance();
+  auto* tipPort = ao.activeTipOutputPort();
+  if (!tipPort) {
+    parentAction()->setEnabled(false);
+    return;
+  }
+  parentAction()->setEnabled(
+    pipeline::isPortTypeCompatible(tipPort->type(), m_acceptedInputTypes));
 }
 
 OperatorPython* AddPythonTransformReaction::addExpression(DataSource*)

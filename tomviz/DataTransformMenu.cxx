@@ -98,7 +98,7 @@ void DataTransformMenu::buildTransforms()
   new TransposeDataReaction(transposeDataAction, mainWindow);
   new AddPythonTransformReaction(
     removeArraysAction, "Remove Arrays",
-    readInPythonScript("RemoveArrays"), false, false, false,
+    readInPythonScript("RemoveArrays"),
     readInJSONDescription("RemoveArrays"));
   new AddPythonTransformReaction(
     reinterpretSignedToUnignedAction, "Reinterpret Signed to Unsigned",
@@ -106,49 +106,47 @@ void DataTransformMenu::buildTransforms()
 
   new AddPythonTransformReaction(
     manualManipulationAction, "Manual Manipulation",
-    readInPythonScript("ManualManipulation"), false, false, false,
+    readInPythonScript("ManualManipulation"),
     readInJSONDescription("ManualManipulation"));
   new AddPythonTransformReaction(
     shiftUniformAction, "Shift Volume",
-    readInPythonScript("Shift_Stack_Uniformly"), false, false, false,
+    readInPythonScript("Shift_Stack_Uniformly"),
     readInJSONDescription("Shift_Stack_Uniformly"));
   new AddPythonTransformReaction(deleteSliceAction, "Delete Slices",
                                  readInPythonScript("DeleteSlices"),
-                                 false, false, false,
                                  readInJSONDescription("DeleteSlices"));
   new AddPythonTransformReaction(padVolumeAction, "Pad Volume",
-                                 readInPythonScript("Pad_Data"), false, false,
-                                 false, readInJSONDescription("Pad_Data"));
+                                 readInPythonScript("Pad_Data"),
+                                 readInJSONDescription("Pad_Data"));
   new AddPythonTransformReaction(downsampleByTwoAction, "Bin Volume x2",
                                  readInPythonScript("BinVolumeByTwo"));
   new AddPythonTransformReaction(resampleAction, "Resample",
-                                 readInPythonScript("Resample"), false, false,
-                                 false, readInJSONDescription("Resample"));
+                                 readInPythonScript("Resample"),
+                                 readInJSONDescription("Resample"));
   new AddPythonTransformReaction(rotateAction, "Rotate",
-                                 readInPythonScript("Rotate3D"), false, false,
-                                 false, readInJSONDescription("Rotate3D"));
+                                 readInPythonScript("Rotate3D"),
+                                 readInJSONDescription("Rotate3D"));
   new AddPythonTransformReaction(clearAction, "Clear Volume",
                                  readInPythonScript("ClearVolume"));
   new AddPythonTransformReaction(swapAction, "Swap Axes",
-                                 readInPythonScript("SwapAxes"), false, false,
-                                 false, readInJSONDescription("SwapAxes"));
+                                 readInPythonScript("SwapAxes"),
+                                 readInJSONDescription("SwapAxes"));
   new AddPythonTransformReaction(registrationAction, "Registration",
                                  readInPythonScript("ElastixRegistration"),
-                                 false, false, false,
                                  readInJSONDescription("ElastixRegistration"));
   new AddPythonTransformReaction(setNegativeVoxelsToZeroAction,
                                  "Set Negative Voxels to Zero",
                                  readInPythonScript("SetNegativeVoxelsToZero"));
   new AddPythonTransformReaction(
     addConstantAction, "Add a Constant", readInPythonScript("AddConstant"),
-    false, false, false, readInJSONDescription("AddConstant"));
+    readInJSONDescription("AddConstant"));
   new AddPythonTransformReaction(invertDataAction, "Invert Data",
                                  readInPythonScript("InvertData"));
   new AddPythonTransformReaction(squareRootAction, "Square Root Data",
                                  readInPythonScript("Square_Root_Data"));
   new AddPythonTransformReaction(cropEdgesAction, "Clip Edges",
-                                 readInPythonScript("ClipEdges"), false, true,
-                                 false, readInJSONDescription("ClipEdges"));
+                                 readInPythonScript("ClipEdges"),
+                                 readInJSONDescription("ClipEdges"));
   new AddPythonTransformReaction(hannWindowAction, "Hann Window",
                                  readInPythonScript("HannWindow3D"));
   new AddPythonTransformReaction(fftAbsLogAction, "FFT (ABS LOG)",
@@ -157,65 +155,62 @@ void DataTransformMenu::buildTransforms()
                                  "Gradient Magnitude",
                                  readInPythonScript("GradientMagnitude_Sobel"));
   new AddPythonTransformReaction(
-    unsharpMaskAction, "Unsharp Mask", readInPythonScript("UnsharpMask"), false,
-    false, false, readInJSONDescription("UnsharpMask"));
+    unsharpMaskAction, "Unsharp Mask", readInPythonScript("UnsharpMask"),
+    readInJSONDescription("UnsharpMask"));
   new AddPythonTransformReaction(laplaceFilterAction, "Laplace Sharpen",
                                  readInPythonScript("LaplaceFilter"));
   new AddPythonTransformReaction(
-    wienerAction, "Wiener Filter", readInPythonScript("WienerFilter"), false,
-    false, false, readInJSONDescription("WienerFilter"));
+    wienerAction, "Wiener Filter", readInPythonScript("WienerFilter"),
+    readInJSONDescription("WienerFilter"));
   new AddPythonTransformReaction(TVminAction, "TV_Filter",
-                                 readInPythonScript("TV_Filter"), false, false,
-                                 false, readInJSONDescription("TV_Filter"));
+                                 readInPythonScript("TV_Filter"),
+                                 readInJSONDescription("TV_Filter"));
   new AddPythonTransformReaction(
     gaussianFilterAction, "Gaussian Blur", readInPythonScript("GaussianFilter"),
-    false, false, false, readInJSONDescription("GaussianFilter"));
+    readInJSONDescription("GaussianFilter"));
   new AddPythonTransformReaction(
     peronaMalikeAnisotropicDiffusionAction,
     "Perona-Malik Anisotropic Diffusion",
-    readInPythonScript("PeronaMalikAnisotropicDiffusion"), false, false, false,
+    readInPythonScript("PeronaMalikAnisotropicDiffusion"),
     readInJSONDescription("PeronaMalikAnisotropicDiffusion"));
   new AddPythonTransformReaction(
     medianFilterAction, "Median Filter", readInPythonScript("MedianFilter"),
-    false, false, false, readInJSONDescription("MedianFilter"));
+    readInJSONDescription("MedianFilter"));
   new AddPythonTransformReaction(circleMaskAction, "Circle Mask",
-                                 readInPythonScript("CircleMask"), false, false,
-                                 false, readInJSONDescription("CircleMask"));
+                                 readInPythonScript("CircleMask"),
+                                 readInJSONDescription("CircleMask"));
   new AddPythonTransformReaction(
-    moleculeAction, "Add Molecule", readInPythonScript("DummyMolecule"), false,
-    false, false, readInJSONDescription("DummyMolecule"));
+    moleculeAction, "Add Molecule", readInPythonScript("DummyMolecule"),
+    readInJSONDescription("DummyMolecule"));
 
   new AddPythonTransformReaction(
-    tortuosityAction, "Tortuosity", readInPythonScript("Tortuosity"), false,
-    false, false, readInJSONDescription("Tortuosity"));
+    tortuosityAction, "Tortuosity", readInPythonScript("Tortuosity"),
+    readInJSONDescription("Tortuosity"));
   new AddPythonTransformReaction(
     poreSizeAction, "Pore Size Distribution",
-    readInPythonScript("PoreSizeDistribution"), false, false, false,
+    readInPythonScript("PoreSizeDistribution"),
     readInJSONDescription("PoreSizeDistribution"));
 
   new AddPythonTransformReaction(
     psdAction, "Power Spectrum Density",
-    readInPythonScript("PowerSpectrumDensity"), false, false, false,
+    readInPythonScript("PowerSpectrumDensity"),
     readInJSONDescription("PowerSpectrumDensity"));
   new AddPythonTransformReaction(
     fscAction, "Fourier Shell Correlation",
-    readInPythonScript("FourierShellCorrelation"), false, false, false,
+    readInPythonScript("FourierShellCorrelation"),
     readInJSONDescription("FourierShellCorrelation"));
   new AddPythonTransformReaction(
     deconvolutionDenoiseAction, "Deconvolution Denoise",
-    readInPythonScript("DeconvolutionDenoise"), true, false, false,
+    readInPythonScript("DeconvolutionDenoise"),
     readInJSONDescription("DeconvolutionDenoise"));
   new AddPythonTransformReaction(
     similarityMetricsAction, "Similarity Metrics",
-    readInPythonScript("SimilarityMetrics"), false, false, false,
+    readInPythonScript("SimilarityMetrics"),
     readInJSONDescription("SimilarityMetrics"));
 
   new CloneDataReaction(cloneAction);
   new DeleteDataReaction(deleteDataAction);
 
-  // TODO - enable/disable menu actions depending on whether the selected
-  // DataSource has
-  // the properties required by the Data Transform
 }
 
 void DataTransformMenu::buildSegmentation()
@@ -247,54 +242,52 @@ void DataTransformMenu::buildSegmentation()
 
   new AddExpressionReaction(customPythonITKAction);
   new AddPythonTransformReaction(binaryThresholdAction, "Binary Threshold",
-                                 readInPythonScript("BinaryThreshold"), false,
-                                 false, false,
+                                 readInPythonScript("BinaryThreshold"),
                                  readInJSONDescription("BinaryThreshold"));
   new AddPythonTransformReaction(
     otsuMultipleThresholdAction, "Otsu Multiple Threshold",
-    readInPythonScript("OtsuMultipleThreshold"), false, false, false,
+    readInPythonScript("OtsuMultipleThreshold"),
     readInJSONDescription("OtsuMultipleThreshold"));
   new AddPythonTransformReaction(
     connectedComponentsAction, "Connected Components",
-    readInPythonScript("ConnectedComponents"), false, false, false,
+    readInPythonScript("ConnectedComponents"),
     readInJSONDescription("ConnectedComponents"));
   new AddPythonTransformReaction(
     binaryDilateAction, "Binary Dilate", readInPythonScript("BinaryDilate"),
-    false, false, false, readInJSONDescription("BinaryDilate"));
+    readInJSONDescription("BinaryDilate"));
   new AddPythonTransformReaction(
-    binaryErodeAction, "Binary Erode", readInPythonScript("BinaryErode"), false,
-    false, false, readInJSONDescription("BinaryErode"));
+    binaryErodeAction, "Binary Erode", readInPythonScript("BinaryErode"),
+    readInJSONDescription("BinaryErode"));
   new AddPythonTransformReaction(binaryOpenAction, "Binary Open",
-                                 readInPythonScript("BinaryOpen"), false, false,
-                                 false, readInJSONDescription("BinaryOpen"));
+                                 readInPythonScript("BinaryOpen"),
+                                 readInJSONDescription("BinaryOpen"));
   new AddPythonTransformReaction(
-    binaryCloseAction, "Binary Close", readInPythonScript("BinaryClose"), false,
-    false, false, readInJSONDescription("BinaryClose"));
+    binaryCloseAction, "Binary Close", readInPythonScript("BinaryClose"),
+    readInJSONDescription("BinaryClose"));
   new AddPythonTransformReaction(
     binaryMinMaxCurvatureFlowAction, "Binary MinMax Curvature Flow",
-    readInPythonScript("BinaryMinMaxCurvatureFlow"), false, false, false,
+    readInPythonScript("BinaryMinMaxCurvatureFlow"),
     readInJSONDescription("BinaryMinMaxCurvatureFlow"));
 
   new AddPythonTransformReaction(
     labelObjectAttributesAction, "Label Object Attributes",
-    readInPythonScript("LabelObjectAttributes"), false, false, false,
+    readInPythonScript("LabelObjectAttributes"),
     readInJSONDescription("LabelObjectAttributes"));
   new AddPythonTransformReaction(
     labelObjectPrincipalAxesAction, "Label Object Principal Axes",
-    readInPythonScript("LabelObjectPrincipalAxes"), false, false, false,
+    readInPythonScript("LabelObjectPrincipalAxes"),
     readInJSONDescription("LabelObjectPrincipalAxes"));
   new AddPythonTransformReaction(
     distanceFromAxisAction, "Label Object Distance From Principal Axis",
-    readInPythonScript("LabelObjectDistanceFromPrincipalAxis"), false, false,
-    false, readInJSONDescription("LabelObjectDistanceFromPrincipalAxis"));
+    readInPythonScript("LabelObjectDistanceFromPrincipalAxis"),
+    readInJSONDescription("LabelObjectDistanceFromPrincipalAxis"));
 
   new AddPythonTransformReaction(segmentParticlesAction, "Segment Particles",
-                                 readInPythonScript("SegmentParticles"), false,
-                                 false, false,
+                                 readInPythonScript("SegmentParticles"),
                                  readInJSONDescription("SegmentParticles"));
   new AddPythonTransformReaction(
     segmentPoresAction, "Segment Pores", readInPythonScript("SegmentPores"),
-    false, false, false, readInJSONDescription("SegmentPores"));
+    readInJSONDescription("SegmentPores"));
 }
 
 void DataTransformMenu::updateActions() {}

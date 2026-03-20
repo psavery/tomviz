@@ -6,9 +6,15 @@
 
 #include <pqReaction.h>
 
+#include "pipeline/PortType.h"
+
 namespace tomviz {
 class DataSource;
 class OperatorPython;
+
+namespace pipeline {
+class OutputPort;
+}
 
 class AddPythonTransformReaction : public pqReaction
 {
@@ -17,9 +23,6 @@ class AddPythonTransformReaction : public pqReaction
 public:
   AddPythonTransformReaction(QAction* parent, const QString& label,
                              const QString& source,
-                             bool requiresTiltSeries = false,
-                             bool requiresVolume = false,
-                             bool requiresFib = false,
                              const QString& json = QString());
 
   OperatorPython* addExpression(DataSource* source = nullptr);
@@ -52,6 +55,7 @@ public:
 
 protected:
   void updateEnableState() override;
+  bool eventFilter(QObject* obj, QEvent* event) override;
 
   void onTriggered() override { addExpression(); }
 
@@ -66,9 +70,8 @@ private:
   QString scriptSource;
 
   bool interactive;
-  bool requiresTiltSeries;
-  bool requiresVolume;
-  bool requiresFib;
+  bool m_ctrlHeld = false;
+  pipeline::PortTypes m_acceptedInputTypes = pipeline::PortType::ImageData;
   bool externalCompatible = true;
 };
 } // namespace tomviz

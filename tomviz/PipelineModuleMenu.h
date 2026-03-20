@@ -7,6 +7,8 @@
 #include <QObject>
 #include <QPointer>
 
+#include "pipeline/PortType.h"
+
 class QAction;
 class QMenu;
 class QToolBar;
@@ -17,6 +19,7 @@ namespace pipeline {
 class Pipeline;
 class SinkNode;
 class LegacyModuleSink;
+class OutputPort;
 } // namespace pipeline
 
 /// PipelineModuleMenu manages the Visualization menu and toolbar for the
@@ -32,16 +35,22 @@ public:
 
   static QList<QString> sinkTypes();
   static QIcon sinkIcon(const QString& type);
+  static pipeline::PortTypes sinkAcceptedTypes(const QString& type);
   static pipeline::LegacyModuleSink* createSink(const QString& type);
+
+protected:
+  bool eventFilter(QObject* obj, QEvent* event) override;
 
 private slots:
   void updateActions();
+  void updateEnableState();
   void triggered(QAction* action);
 
 private:
   Q_DISABLE_COPY(PipelineModuleMenu)
   QPointer<QMenu> m_menu;
   QPointer<QToolBar> m_toolBar;
+  bool m_ctrlHeld = false;
 };
 
 } // namespace tomviz

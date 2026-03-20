@@ -33,8 +33,10 @@
 #include <vtkSMViewProxy.h>
 
 #include <QApplication>
+#include <QEvent>
 #include <QIcon>
 #include <QInputDialog>
+#include <QKeyEvent>
 #include <QMenu>
 #include <QMessageBox>
 #include <QToolBar>
@@ -104,6 +106,13 @@ PipelineModuleMenu::PipelineModuleMenu(QToolBar* toolBar, QMenu* menu,
   Q_ASSERT(menu);
   Q_ASSERT(toolBar);
   connect(menu, &QMenu::triggered, this, &PipelineModuleMenu::triggered);
+  connect(&ActiveObjects::instance(),
+          &ActiveObjects::activeTipOutputPortChanged,
+          this, &PipelineModuleMenu::updateEnableState);
+  connect(&ActiveObjects::instance(),
+          &ActiveObjects::activePipelineChanged,
+          this, &PipelineModuleMenu::updateEnableState);
+  qApp->installEventFilter(this);
   updateActions();
 }
 
@@ -133,6 +142,49 @@ QIcon PipelineModuleMenu::sinkIcon(const QString& type)
   };
   auto it = iconMap.find(type);
   return (it != iconMap.end()) ? QIcon(it.value()) : QIcon();
+}
+
+pipeline::PortTypes PipelineModuleMenu::sinkAcceptedTypes(const QString& type)
+{
+  if (type == "Plot")
+    return pipeline::PortType::Table;
+  if (type == "Molecule")
+    return pipeline::PortType::Molecule;
+  return pipeline::PortType::ImageData;
+}
+
+bool PipelineModuleMenu::eventFilter(QObject* obj, QEvent* event)
+{
+  if (event->type() == QEvent::KeyPress ||
+      event->type() == QEvent::KeyRelease) {
+    auto* ke = static_cast<QKeyEvent*>(event);
+    if (ke->key() == Qt::Key_Control) {
+      m_ctrlHeld = (event->type() == QEvent::KeyPress);
+      updateEnableState();
+    }
+  }
+  return QObject::eventFilter(obj, event);
+}
+
+void PipelineModuleMenu::updateEnableState()
+{
+  auto* tipPort = ActiveObjects::instance().activeTipOutputPort();
+
+  for (auto* action : m_menu->actions()) {
+    auto type = action->data().toString();
+    if (type.isEmpty())
+      continue;
+
+    if (m_ctrlHeld || !tipPort) {
+      // Ctrl held: enable all (user will link manually).
+      // No tip port: enable all and let triggered() handle the error.
+      action->setEnabled(m_ctrlHeld);
+      continue;
+    }
+    action->setEnabled(
+      pipeline::isPortTypeCompatible(tipPort->type(),
+                                     sinkAcceptedTypes(type)));
+  }
 }
 
 pipeline::LegacyModuleSink* PipelineModuleMenu::createSink(const QString& type)
@@ -178,6 +230,7 @@ void PipelineModuleMenu::updateActions()
     actn->setData(type);
     toolBar->addAction(actn);
   }
+  updateEnableState();
 }
 
 void PipelineModuleMenu::triggered(QAction* maction)
