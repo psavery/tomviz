@@ -220,6 +220,8 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
           this, &MainWindow::onNodeSelected);
   connect(m_pipelineStrip, &pipeline::PipelineStripWidget::portSelected,
           this, &MainWindow::onPortSelected);
+  connect(m_pipelineStrip, &pipeline::PipelineStripWidget::linkSelected,
+          &ActiveObjects::instance(), &ActiveObjects::setActiveLink);
 
   // Double-click on a transform node opens the edit dialog
   connect(m_pipelineStrip, &pipeline::PipelineStripWidget::nodeDoubleClicked,
@@ -270,11 +272,22 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
       });
     });
 
-  // Sync tip output port from ActiveObjects to the strip widget
+  // Sync tip output port from ActiveObjects to the strip widget and colormap
   connect(&ActiveObjects::instance(),
           &ActiveObjects::activeTipOutputPortChanged,
           m_pipelineStrip,
           &pipeline::PipelineStripWidget::setTipOutputPort);
+  connect(&ActiveObjects::instance(),
+          &ActiveObjects::activeTipOutputPortChanged,
+          this, [this](pipeline::OutputPort* port) {
+            disconnect(m_tipDataChangedConn);
+            if (port) {
+              m_tipDataChangedConn = connect(
+                port, &pipeline::OutputPort::dataChanged,
+                this, &MainWindow::updateColorMapDisplay);
+            }
+            updateColorMapDisplay();
+          });
 
   // Create the single application pipeline
   initPipeline();
@@ -1336,6 +1349,7 @@ void MainWindow::onNodeSelected(pipeline::Node* node)
 {
   ActiveObjects::instance().setActiveNode(node);
   ActiveObjects::instance().setActivePort(nullptr);
+  disconnect(m_sinkColorMapChangedConn);
 
   // Clear previous dynamic widget
   if (m_dynamicPropertiesWidget) {
@@ -1355,6 +1369,16 @@ void MainWindow::onNodeSelected(pipeline::Node* node)
   if (auto* sink = dynamic_cast<pipeline::LegacyModuleSink*>(node)) {
     propsWidget = sink->createPropertiesWidget(
       m_ui->propertiesPanelStackedWidget);
+    // React to detached colormap toggling while this sink is selected
+    m_sinkColorMapChangedConn = connect(
+      sink, &pipeline::LegacyModuleSink::colorMapChanged,
+      this, [this, sink]() {
+        if (sink->useDetachedColorMap()) {
+          m_ui->centralWidget->setActiveSinkNode(sink);
+        } else {
+          updateColorMapDisplay();
+        }
+      });
   } else if (auto* transform = dynamic_cast<pipeline::TransformNode*>(node)) {
     if (transform->hasPropertiesWidget()) {
       propsWidget = new pipeline::TransformPropertiesPanel(
@@ -1370,46 +1394,15 @@ void MainWindow::onNodeSelected(pipeline::Node* node)
     m_ui->propertiesPanelStackedWidget->setCurrentWidget(m_ui->empty);
   }
 
-  // Wire color map display in CentralWidget
+  // Sink with detached colormap: display it; otherwise the tip port
+  // drives the colormap via updateColorMapDisplay().
   if (auto* sink = dynamic_cast<pipeline::LegacyModuleSink*>(node)) {
-    if (sink->isColorMapNeeded()) {
+    if (sink->useDetachedColorMap()) {
       m_ui->centralWidget->setActiveSinkNode(sink);
-    } else {
-      // Sink that doesn't need a color map — show the upstream VolumeData's
-      auto vol = sink->volumeData();
-      if (vol) {
-        m_ui->centralWidget->setActiveVolumeData(vol);
-      }
-    }
-  } else if (node) {
-    // For source/transform nodes, find VolumeData from first volume output port
-    pipeline::VolumeDataPtr vol;
-    for (auto* port : node->outputPorts()) {
-      if (port->type() == pipeline::PortType::ImageData && port->hasData()) {
-        vol = port->data().value<pipeline::VolumeDataPtr>();
-        if (vol) {
-          break;
-        }
-      }
-    }
-    // If no output data yet, try input ports
-    if (!vol) {
-      for (auto* port : node->inputPorts()) {
-        if (port->hasData()) {
-          auto pd = port->data();
-          if (pd.type() == pipeline::PortType::ImageData) {
-            vol = pd.value<pipeline::VolumeDataPtr>();
-            if (vol) {
-              break;
-            }
-          }
-        }
-      }
-    }
-    if (vol) {
-      m_ui->centralWidget->setActiveVolumeData(vol);
+      return;
     }
   }
+  updateColorMapDisplay();
 }
 
 void MainWindow::onPortSelected(pipeline::OutputPort* port)
@@ -1439,16 +1432,26 @@ void MainWindow::onPortSelected(pipeline::OutputPort* port)
     m_dynamicPropertiesWidget = propsWidget;
     m_ui->propertiesPanelStackedWidget->addWidget(propsWidget);
     m_ui->propertiesPanelStackedWidget->setCurrentWidget(propsWidget);
-
-    // Wire color map display
-    if (port->hasData()) {
-      auto vol = port->data().value<pipeline::VolumeDataPtr>();
-      if (vol) {
-        m_ui->centralWidget->setActiveVolumeData(vol);
-      }
-    }
   } else {
     m_ui->propertiesPanelStackedWidget->setCurrentWidget(m_ui->empty);
+  }
+}
+
+void MainWindow::updateColorMapDisplay()
+{
+  auto* tipPort = ActiveObjects::instance().activeTipOutputPort();
+  if (!tipPort || tipPort->type() != pipeline::PortType::ImageData ||
+      !tipPort->hasData()) {
+    return;
+  }
+  pipeline::VolumeDataPtr vol;
+  try {
+    vol = tipPort->data().value<pipeline::VolumeDataPtr>();
+  } catch (const std::bad_any_cast&) {
+    return;
+  }
+  if (vol) {
+    m_ui->centralWidget->setActiveVolumeData(vol);
   }
 }
 

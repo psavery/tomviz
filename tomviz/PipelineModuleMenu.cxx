@@ -7,13 +7,8 @@
 #include "MainWindow.h"
 
 #include "pipeline/Pipeline.h"
-#include "pipeline/PipelineUtils.h"
-#include "pipeline/Node.h"
-#include "pipeline/SourceNode.h"
-#include "pipeline/TransformNode.h"
 #include "pipeline/OutputPort.h"
 #include "pipeline/InputPort.h"
-#include "pipeline/Link.h"
 #include "pipeline/sinks/LegacyModuleSink.h"
 #include "pipeline/sinks/VolumeSink.h"
 #include "pipeline/sinks/SliceSink.h"
@@ -101,9 +96,6 @@ static vtkSMViewProxy* resolveViewForSink(const QString& sinkType)
   ActiveObjects::instance().setActiveView(proxy);
   return proxy;
 }
-
-using pipeline::findBranchTip;
-using pipeline::findTipOutputPort;
 
 PipelineModuleMenu::PipelineModuleMenu(QToolBar* toolBar, QMenu* menu,
                                        QObject* parentObject)
@@ -207,20 +199,9 @@ void PipelineModuleMenu::triggered(QAction* maction)
     return;
   }
 
-  auto& ao = ActiveObjects::instance();
-
-  // Sinks connect to the selected output port if one is selected,
-  // otherwise to the chain tip (using active node for multi-source context).
-  pipeline::OutputPort* targetPort = nullptr;
-  auto* activePort = ao.activePort();
-  if (activePort && activePort->node() &&
-      pip->nodes().contains(activePort->node())) {
-    targetPort = activePort;
-  } else {
-    targetPort = findTipOutputPort(pip, ao.activeNode());
-  }
+  auto* targetPort = ActiveObjects::instance().activeTipOutputPort();
   if (!targetPort) {
-    qCritical("No source or transform output port found in pipeline.");
+    qCritical("No output port available. Load data first.");
     return;
   }
 
@@ -236,7 +217,13 @@ void PipelineModuleMenu::triggered(QAction* maction)
 
   // Ctrl held: add the node unconnected (user will link manually)
   if (!(QApplication::keyboardModifiers() & Qt::ControlModifier)) {
-    pip->createLink(targetPort, sink->inputPorts()[0]);
+    auto* input = sink->inputPorts()[0];
+    if (!input->acceptedTypes().testFlag(targetPort->type())) {
+      qCritical("Incompatible port types: sink input does not accept "
+                "the tip output port type.");
+      return;
+    }
+    pip->createLink(targetPort, input);
   }
   pip->execute();
 }

@@ -100,6 +100,7 @@ private:
   QString mostRecentStateFile() const;
 
   void initPipeline();
+  void updateColorMapDisplay();
 
   QScopedPointer<Ui::MainWindow> m_ui;
   QMenu* m_customTransformsMenu = nullptr;
@@ -110,6 +111,8 @@ private:
   // New pipeline infrastructure
   pipeline::PipelineStripWidget* m_pipelineStrip = nullptr;
   pipeline::Pipeline* m_pipeline = nullptr;
+  QMetaObject::Connection m_tipDataChangedConn;
+  QMetaObject::Connection m_sinkColorMapChangedConn;
   QPointer<QWidget> m_dynamicPropertiesWidget;
 
   // Lazily loaded dialogs

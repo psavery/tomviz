@@ -15,6 +15,7 @@ class vtkSMViewProxy;
 namespace tomviz {
 
 namespace pipeline {
+class Link;
 class Pipeline;
 class Node;
 class OutputPort;
@@ -57,6 +58,8 @@ public:
   pipeline::Node* activeNode() const;
   void setActivePort(pipeline::OutputPort* port);
   pipeline::OutputPort* activePort() const;
+  void setActiveLink(pipeline::Link* link);
+  pipeline::Link* activeLink() const;
   pipeline::OutputPort* activeTipOutputPort() const;
 
 public slots:
@@ -118,6 +121,9 @@ signals:
   /// Fired whenever the active output port changes.
   void activePortChanged(pipeline::OutputPort*);
 
+  /// Fired whenever the active link changes.
+  void activeLinkChanged(pipeline::Link*);
+
   /// Fired whenever the active tip output port changes.
   void activeTipOutputPortChanged(pipeline::OutputPort*);
 
@@ -131,6 +137,7 @@ protected:
   pipeline::Pipeline* m_pipeline = nullptr;
   pipeline::Node* m_activeNode = nullptr;
   pipeline::OutputPort* m_activePort = nullptr;
+  pipeline::Link* m_activeLink = nullptr;
   pipeline::OutputPort* m_activeTipOutputPort = nullptr;
 
   /// interaction states

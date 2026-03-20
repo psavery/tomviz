@@ -4,6 +4,7 @@
 #include "ActiveObjects.h"
 #include "Utilities.h"
 
+#include "pipeline/Link.h"
 #include "pipeline/Node.h"
 #include "pipeline/OutputPort.h"
 #include "pipeline/Pipeline.h"
@@ -177,6 +178,22 @@ void ActiveObjects::setActivePort(pipeline::OutputPort* port)
 pipeline::OutputPort* ActiveObjects::activePort() const
 {
   return m_activePort;
+}
+
+void ActiveObjects::setActiveLink(pipeline::Link* link)
+{
+  if (m_activeLink != link) {
+    m_activeLink = link;
+    emit activeLinkChanged(link);
+  }
+  if (link) {
+    setActiveTipOutputPort(link->from());
+  }
+}
+
+pipeline::Link* ActiveObjects::activeLink() const
+{
+  return m_activeLink;
 }
 
 pipeline::OutputPort* ActiveObjects::activeTipOutputPort() const
