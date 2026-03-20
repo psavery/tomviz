@@ -130,6 +130,12 @@ void ActiveObjects::setPipeline(pipeline::Pipeline* p)
                 pipeline::findTipOutputPort(m_pipeline, nullptr));
             }
           });
+  connect(p, &pipeline::Pipeline::linkRemoved, this,
+          [this](pipeline::Link* link) {
+            if (m_activeLink == link) {
+              setActiveLink(nullptr);
+            }
+          });
   emit activePipelineChanged(p);
 }
 

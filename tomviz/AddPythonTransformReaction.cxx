@@ -151,7 +151,8 @@ static bool insertTransformIntoPipeline(
   if (activeLink &&
       dynamic_cast<pipeline::TransformNode*>(activeLink->to()->node())) {
     auto* fromPort = activeLink->from();
-    if (!input->acceptedTypes().testFlag(fromPort->type())) {
+    if (!pipeline::isPortTypeCompatible(fromPort->type(),
+                                        input->acceptedTypes())) {
       qCritical("Incompatible port types: transform input does not accept "
                 "the link's output port type.");
       delete transform;
@@ -176,7 +177,8 @@ static bool insertTransformIntoPipeline(
     return false;
   }
 
-  if (!input->acceptedTypes().testFlag(tipPort->type())) {
+  if (!pipeline::isPortTypeCompatible(tipPort->type(),
+                                      input->acceptedTypes())) {
     qCritical("Incompatible port types: transform input does not accept "
               "the tip output port type.");
     delete transform;

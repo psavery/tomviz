@@ -86,7 +86,7 @@ bool TransformNode::execute()
             vtkSmartPointer<vtkImageData>(fresh->imageData()));
           existing->setLabel(fresh->label());
           existing->setUnits(fresh->units());
-          port->setData(PortData(std::any(existing), PortType::ImageData));
+          port->setData(PortData(std::any(existing), it.value().type()));
           continue;
         }
       } catch (const std::bad_any_cast&) {

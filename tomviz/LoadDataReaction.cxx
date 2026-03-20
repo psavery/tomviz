@@ -131,12 +131,13 @@ pipeline::SourceNode* LoadDataReaction::createSourceFromImageData(
     nodeLabel = QFileInfo(fileNames[0]).completeBaseName();
   }
   source->setLabel(nodeLabel);
-  source->addOutput("volume", pipeline::PortType::ImageData);
   auto volumeData = std::make_shared<pipeline::VolumeData>(image);
   volumeData->setLabel(nodeLabel);
-  source->setOutputData(
-    "volume",
-    pipeline::PortData(volumeData, pipeline::PortType::ImageData));
+  pipeline::PortType dataType = volumeData->hasTiltAngles()
+    ? pipeline::PortType::TiltSeries
+    : pipeline::PortType::Volume;
+  source->addOutput("volume", dataType);
+  source->setOutputData("volume", pipeline::PortData(volumeData, dataType));
   return source;
 }
 
@@ -340,6 +341,8 @@ pipeline::SourceNode* LoadDataReaction::loadData(const QStringList& fileNames,
         pipeline::getOutputData<pipeline::VolumeDataPtr>(source);
       if (vol && !result.tiltAngles.isEmpty()) {
         vol->setTiltAngles(result.tiltAngles);
+        source->outputPort("volume")->setDeclaredType(
+          pipeline::PortType::TiltSeries);
         source->setProperty("dataType", "tiltSeries");
       }
       // Store dark/white data as node properties for later use
@@ -367,6 +370,8 @@ pipeline::SourceNode* LoadDataReaction::loadData(const QStringList& fileNames,
         pipeline::getOutputData<pipeline::VolumeDataPtr>(source);
       if (vol && !result.tiltAngles.isEmpty()) {
         vol->setTiltAngles(result.tiltAngles);
+        source->outputPort("volume")->setDeclaredType(
+          pipeline::PortType::TiltSeries);
         source->setProperty("dataType", "tiltSeries");
       }
       if (result.darkData) {

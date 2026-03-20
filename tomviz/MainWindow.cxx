@@ -243,7 +243,8 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
       if (from->node() == to->node()) {
         return false;
       }
-      if (!to->acceptedTypes().testFlag(from->type())) {
+      if (!pipeline::isPortTypeCompatible(from->type(),
+                                          to->acceptedTypes())) {
         return false;
       }
       if (to->link()) {
@@ -1265,7 +1266,7 @@ void MainWindow::initPipeline()
       return;
     }
     for (auto* port : node->outputPorts()) {
-      if (port->type() != pipeline::PortType::ImageData || !port->hasData()) {
+      if (!pipeline::isVolumeType(port->type()) || !port->hasData()) {
         continue;
       }
       pipeline::VolumeDataPtr vol;
@@ -1289,7 +1290,7 @@ void MainWindow::initPipeline()
       pipeline::VolumeDataPtr upstream;
       for (auto* port : node->inputPorts()) {
         if (port->hasData() &&
-            port->data().type() == pipeline::PortType::ImageData) {
+            pipeline::isVolumeType(port->data().type())) {
           try {
             upstream = port->data().value<pipeline::VolumeDataPtr>();
           } catch (const std::bad_any_cast&) {
@@ -1301,7 +1302,7 @@ void MainWindow::initPipeline()
       }
 
       for (auto* port : node->outputPorts()) {
-        if (port->type() != pipeline::PortType::ImageData ||
+        if (!pipeline::isVolumeType(port->type()) ||
             !port->hasData()) {
           continue;
         }
@@ -1417,7 +1418,7 @@ void MainWindow::onPortSelected(pipeline::OutputPort* port)
     w->deleteLater();
   }
 
-  if (port && port->type() == pipeline::PortType::ImageData) {
+  if (port && pipeline::isVolumeType(port->type())) {
     auto* propsWidget =
       new pipeline::VolumePropertiesWidget(m_ui->propertiesPanelStackedWidget);
     propsWidget->setOutputPort(port);
@@ -1440,7 +1441,7 @@ void MainWindow::onPortSelected(pipeline::OutputPort* port)
 void MainWindow::updateColorMapDisplay()
 {
   auto* tipPort = ActiveObjects::instance().activeTipOutputPort();
-  if (!tipPort || tipPort->type() != pipeline::PortType::ImageData ||
+  if (!tipPort || !pipeline::isVolumeType(tipPort->type()) ||
       !tipPort->hasData()) {
     return;
   }

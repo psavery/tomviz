@@ -219,7 +219,7 @@ bool LegacyModuleSink::execute()
       if (lnk) {
         auto* outPort = lnk->from();
         if (outPort && outPort->hasData() &&
-            outPort->type() == PortType::ImageData) {
+            isVolumeType(outPort->type())) {
           auto vol = outPort->data().value<VolumeDataPtr>();
           if (vol) {
             m_volumeData = vol;

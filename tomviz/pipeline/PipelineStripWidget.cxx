@@ -1003,7 +1003,8 @@ void PipelineStripWidget::computeLinkGeometries()
     int gutterX = 0;
     if (!isDirect(link) && portLaneIndex.contains(outPort)) {
       int laneIdx = portLaneIndex[outPort];
-      gutterX = GutterWidth - LaneSpacing / 2 - laneIdx * LaneSpacing;
+      int maxLane = m_gutterLaneCount - 1;
+      gutterX = GutterWidth - LaneSpacing / 2 - (maxLane - laneIdx) * LaneSpacing;
     }
     QPainterPath path = buildLinkPath(outPort, link->to(), gutterX);
     if (!path.isEmpty()) {
@@ -1076,12 +1077,18 @@ void PipelineStripWidget::paintConnections(QPainter& painter)
     bool selected = (lg.link == m_selectedLink);
     qreal baseWidth = 3.0;
 
-    // Selected: draw a shadow/glow behind the link
+    // Selected: draw a thin outline around the link using the selection color,
+    // with a 1px gap between the outline and the link segment.
+    // Layers (bottom to top): selection outline, background gap, link line.
     if (selected) {
-      QColor shadowColor = lg.color;
-      shadowColor.setAlpha(60);
-      painter.setPen(QPen(shadowColor, baseWidth + 6.0, Qt::SolidLine,
+      QColor selColor = palette().highlight().color();
+      // 1) Selection outline (outermost)
+      painter.setPen(QPen(selColor, baseWidth + 6.0, Qt::SolidLine,
                           Qt::RoundCap, Qt::RoundJoin));
+      painter.drawPath(lg.path);
+      // 2) Background-colored gap to separate outline from link
+      painter.setPen(QPen(palette().window().color(), baseWidth + 4.0,
+                          Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
       painter.drawPath(lg.path);
     }
 

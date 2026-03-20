@@ -218,7 +218,8 @@ void PipelineModuleMenu::triggered(QAction* maction)
   // Ctrl held: add the node unconnected (user will link manually)
   if (!(QApplication::keyboardModifiers() & Qt::ControlModifier)) {
     auto* input = sink->inputPorts()[0];
-    if (!input->acceptedTypes().testFlag(targetPort->type())) {
+    if (!pipeline::isPortTypeCompatible(targetPort->type(),
+                                        input->acceptedTypes())) {
       qCritical("Incompatible port types: sink input does not accept "
                 "the tip output port type.");
       return;

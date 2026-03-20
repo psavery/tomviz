@@ -192,7 +192,7 @@ private:
   static constexpr int PortCardHeight = 22;
   static constexpr int CardSpacing = 4;
   static constexpr int ConnectionSpacing = 8;
-  static constexpr int DirectConnectionSpacing = 12;
+  static constexpr int DirectConnectionSpacing = 14;
   static constexpr int PortIndent = 8;
   static constexpr int CardRadius = 4;
   static constexpr int BadgeSize = 16;
