@@ -252,13 +252,52 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
       return true;
     });
 
-  // Create the link when the user completes a drag between ports
+  // Create the link when the user completes a drag between ports.
+  // If the destination is a TransformNode with a custom properties UI and all
+  // its inputs are now connected, show the dialog before executing.  Cancel
+  // removes the newly created link; OK/Apply executes the pipeline.
   connect(m_pipelineStrip, &pipeline::PipelineStripWidget::linkRequested,
           this, [this](pipeline::OutputPort* from, pipeline::InputPort* to) {
-            if (auto* p = pipeline()) {
-              p->createLink(from, to);
-              p->execute();
+            auto* p = pipeline();
+            if (!p) {
+              return;
             }
+
+            auto* link = p->createLink(from, to);
+            if (!link) {
+              return;
+            }
+
+            // Check if all inputs on the destination node are connected.
+            // Don't execute until they are.
+            auto* destNode = to->node();
+            bool allConnected = true;
+            for (auto* input : destNode->inputPorts()) {
+              if (!input->link()) {
+                allConnected = false;
+                break;
+              }
+            }
+
+            if (!allConnected) {
+              return;
+            }
+
+            // If the destination is a TransformNode with a custom UI,
+            // show the dialog before executing.
+            auto* transform =
+              qobject_cast<pipeline::TransformNode*>(destNode);
+            if (transform && transform->hasPropertiesWidget()) {
+              auto* dialog = new pipeline::TransformEditDialog(
+                transform, p, this);
+              connect(dialog, &QDialog::rejected, this,
+                      [p, link]() { p->removeLink(link); });
+              dialog->setAttribute(Qt::WA_DeleteOnClose);
+              dialog->show();
+              return;
+            }
+
+            p->execute();
           });
 
   // Context menu on links: delete action

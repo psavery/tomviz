@@ -162,7 +162,12 @@ bool insertTransformIntoPipeline(pipeline::TransformNode* transform)
       delete transform;
       return false;
     }
-    if (transform->hasPropertiesWidget()) {
+    // Multi-input: only the first input gets connected here.  Commit
+    // immediately and wait for the user to connect remaining inputs via
+    // manual linking (which triggers the MainWindow linkRequested handler).
+    if (transform->inputPorts().size() > 1) {
+      insertTransformAtLink(pip, transform, activeLink);
+    } else if (transform->hasPropertiesWidget()) {
       auto deferred =
         insertTransformAtLinkDeferred(pip, transform, activeLink);
       showInsertionDialog(transform, pip, deferred, mainWindow);
@@ -190,7 +195,10 @@ bool insertTransformIntoPipeline(pipeline::TransformNode* transform)
     return false;
   }
 
-  if (transform->hasPropertiesWidget()) {
+  // Multi-input: same as above — commit and wait for remaining connections.
+  if (transform->inputPorts().size() > 1) {
+    appendTransformAtPort(pip, transform, tipPort);
+  } else if (transform->hasPropertiesWidget()) {
     qDebug("insertTransformIntoPipeline: showing insertion dialog for '%s'",
            qPrintable(transform->label()));
     auto deferred = appendTransformAtPortDeferred(pip, transform, tipPort);
