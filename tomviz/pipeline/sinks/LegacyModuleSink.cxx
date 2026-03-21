@@ -59,8 +59,10 @@ bool LegacyModuleSink::initialize(vtkSMViewProxy* view)
 
   // Rendering is wired externally (MainWindow connects renderNeeded() →
   // pqView::render(), which coalesces multiple requests via an internal timer).
+  // m_renderView may be null for chart views (e.g. PlotSink) — that's OK,
+  // only features requiring a 3D render view will be skipped.
 
-  return m_renderView != nullptr;
+  return true;
 }
 
 bool LegacyModuleSink::finalize()

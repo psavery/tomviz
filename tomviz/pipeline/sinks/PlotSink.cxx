@@ -15,7 +15,11 @@
 #include <vtkTable.h>
 #include <vtkUnsignedCharArray.h>
 
+#include <QCheckBox>
 #include <QColor>
+#include <QFormLayout>
+#include <QLineEdit>
+#include <QWidget>
 
 namespace tomviz {
 namespace pipeline {
@@ -48,10 +52,7 @@ void PlotSink::setVisibility(bool visible)
 
 bool PlotSink::initialize(vtkSMViewProxy* view)
 {
-  // Store the view proxy in the base class (but skip the render-view cast).
-  // We intentionally do NOT call LegacyModuleSink::initialize() because that
-  // expects a 3D render view. Instead we handle the view ourselves.
-  if (!view) {
+  if (!LegacyModuleSink::initialize(view)) {
     return false;
   }
 
@@ -91,15 +92,20 @@ bool PlotSink::consume(const QMap<QString, PortData>& inputs)
 
   m_table = tablePtr;
 
-  if (m_chart) {
-    addAllPlots();
+  // Defer VTK chart manipulation to the main thread — consume() runs on
+  // the pipeline worker thread, but vtkChartXY / vtkPVContextView objects
+  // belong to the GUI thread.
+  QMetaObject::invokeMethod(this, [this]() {
+    if (m_chart) {
+      addAllPlots();
 
-    if (m_contextView) {
-      m_contextView->Update();
+      if (m_contextView) {
+        m_contextView->Update();
+      }
     }
-  }
+    emit renderNeeded();
+  }, Qt::QueuedConnection);
 
-  emit renderNeeded();
   return true;
 }
 
@@ -221,6 +227,49 @@ void PlotSink::setYLogScale(bool log)
     m_chart->GetAxis(vtkAxis::LEFT)->SetLogScale(log);
     emit renderNeeded();
   }
+}
+
+QWidget* PlotSink::createPropertiesWidget(QWidget* parent)
+{
+  auto* widget = new QWidget(parent);
+  auto* layout = new QFormLayout;
+
+  QString xLabel, yLabel;
+  bool xLog = m_xLogScale;
+  bool yLog = m_yLogScale;
+
+  if (m_chart) {
+    xLabel = m_chart->GetAxis(vtkAxis::BOTTOM)->GetTitle().c_str();
+    yLabel = m_chart->GetAxis(vtkAxis::LEFT)->GetTitle().c_str();
+    xLog = m_chart->GetAxis(vtkAxis::BOTTOM)->GetLogScale();
+    yLog = m_chart->GetAxis(vtkAxis::LEFT)->GetLogScale();
+  }
+  if (xLabel.isEmpty()) {
+    xLabel = m_xLabel;
+  }
+  if (yLabel.isEmpty()) {
+    yLabel = m_yLabel;
+  }
+
+  auto* xLabelEdit = new QLineEdit(xLabel);
+  auto* yLabelEdit = new QLineEdit(yLabel);
+  layout->addRow("X Label", xLabelEdit);
+  layout->addRow("Y Label", yLabelEdit);
+
+  auto* xLogCheck = new QCheckBox("X Log Scale");
+  auto* yLogCheck = new QCheckBox("Y Log Scale");
+  xLogCheck->setChecked(xLog);
+  yLogCheck->setChecked(yLog);
+  layout->addRow(xLogCheck);
+  layout->addRow(yLogCheck);
+
+  connect(xLabelEdit, &QLineEdit::textChanged, this, &PlotSink::setXLabel);
+  connect(yLabelEdit, &QLineEdit::textChanged, this, &PlotSink::setYLabel);
+  connect(xLogCheck, &QCheckBox::toggled, this, &PlotSink::setXLogScale);
+  connect(yLogCheck, &QCheckBox::toggled, this, &PlotSink::setYLogScale);
+
+  widget->setLayout(layout);
+  return widget;
 }
 
 QJsonObject PlotSink::serialize() const

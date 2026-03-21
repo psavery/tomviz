@@ -22,6 +22,8 @@
 
 #include <vtkImageData.h>
 #include <vtkNew.h>
+#include <vtkPythonUtil.h>
+#include <vtkTable.h>
 
 #include <QJsonArray>
 #include <QJsonDocument>
@@ -487,6 +489,39 @@ QMap<QString, PortData> LegacyPythonTransform::transform(
     PortType outType =
       outPort ? outPort->declaredType() : PortType::ImageData;
     result["volume"] = PortData(std::any(volume), outType);
+
+    // Extract result outputs (tables, molecules) from Python return dict
+    if (!pyResult.is_none() && py::isinstance<py::dict>(pyResult)) {
+      py::dict outputDict = pyResult.cast<py::dict>();
+      for (int i = 0; i < m_resultNames.size(); ++i) {
+        std::string key = m_resultNames[i].toStdString();
+        if (!outputDict.contains(key)) {
+          qWarning("LegacyPythonTransform: No result named '%s' in "
+                   "Python output dict",
+                   qPrintable(m_resultNames[i]));
+          continue;
+        }
+        py::object pyObj = outputDict[py::str(key)];
+        if (pyObj.is_none()) {
+          continue;
+        }
+
+        if (m_resultTypes[i] == "table") {
+          auto* raw = vtkTable::SafeDownCast(
+            vtkPythonUtil::GetPointerFromObject(
+              pyObj.ptr(), "vtkObjectBase"));
+          if (raw) {
+            vtkSmartPointer<vtkTable> table = raw;
+            result[m_resultNames[i]] =
+              PortData(std::any(table), PortType::Table);
+          } else {
+            qWarning("LegacyPythonTransform: Result '%s' is not a "
+                     "vtkTable",
+                     qPrintable(m_resultNames[i]));
+          }
+        }
+      }
+    }
 
   } catch (const py::error_already_set& e) {
     qWarning("LegacyPythonTransform Python error: %s", e.what());

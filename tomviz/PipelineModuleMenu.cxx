@@ -71,8 +71,40 @@ static vtkSMViewProxy* resolveViewForSink(const QString& sinkType)
   }
 
   if (matching.isEmpty()) {
-    ActiveObjects::instance().createRenderViewIfNeeded();
-    return ActiveObjects::instance().activeView();
+    if (!needsChart) {
+      ActiveObjects::instance().createRenderViewIfNeeded();
+      return ActiveObjects::instance().activeView();
+    }
+
+    // No chart view exists — split the layout and create one.
+    int emptyCell = -1;
+    vtkSMViewLayoutProxy* layout = nullptr;
+    if (activeView) {
+      layout = vtkSMViewLayoutProxy::FindLayout(activeView);
+      if (layout) {
+        int location = layout->GetViewLocation(activeView);
+        int leftChild = layout->Split(
+          location, vtkSMViewLayoutProxy::HORIZONTAL, 0.5);
+        if (leftChild >= 0) {
+          emptyCell = leftChild + 1;
+        }
+      }
+    }
+
+    auto* builder = pqApplicationCore::instance()->getObjectBuilder();
+    auto* server = pqApplicationCore::instance()->getActiveServer();
+    auto* newView = builder->createView(viewTypeName, server);
+    if (!newView) {
+      return nullptr;
+    }
+    auto* proxy = newView->getViewProxy();
+
+    if (layout && emptyCell >= 0) {
+      layout->AssignView(emptyCell, proxy);
+    }
+
+    ActiveObjects::instance().setActiveView(proxy);
+    return proxy;
   }
 
   if (matching.size() == 1) {
