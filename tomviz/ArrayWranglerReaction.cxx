@@ -3,11 +3,8 @@
 
 #include "ArrayWranglerReaction.h"
 
-#include <QAction>
-#include <QMainWindow>
-
-#include "ArrayWranglerOperator.h"
-#include "DataSource.h"
+#include "TransformUtils.h"
+#include "pipeline/transforms/ArrayWranglerTransform.h"
 
 namespace tomviz {
 
@@ -17,9 +14,9 @@ ArrayWranglerReaction::ArrayWranglerReaction(QAction* parentObject,
 {
 }
 
-void ArrayWranglerReaction::wrangleArray(DataSource* source)
+void ArrayWranglerReaction::wrangleArray(DataSource*)
 {
-  // TODO: migrate to new pipeline
-  Q_UNUSED(source);
+  auto* transform = new pipeline::ArrayWranglerTransform();
+  insertTransformIntoPipeline(transform);
 }
 } // namespace tomviz

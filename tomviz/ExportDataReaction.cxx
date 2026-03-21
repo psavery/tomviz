@@ -4,7 +4,7 @@
 #include "ExportDataReaction.h"
 
 #include "ActiveObjects.h"
-#include "ConvertToFloatOperator.h"
+#include <vtkFloatArray.h>
 #include "DataExchangeFormat.h"
 #include "EmdFormat.h"
 #include "Module.h"
@@ -251,8 +251,22 @@ bool ExportDataReaction::exportData(const QString& filename)
     if (strcmp(writerName, "vtkTIFFWriter") == 0 && imageType == VTK_DOUBLE) {
       vtkNew<vtkImageData> fImage;
       fImage->DeepCopy(imageData);
-      ConvertToFloatOperator convertFloat;
-      convertFloat.applyTransform(fImage);
+      // Convert double scalars to float for TIFF export
+      auto* scalars = fImage->GetPointData()->GetScalars();
+      vtkNew<vtkFloatArray> floatArray;
+      floatArray->SetNumberOfComponents(scalars->GetNumberOfComponents());
+      floatArray->SetNumberOfTuples(scalars->GetNumberOfTuples());
+      floatArray->SetName(scalars->GetName());
+      for (vtkIdType i = 0;
+           i < scalars->GetNumberOfComponents() *
+                 scalars->GetNumberOfTuples();
+           ++i) {
+        static_cast<float*>(floatArray->GetVoidPointer(0))[i] =
+          static_cast<float>(
+            static_cast<double*>(scalars->GetVoidPointer(0))[i]);
+      }
+      fImage->GetPointData()->RemoveArray(scalars->GetName());
+      fImage->GetPointData()->SetScalars(floatArray);
 
       trivialProducer->SetOutput(fImage);
       trivialProducer->UpdateInformation();

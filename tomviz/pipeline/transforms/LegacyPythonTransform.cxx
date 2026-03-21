@@ -192,7 +192,6 @@ EditTransformWidget* LegacyPythonTransform::createPropertiesWidget(
             }
 
             if (changed) {
-              markStale();
               emit parametersApplied();
             }
           });

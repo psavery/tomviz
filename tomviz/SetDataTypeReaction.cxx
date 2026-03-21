@@ -4,8 +4,12 @@
 #include "SetDataTypeReaction.h"
 
 #include "ActiveObjects.h"
-#include "OperatorFactory.h"
-#include "SetTiltAnglesReaction.h"
+#include "TransformUtils.h"
+
+#include "pipeline/OutputPort.h"
+#include "pipeline/PortType.h"
+#include "pipeline/transforms/ConvertToVolumeTransform.h"
+#include "pipeline/transforms/SetTiltAnglesTransform.h"
 
 #include <cassert>
 
@@ -15,47 +19,44 @@ SetDataTypeReaction::SetDataTypeReaction(QAction* action, QMainWindow* mw,
                                          DataSource::DataSourceType t)
   : pqReaction(action), m_mainWindow(mw), m_type(t)
 {
-  // TODO: migrate to new pipeline
-  // Old code connected to ActiveObjects::dataSourceChanged
   connect(&ActiveObjects::instance(), &ActiveObjects::activeNodeChanged, this,
           &SetDataTypeReaction::updateEnableState);
+  connect(&ActiveObjects::instance(),
+          &ActiveObjects::activePipelineChanged,
+          this, &SetDataTypeReaction::updateEnableState);
   setWidgetText(t);
   updateEnableState();
 }
 
-void SetDataTypeReaction::setDataType(QMainWindow* mw, DataSource* dsource,
+void SetDataTypeReaction::setDataType(QMainWindow* mw, DataSource*,
                                       DataSource::DataSourceType t)
 {
-  // TODO: migrate to new pipeline
-  // Old code used ActiveObjects::activeDataSource() as fallback
-  if (dsource == nullptr) {
-    return;
-  }
+  Q_UNUSED(mw);
   if (t == DataSource::TiltSeries) {
-    SetTiltAnglesReaction::showSetTiltAnglesUI(mw, dsource);
+    auto* transform = new pipeline::SetTiltAnglesTransform();
+    insertTransformIntoPipeline(transform);
   } else {
-    // If it was a TiltSeries convert to volume
-    // if (dsource->type() == DataSource::TiltSeries) {
-    Operator* op = OperatorFactory::instance().createConvertToVolumeOperator(t);
-    dsource->addOperator(op);
-    // dsource->setType(t);
-    // }
+    auto* transform = new pipeline::ConvertToVolumeTransform();
+    if (t == DataSource::Volume) {
+      transform->setOutputType(pipeline::PortType::Volume);
+      transform->setOutputLabel("Mark as Volume");
+    } else if (t == DataSource::FIB) {
+      transform->setOutputType(pipeline::PortType::Volume);
+      transform->setOutputLabel("Mark as FIB");
+    }
+    insertTransformIntoPipeline(transform);
   }
 }
 
 void SetDataTypeReaction::onTriggered()
 {
-  // TODO: migrate to new pipeline
-  // Old code used ActiveObjects::activeParentDataSource()
-  DataSource* dsource = nullptr;
-  setDataType(m_mainWindow, dsource, m_type);
+  setDataType(m_mainWindow, nullptr, m_type);
 }
 
 void SetDataTypeReaction::updateEnableState()
 {
-  // TODO: migrate to new pipeline
-  // Old code used activePipeline()->transformedDataSource() to check type
-  parentAction()->setEnabled(false);
+  auto& ao = ActiveObjects::instance();
+  parentAction()->setEnabled(ao.activeTipOutputPort() != nullptr);
 }
 
 void SetDataTypeReaction::setWidgetText(DataSource::DataSourceType t)

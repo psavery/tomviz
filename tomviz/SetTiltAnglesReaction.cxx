@@ -4,8 +4,10 @@
 #include "SetTiltAnglesReaction.h"
 
 #include "ActiveObjects.h"
-#include "DataSource.h"
-#include "SetTiltAnglesOperator.h"
+#include "TransformUtils.h"
+
+#include "pipeline/OutputPort.h"
+#include "pipeline/transforms/SetTiltAnglesTransform.h"
 
 #include <QMainWindow>
 
@@ -14,22 +16,25 @@ namespace tomviz {
 SetTiltAnglesReaction::SetTiltAnglesReaction(QAction* p, QMainWindow* mw)
   : pqReaction(p), m_mainWindow(mw)
 {
-  connect(&ActiveObjects::instance(), &ActiveObjects::activeNodeChanged, this,
-          [this]() { updateEnableState(); });
+  connect(&ActiveObjects::instance(),
+          &ActiveObjects::activePipelineChanged,
+          this, [this]() { updateEnableState(); });
+  connect(&ActiveObjects::instance(),
+          &ActiveObjects::activeTipOutputPortChanged,
+          this, [this]() { updateEnableState(); });
   updateEnableState();
 }
 
 void SetTiltAnglesReaction::updateEnableState()
 {
-  // TODO: query active node/port for tilt series type
-  parentAction()->setEnabled(false);
+  auto& ao = ActiveObjects::instance();
+  auto* tipPort = ao.activeTipOutputPort();
+  parentAction()->setEnabled(tipPort != nullptr);
 }
 
-void SetTiltAnglesReaction::showSetTiltAnglesUI(QMainWindow* window,
-                                                DataSource* source)
+void SetTiltAnglesReaction::showSetTiltAnglesUI(QMainWindow*, DataSource*)
 {
-  // TODO: migrate to new pipeline
-  Q_UNUSED(window);
-  Q_UNUSED(source);
+  auto* transform = new pipeline::SetTiltAnglesTransform();
+  insertTransformIntoPipeline(transform);
 }
 } // namespace tomviz

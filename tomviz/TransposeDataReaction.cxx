@@ -3,12 +3,8 @@
 
 #include "TransposeDataReaction.h"
 
-#include <QAction>
-#include <QMainWindow>
-
-#include "ActiveObjects.h"
-#include "TransposeDataOperator.h"
-#include "DataSource.h"
+#include "TransformUtils.h"
+#include "pipeline/transforms/TransposeDataTransform.h"
 
 namespace tomviz {
 
@@ -18,9 +14,9 @@ TransposeDataReaction::TransposeDataReaction(QAction* parentObject,
 {
 }
 
-void TransposeDataReaction::transposeData(DataSource* source)
+void TransposeDataReaction::transposeData(DataSource*)
 {
-  // TODO: migrate to new pipeline
-  Q_UNUSED(source);
+  auto* transform = new pipeline::TransposeDataTransform();
+  insertTransformIntoPipeline(transform);
 }
 } // namespace tomviz

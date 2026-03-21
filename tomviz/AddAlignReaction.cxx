@@ -3,12 +3,8 @@
 
 #include "AddAlignReaction.h"
 
-#include "DataSource.h"
-#include "Pipeline.h"
-#include "TranslateAlignOperator.h"
-#include "Utilities.h"
-
-#include <QDebug>
+#include "TransformUtils.h"
+#include "pipeline/transforms/TranslateAlignTransform.h"
 
 namespace tomviz {
 
@@ -17,9 +13,9 @@ AddAlignReaction::AddAlignReaction(QAction* parentObject)
 {
 }
 
-void AddAlignReaction::align(DataSource* source)
+void AddAlignReaction::align(DataSource*)
 {
-  // TODO: migrate to new pipeline
-  Q_UNUSED(source);
+  auto* transform = new pipeline::TranslateAlignTransform();
+  insertTransformIntoPipeline(transform);
 }
 } // namespace tomviz

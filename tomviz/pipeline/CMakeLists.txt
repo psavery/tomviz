@@ -25,6 +25,11 @@ set(SOURCES
   transforms/ThresholdTransform.cxx
   transforms/SetTiltAnglesTransform.cxx
   transforms/LegacyPythonTransform.cxx
+  transforms/ConvertToFloatTransform.cxx
+  transforms/ConvertToVolumeTransform.cxx
+  transforms/ArrayWranglerTransform.cxx
+  transforms/TransposeDataTransform.cxx
+  transforms/SnapshotTransform.cxx
   sinks/VolumeStatsSink.cxx
   sinks/LegacyModuleSink.cxx
   sinks/VolumeSink.cxx
@@ -75,6 +80,11 @@ set(HEADERS
   transforms/ThresholdTransform.h
   transforms/SetTiltAnglesTransform.h
   transforms/LegacyPythonTransform.h
+  transforms/ConvertToFloatTransform.h
+  transforms/ConvertToVolumeTransform.h
+  transforms/ArrayWranglerTransform.h
+  transforms/TransposeDataTransform.h
+  transforms/SnapshotTransform.h
   PortUtils.h
   pybind11/PybindVTKTypeCaster.h
   sinks/VolumeStatsSink.h

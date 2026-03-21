@@ -3,10 +3,8 @@
 
 #include "CropReaction.h"
 
-#include <QAction>
-#include <QMainWindow>
-
-#include "DataSource.h"
+#include "TransformUtils.h"
+#include "pipeline/transforms/CropTransform.h"
 
 namespace tomviz {
 
@@ -15,9 +13,9 @@ CropReaction::CropReaction(QAction* parentObject, QMainWindow* mw)
 {
 }
 
-void CropReaction::crop(DataSource* source)
+void CropReaction::crop(DataSource*)
 {
-  // TODO: migrate to new pipeline
-  Q_UNUSED(source);
+  auto* transform = new pipeline::CropTransform();
+  insertTransformIntoPipeline(transform);
 }
 } // namespace tomviz

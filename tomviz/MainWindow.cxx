@@ -79,7 +79,6 @@
 #include "SaveScreenshotReaction.h"
 #include "SaveWebReaction.h"
 #include "SetDataTypeReaction.h"
-#include "SetTiltAnglesOperator.h"
 #include "SetTiltAnglesReaction.h"
 #include "Utilities.h"
 #include "ViewMenuManager.h"

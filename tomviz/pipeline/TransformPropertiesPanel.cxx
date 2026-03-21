@@ -53,6 +53,9 @@ void TransformPropertiesPanel::apply()
   if (m_editWidget) {
     m_editWidget->applyChangesToOperator();
   }
+  if (m_transform) {
+    m_transform->markStale();
+  }
   if (m_pipeline) {
     m_pipeline->execute();
   }

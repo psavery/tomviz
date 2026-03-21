@@ -1,30 +1,29 @@
 /* This source file is part of the Tomviz project, https://tomviz.org/.
    It is released under the 3-Clause BSD License, see "LICENSE". */
 
-#ifndef tomvizPipelineSetTiltAnglesTransform_h
-#define tomvizPipelineSetTiltAnglesTransform_h
+#ifndef tomvizPipelineCropTransform_h
+#define tomvizPipelineCropTransform_h
 
 #include "tomviz_pipeline_export.h"
 
 #include "TransformNode.h"
 
-#include <QMap>
-#include <QVector>
-
 namespace tomviz {
 namespace pipeline {
 
-/// Transform that sets tilt angles on a VolumeData.
-class TOMVIZ_PIPELINE_EXPORT SetTiltAnglesTransform : public TransformNode
+/// Transform that crops a volume to a sub-region specified by bounds.
+class TOMVIZ_PIPELINE_EXPORT CropTransform : public TransformNode
 {
   Q_OBJECT
 
 public:
-  SetTiltAnglesTransform(QObject* parent = nullptr);
-  ~SetTiltAnglesTransform() override = default;
+  CropTransform(QObject* parent = nullptr);
+  ~CropTransform() override = default;
 
-  void setTiltAngles(const QMap<size_t, double>& angles);
-  QMap<size_t, double> tiltAnglesMap() const;
+  void setCropBounds(const int bounds[6]);
+  const int* cropBounds() const { return m_bounds; }
+
+  QIcon icon() const override;
 
   bool hasPropertiesWidget() const override;
   bool propertiesWidgetNeedsInput() const override;
@@ -35,7 +34,7 @@ protected:
     const QMap<QString, PortData>& inputs) override;
 
 private:
-  QMap<size_t, double> m_tiltAngles;
+  int m_bounds[6];
 };
 
 } // namespace pipeline

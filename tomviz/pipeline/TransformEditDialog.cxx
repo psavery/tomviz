@@ -136,6 +136,9 @@ void TransformEditDialog::onApply()
     completeInsertion();
   }
 
+  // Mark the transform stale so the pipeline re-executes it with the
+  // updated parameters (and cascades staleness downstream).
+  m_transform->markStale();
   m_pipeline->execute();
 }
 
@@ -149,6 +152,7 @@ void TransformEditDialog::onOkay()
     completeInsertion();
   }
 
+  m_transform->markStale();
   m_pipeline->execute();
   accept();
 }

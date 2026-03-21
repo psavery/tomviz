@@ -3,7 +3,6 @@
 
 #include "SaveDataReaction.h"
 
-#include "ConvertToFloatOperator.h"
 #include "DataExchangeFormat.h"
 #include "EmdFormat.h"
 #include "Utilities.h"

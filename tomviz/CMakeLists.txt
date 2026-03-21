@@ -236,8 +236,16 @@ set(SOURCES
   TomographyReconstruction.cxx
   TomographyTiltSeries.h
   TomographyTiltSeries.cxx
+  TransformUtils.h
+  TransformUtils.cxx
   TransposeDataReaction.h
   TransposeDataReaction.cxx
+  pipeline/transforms/CropTransform.h
+  pipeline/transforms/CropTransform.cxx
+  pipeline/transforms/ReconstructionTransform.h
+  pipeline/transforms/ReconstructionTransform.cxx
+  pipeline/transforms/TranslateAlignTransform.h
+  pipeline/transforms/TranslateAlignTransform.cxx
   Tvh5Format.cxx
   Tvh5Format.h
   Utilities.cxx
@@ -364,16 +372,8 @@ list(APPEND SOURCES
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/acquisition)
 
 list(APPEND SOURCES
-  legacy/operators/ArrayWranglerOperator.cxx
-  legacy/operators/ArrayWranglerOperator.h
-  legacy/operators/ConvertToFloatOperator.cxx
-  legacy/operators/ConvertToFloatOperator.h
-  legacy/operators/ConvertToVolumeOperator.cxx
-  legacy/operators/ConvertToVolumeOperator.h
   legacy/operators/CustomPythonOperatorWidget.cxx
   legacy/operators/CustomPythonOperatorWidget.h
-  legacy/operators/CropOperator.cxx
-  legacy/operators/CropOperator.h
   legacy/operators/EditOperatorWidget.cxx
   legacy/operators/EditOperatorWidget.h
   legacy/operators/Operator.cxx
@@ -388,16 +388,6 @@ list(APPEND SOURCES
   legacy/operators/OperatorPython.h
   legacy/operators/OperatorResult.cxx
   legacy/operators/OperatorResult.h
-  legacy/operators/ReconstructionOperator.cxx
-  legacy/operators/ReconstructionOperator.h
-  legacy/operators/SetTiltAnglesOperator.cxx
-  legacy/operators/SetTiltAnglesOperator.h
-  legacy/operators/SnapshotOperator.h
-  legacy/operators/SnapshotOperator.cxx
-  legacy/operators/TranslateAlignOperator.h
-  legacy/operators/TranslateAlignOperator.cxx
-  legacy/operators/TransposeDataOperator.h
-  legacy/operators/TransposeDataOperator.cxx
   PipelineModuleMenu.cxx
   PipelineModuleMenu.h
 )

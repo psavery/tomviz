@@ -3,10 +3,8 @@
 
 #include "ConvertToFloatReaction.h"
 
-#include <QDebug>
-
-#include "ConvertToFloatOperator.h"
-#include "DataSource.h"
+#include "TransformUtils.h"
+#include "pipeline/transforms/ConvertToFloatTransform.h"
 
 namespace tomviz {
 
@@ -17,14 +15,7 @@ ConvertToFloatReaction::ConvertToFloatReaction(QAction* parentObject)
 
 void ConvertToFloatReaction::convertToFloat()
 {
-  // TODO: migrate to new pipeline
-  DataSource* source = nullptr; // was: ActiveObjects::instance().activeParentDataSource()
-  if (!source) {
-    qDebug() << "Exiting early - no data found.";
-    return;
-  }
-  Operator* Op = new ConvertToFloatOperator();
-
-  source->addOperator(Op);
+  auto* transform = new pipeline::ConvertToFloatTransform();
+  insertTransformIntoPipeline(transform);
 }
 } // namespace tomviz
