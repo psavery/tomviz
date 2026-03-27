@@ -95,10 +95,14 @@ public:
 signals:
   void sliceChanged(int slice);
   void directionChanged(Direction direction);
+  void planeChanged();
 
 protected:
   bool consume(const QMap<QString, PortData>& inputs) override;
   void updateColorMap() override;
+
+private slots:
+  void onPlaneChanged();
 
 private:
   void setupWidget();
@@ -111,7 +115,7 @@ private:
   int m_slice = -1;
   int m_sliceThickness = 1;
   ThickSliceMode m_thickSliceMode = Mean;
-  bool m_interpolate = true;
+  bool m_interpolate = false;
   double m_opacity = 1.0;
   bool m_showArrow = true;
   bool m_mapScalars = true;

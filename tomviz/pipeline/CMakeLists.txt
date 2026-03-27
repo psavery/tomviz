@@ -45,6 +45,7 @@ set(SOURCES
   sinks/MoleculeSink.cxx
   sinks/VolumeSinkWidget.cxx
   ../DoubleSliderWidget.cxx
+  ../IntSliderWidget.cxx
   ParameterInterfaceBuilder.cxx
   CustomPythonTransformWidget.cxx
   EditTransformWidget.cxx
@@ -104,6 +105,7 @@ set(HEADERS
   sinks/MoleculeSink.h
   sinks/VolumeSinkWidget.h
   ../DoubleSliderWidget.h
+  ../IntSliderWidget.h
   ParameterInterfaceBuilder.h
   EditTransformWidget.h
   TransformPropertiesWidget.h
