@@ -57,16 +57,29 @@ public:
   QString zTitle() const;
   void setZTitle(const QString& title);
 
+  /// Grid line generation (separate from axes visibility).
+  bool generateGrid() const;
+  void setGenerateGrid(bool gen);
+
+  /// Whether to use custom axis titles instead of auto-generated ones.
+  bool useCustomAxesTitles() const;
+  void setUseCustomAxesTitles(bool use);
+
 protected:
   bool consume(const QMap<QString, PortData>& inputs) override;
 
 private:
+  void updateGridAxesColor(double r, double g, double b);
+  void updateGridAxesTitles();
+
   vtkNew<vtkOutlineFilter> m_outlineFilter;
   vtkNew<vtkPolyDataMapper> m_mapper;
   vtkNew<vtkActor> m_actor;
   vtkNew<vtkProperty> m_property;
   vtkNew<vtkGridAxesActor3D> m_gridAxes;
   bool m_showGridAxes = false;
+  bool m_generateGrid = false;
+  bool m_useCustomAxesTitles = false;
   QString m_xTitle = "X";
   QString m_yTitle = "Y";
   QString m_zTitle = "Z";

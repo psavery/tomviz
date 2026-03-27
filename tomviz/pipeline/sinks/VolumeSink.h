@@ -13,12 +13,13 @@
 class vtkColorTransferFunction;
 class vtkPiecewiseFunction;
 class vtkPlane;
-class vtkSmartVolumeMapper;
 class vtkVolume;
 class vtkVolumeProperty;
 
 namespace tomviz {
 namespace pipeline {
+
+class SmartVolumeMapper;
 
 /// Volume rendering visualization sink.
 /// Matches the old ModuleVolume VTK pipeline: SmartVolumeMapper + Volume +
@@ -75,6 +76,10 @@ public:
   double solidity() const;
   void setSolidity(double value);
 
+  /// Active scalar array index (-1 = use default active scalars).
+  int activeScalars() const;
+  void setActiveScalars(int index);
+
   /// Clipping plane support.
   void addClippingPlane(vtkPlane* plane);
   void removeClippingPlane(vtkPlane* plane);
@@ -85,9 +90,14 @@ protected:
   void updateColorMap() override;
 
 private:
-  vtkNew<vtkSmartVolumeMapper> m_volumeMapper;
+  void applyActiveScalars();
+
+  vtkNew<SmartVolumeMapper> m_volumeMapper;
   vtkNew<vtkVolume> m_volume;
   vtkNew<vtkVolumeProperty> m_volumeProperty;
+  vtkNew<vtkPiecewiseFunction> m_gradientOpacity;
+
+  int m_activeScalars = -1;
 };
 
 } // namespace pipeline

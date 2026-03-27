@@ -2,24 +2,27 @@
    It is released under the 3-Clause BSD License, see "LICENSE". */
 
 #include "VolumeSink.h"
+#include "VolumeSinkWidget.h"
 
 #include "data/VolumeData.h"
 
 #include <QCheckBox>
 #include <QComboBox>
-#include <QDoubleSpinBox>
 #include <QFormLayout>
-#include <QGroupBox>
 #include <QSignalBlocker>
-#include <QSlider>
+#include <QVBoxLayout>
 #include <QWidget>
 
 #include <vtkColorTransferFunction.h>
+#include <vtkDataArray.h>
 #include <vtkImageData.h>
+#include <vtkPointData.h>
 #include <vtkSMProxy.h>
 #include <vtkPVRenderView.h>
 #include <vtkPiecewiseFunction.h>
 #include <vtkPlane.h>
+#include <vtkGPUVolumeRayCastMapper.h>
+#include <vtkObjectFactory.h>
 #include <vtkSmartVolumeMapper.h>
 #include <vtkVolume.h>
 #include <vtkVolumeMapper.h>
@@ -28,12 +31,33 @@
 namespace tomviz {
 namespace pipeline {
 
+// Subclass vtkSmartVolumeMapper so we can forward jittering to the GPU mapper,
+// matching the legacy ModuleVolume behavior.
+class SmartVolumeMapper : public vtkSmartVolumeMapper
+{
+public:
+  SmartVolumeMapper() { SetRequestedRenderModeToGPU(); }
+
+  static SmartVolumeMapper* New();
+
+  void UseJitteringOn() { GetGPUMapper()->UseJitteringOn(); }
+  void UseJitteringOff() { GetGPUMapper()->UseJitteringOff(); }
+  vtkTypeBool GetUseJittering() { return GetGPUMapper()->GetUseJittering(); }
+  void SetUseJittering(vtkTypeBool b) { GetGPUMapper()->SetUseJittering(b); }
+};
+
+vtkStandardNewMacro(SmartVolumeMapper)
+
 VolumeSink::VolumeSink(QObject* parent) : LegacyModuleSink(parent)
 {
   addInput("volume", PortType::ImageData);
   setLabel("Volume");
 
-  m_volumeMapper->SetRequestedRenderModeToGPU();
+  // NOTE: Due to a bug in vtkMultiVolume, a gradient opacity function must be
+  // set or the shader will fail to compile.
+  m_gradientOpacity->AddPoint(0.0, 1.0);
+
+  m_volumeMapper->SetScalarModeToUsePointFieldData();
   m_volumeMapper->SetBlendMode(vtkVolumeMapper::COMPOSITE_BLEND);
   m_volumeMapper->UseJitteringOn();
 
@@ -98,6 +122,7 @@ bool VolumeSink::consume(const QMap<QString, PortData>& inputs)
   }
 
   m_volumeMapper->SetInputData(volume->imageData());
+  applyActiveScalars();
   m_volume->SetVisibility(visibility() ? 1 : 0);
 
   return true;
@@ -123,9 +148,17 @@ void VolumeSink::updateColorMap()
     m_volumeProperty->SetScalarOpacity(opacity);
   }
 
+  // Gradient opacity: only set it if the function actually has control points.
+  // An empty vtkPiecewiseFunction evaluates to 0 everywhere, which would make
+  // the entire volume transparent. The legacy ModuleVolume set gradient opacity
+  // to nullptr in SCALAR transfer mode (the default), disabling it.
   auto* gradOp = gradientOpacity();
-  if (gradOp) {
+  if (gradOp && gradOp->GetSize() > 0) {
     m_volumeProperty->SetGradientOpacity(gradOp);
+  } else if (m_gradientOpacity->GetSize() > 0) {
+    m_volumeProperty->SetGradientOpacity(m_gradientOpacity);
+  } else {
+    m_volumeProperty->SetGradientOpacity(nullptr);
   }
 
   emit renderNeeded();
@@ -242,6 +275,43 @@ void VolumeSink::setSolidity(double value)
   }
 }
 
+// --- Active scalars ---
+
+int VolumeSink::activeScalars() const
+{
+  return m_activeScalars;
+}
+
+void VolumeSink::setActiveScalars(int index)
+{
+  m_activeScalars = index;
+  applyActiveScalars();
+  emit renderNeeded();
+}
+
+void VolumeSink::applyActiveScalars()
+{
+  auto vol = volumeData();
+  if (!vol || !vol->isValid()) {
+    return;
+  }
+
+  auto* pointData = vol->imageData()->GetPointData();
+  int idx = m_activeScalars;
+  if (idx < 0) {
+    // Default: use whatever vtkPointData considers active
+    auto* active = pointData->GetScalars();
+    if (active && active->GetName()) {
+      m_volumeMapper->SelectScalarArray(active->GetName());
+    }
+  } else if (idx < pointData->GetNumberOfArrays()) {
+    auto* array = pointData->GetArray(idx);
+    if (array && array->GetName()) {
+      m_volumeMapper->SelectScalarArray(array->GetName());
+    }
+  }
+}
+
 // --- Clipping ---
 
 void VolumeSink::addClippingPlane(vtkPlane* plane)
@@ -270,123 +340,83 @@ void VolumeSink::removeAllClippingPlanes()
 
 QWidget* VolumeSink::createPropertiesWidget(QWidget* parent)
 {
-  auto* widget = new QWidget(parent);
-  auto* layout = new QFormLayout(widget);
+  auto* widget = new VolumeSinkWidget(parent);
+  int insertRow = 0;
 
-  // --- Custom color map toggle ---
-  auto* customCmapCheck = new QCheckBox(widget);
+  // --- Active Scalars combo (row 0) ---
+  auto* scalarsCombo = new QComboBox(widget);
   {
-    QSignalBlocker blocker(customCmapCheck);
-    customCmapCheck->setChecked(useDetachedColorMap());
-  }
-  layout->addRow("Custom Color Map", customCmapCheck);
-  QObject::connect(customCmapCheck, &QCheckBox::toggled,
-                   [this](bool on) { setUseDetachedColorMap(on); });
+    QSignalBlocker blocker(scalarsCombo);
+    scalarsCombo->addItem("Default", -1);
 
-  // --- Lighting checkbox ---
-  auto* lightCheck = new QCheckBox(widget);
-  {
-    QSignalBlocker blocker(lightCheck);
-    lightCheck->setChecked(lighting());
-  }
-  layout->addRow("Lighting", lightCheck);
-
-  // --- Lighting group ---
-  auto* lightGroup = new QGroupBox("Lighting", widget);
-  auto* lightLayout = new QFormLayout(lightGroup);
-  lightGroup->setEnabled(lighting());
-
-  auto addSlider = [&](const QString& label, double initial, int minVal,
-                       int maxVal, auto setter,
-                       bool directValue = false) -> QSlider* {
-    auto* slider = new QSlider(Qt::Horizontal, widget);
-    slider->setRange(minVal, maxVal);
-    {
-      QSignalBlocker blocker(slider);
-      slider->setValue(
-        static_cast<int>(directValue ? initial : initial * 100));
+    auto vol = volumeData();
+    if (vol && vol->isValid()) {
+      auto* pointData = vol->imageData()->GetPointData();
+      for (int i = 0; i < pointData->GetNumberOfArrays(); ++i) {
+        auto* array = pointData->GetArray(i);
+        if (array && array->GetName()) {
+          scalarsCombo->addItem(QString(array->GetName()), i);
+        }
+      }
     }
-    lightLayout->addRow(label, slider);
-    if (directValue) {
-      QObject::connect(slider, &QSlider::valueChanged,
-                       [this, setter](int v) { (this->*setter)(v); });
+
+    if (m_activeScalars < 0) {
+      scalarsCombo->setCurrentIndex(0);
     } else {
-      QObject::connect(slider, &QSlider::valueChanged,
-                       [this, setter](int v) { (this->*setter)(v / 100.0); });
+      int idx = scalarsCombo->findData(m_activeScalars);
+      scalarsCombo->setCurrentIndex(idx >= 0 ? idx : 0);
     }
-    return slider;
-  };
-
-  addSlider("Ambient", ambient(), 0, 100, &VolumeSink::setAmbient);
-  addSlider("Diffuse", diffuse(), 0, 100, &VolumeSink::setDiffuse);
-  addSlider("Specular", specular(), 0, 100, &VolumeSink::setSpecular);
-  addSlider("Specular Power", specularPower(), 1, 150,
-            &VolumeSink::setSpecularPower, true);
-  layout->addRow(lightGroup);
-
-  QObject::connect(lightCheck, &QCheckBox::toggled,
-                   [this, lightGroup](bool on) {
-                     setLighting(on);
-                     lightGroup->setEnabled(on);
-                   });
-
-  // --- Jittering ---
-  auto* jitterCheck = new QCheckBox(widget);
-  {
-    QSignalBlocker blocker(jitterCheck);
-    jitterCheck->setChecked(jittering());
   }
-  layout->addRow("Jittering", jitterCheck);
-  QObject::connect(jitterCheck, &QCheckBox::toggled,
-                   [this](bool on) { setJittering(on); });
+  widget->formLayout()->insertRow(insertRow++, "Active Scalars", scalarsCombo);
+  connect(scalarsCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+          this, [this, scalarsCombo](int idx) {
+            setActiveScalars(scalarsCombo->itemData(idx).toInt());
+          });
 
-  // --- Blending ---
-  auto* blendCombo = new QComboBox(widget);
-  blendCombo->addItem("Composite", vtkVolumeMapper::COMPOSITE_BLEND);
-  blendCombo->addItem("Max", vtkVolumeMapper::MAXIMUM_INTENSITY_BLEND);
-  blendCombo->addItem("Min", vtkVolumeMapper::MINIMUM_INTENSITY_BLEND);
-  blendCombo->addItem("Average", vtkVolumeMapper::AVERAGE_INTENSITY_BLEND);
+  // --- Separate Color Map checkbox ---
+  auto* separateCmapCheck = new QCheckBox(widget);
   {
-    QSignalBlocker blocker(blendCombo);
-    int idx = blendCombo->findData(blendingMode());
-    blendCombo->setCurrentIndex(idx >= 0 ? idx : 0);
+    QSignalBlocker blocker(separateCmapCheck);
+    separateCmapCheck->setChecked(useDetachedColorMap());
   }
-  layout->addRow("Blending", blendCombo);
-  QObject::connect(
-    blendCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-    [this, blendCombo](int idx) {
-      setBlendingMode(blendCombo->itemData(idx).toInt());
-    });
+  widget->formLayout()->insertRow(insertRow++, "Separate Color Map",
+                                  separateCmapCheck);
+  connect(separateCmapCheck, &QCheckBox::toggled,
+          [this](bool on) { setUseDetachedColorMap(on); });
 
-  // --- Interpolation ---
-  auto* interpCombo = new QComboBox(widget);
-  interpCombo->addItem("Linear", VTK_LINEAR_INTERPOLATION);
-  interpCombo->addItem("Nearest", VTK_NEAREST_INTERPOLATION);
+  // Push current state into the widget
   {
-    QSignalBlocker blocker(interpCombo);
-    int idx = interpCombo->findData(interpolationType());
-    interpCombo->setCurrentIndex(idx >= 0 ? idx : 0);
+    QSignalBlocker blocker(widget);
+    widget->setJittering(jittering());
+    widget->setLighting(lighting());
+    widget->setBlendingMode(blendingMode());
+    widget->setInterpolationType(interpolationType());
+    widget->setAmbient(ambient());
+    widget->setDiffuse(diffuse());
+    widget->setSpecular(specular());
+    widget->setSpecularPower(specularPower());
+    widget->setSolidity(solidity());
   }
-  layout->addRow("Interpolation", interpCombo);
-  QObject::connect(
-    interpCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-    [this, interpCombo](int idx) {
-      setInterpolationType(interpCombo->itemData(idx).toInt());
-    });
 
-  // --- Solidity ---
-  auto* soliditySpin = new QDoubleSpinBox(widget);
-  soliditySpin->setRange(0.001, 100.0);
-  soliditySpin->setDecimals(3);
-  soliditySpin->setSingleStep(0.1);
-  {
-    QSignalBlocker blocker(soliditySpin);
-    soliditySpin->setValue(solidity());
-  }
-  layout->addRow("Solidity", soliditySpin);
-  QObject::connect(
-    soliditySpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-    [this](double v) { setSolidity(v); });
+  // Connect widget signals to VolumeSink setters
+  connect(widget, &VolumeSinkWidget::jitteringToggled, this,
+          &VolumeSink::setJittering);
+  connect(widget, &VolumeSinkWidget::lightingToggled, this,
+          &VolumeSink::setLighting);
+  connect(widget, &VolumeSinkWidget::blendingChanged, this,
+          &VolumeSink::setBlendingMode);
+  connect(widget, &VolumeSinkWidget::interpolationChanged, this,
+          &VolumeSink::setInterpolationType);
+  connect(widget, &VolumeSinkWidget::ambientChanged, this,
+          &VolumeSink::setAmbient);
+  connect(widget, &VolumeSinkWidget::diffuseChanged, this,
+          &VolumeSink::setDiffuse);
+  connect(widget, &VolumeSinkWidget::specularChanged, this,
+          &VolumeSink::setSpecular);
+  connect(widget, &VolumeSinkWidget::specularPowerChanged, this,
+          &VolumeSink::setSpecularPower);
+  connect(widget, &VolumeSinkWidget::solidityChanged, this,
+          &VolumeSink::setSolidity);
 
   return widget;
 }
@@ -400,6 +430,7 @@ QJsonObject VolumeSink::serialize() const
   json["blendingMode"] = blendingMode();
   json["rayJittering"] = jittering();
   json["solidity"] = solidity();
+  json["activeScalars"] = m_activeScalars;
 
   QJsonObject light;
   light["enabled"] = lighting();
@@ -436,6 +467,9 @@ bool VolumeSink::deserialize(const QJsonObject& json)
     setDiffuse(light["diffuse"].toDouble());
     setSpecular(light["specular"].toDouble());
     setSpecularPower(light["specularPower"].toDouble());
+  }
+  if (json.contains("activeScalars")) {
+    m_activeScalars = json["activeScalars"].toInt(-1);
   }
   return true;
 }

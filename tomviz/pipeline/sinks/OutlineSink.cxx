@@ -6,15 +6,18 @@
 #include "data/VolumeData.h"
 
 #include <QCheckBox>
-#include <QFormLayout>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QLabel>
 #include <QLineEdit>
-#include <QSignalBlocker>
+#include <QVBoxLayout>
 #include <QWidget>
+
+#include <pqColorChooserButton.h>
 
 #include <vtkActor.h>
 #include <vtkGridAxesActor3D.h>
+#include <vtkGridAxesHelper.h>
 #include <vtkImageData.h>
 #include <vtkOutlineFilter.h>
 #include <vtkPVRenderView.h>
@@ -38,23 +41,34 @@ OutlineSink::OutlineSink(QObject* parent) : LegacyModuleSink(parent)
 
   // Configure grid axes actor
   m_gridAxes->SetVisibility(0);
-  // Configure text properties to be readable
-  for (int i = 0; i < 3; ++i) {
-    auto* tp = m_gridAxes->GetTitleTextProperty(i);
-    tp->SetColor(1.0, 1.0, 1.0);
-    tp->SetFontSize(14);
-    tp->SetBold(1);
-    auto* lp = m_gridAxes->GetLabelTextProperty(i);
-    lp->SetColor(0.9, 0.9, 0.9);
-    lp->SetFontSize(10);
-  }
-  m_gridAxes->SetXTitle(m_xTitle.toUtf8().data());
-  m_gridAxes->SetYTitle(m_yTitle.toUtf8().data());
-  m_gridAxes->SetZTitle(m_zTitle.toUtf8().data());
-  // Show all faces and labels
-  m_gridAxes->SetFaceMask(0xFF);
-  m_gridAxes->SetLabelMask(0xFF);
+  m_gridAxes->SetGenerateGrid(false);
+
+  // Work around a bug in vtkGridAxesActor3D: GetProperty() returns the
+  // vtkProperty associated with a single face. Use our own property
+  // shared with the outline actor so all faces update together.
+  m_property->SetFrontfaceCulling(1);
+  m_property->SetBackfaceCulling(0);
   m_gridAxes->SetProperty(m_property);
+
+  // Set mask to show labels on all axes
+  m_gridAxes->SetLabelMask(vtkGridAxesHelper::LabelMasks::MIN_X |
+                           vtkGridAxesHelper::LabelMasks::MIN_Y |
+                           vtkGridAxesHelper::LabelMasks::MIN_Z |
+                           vtkGridAxesHelper::LabelMasks::MAX_X |
+                           vtkGridAxesHelper::LabelMasks::MAX_Y |
+                           vtkGridAxesHelper::LabelMasks::MAX_Z);
+
+  // Set mask to render all faces
+  m_gridAxes->SetFaceMask(vtkGridAxesHelper::Faces::MAX_XY |
+                          vtkGridAxesHelper::Faces::MAX_YZ |
+                          vtkGridAxesHelper::Faces::MAX_ZX |
+                          vtkGridAxesHelper::Faces::MIN_XY |
+                          vtkGridAxesHelper::Faces::MIN_YZ |
+                          vtkGridAxesHelper::Faces::MIN_ZX);
+
+  // Set titles and initial color (off-white)
+  updateGridAxesTitles();
+  updateGridAxesColor(0.9, 0.9, 0.9);
 }
 
 OutlineSink::~OutlineSink()
@@ -110,6 +124,7 @@ bool OutlineSink::consume(const QMap<QString, PortData>& inputs)
   // Update grid axes bounds to match the volume
   auto bounds = volume->bounds();
   m_gridAxes->SetGridBounds(bounds.data());
+  updateGridAxesTitles();
 
   m_actor->SetVisibility(visibility() ? 1 : 0);
   m_gridAxes->SetVisibility(
@@ -126,67 +141,127 @@ void OutlineSink::color(double rgb[3]) const
 
 void OutlineSink::setColor(double r, double g, double b)
 {
-  m_property->SetColor(r, g, b);
+  updateGridAxesColor(r, g, b);
   emit renderNeeded();
 }
 
 QWidget* OutlineSink::createPropertiesWidget(QWidget* parent)
 {
   auto* widget = new QWidget(parent);
-  auto* layout = new QFormLayout(widget);
+  auto* panelLayout = new QVBoxLayout(widget);
 
   // --- Color ---
-  auto* colorLayout = new QHBoxLayout();
+  auto* colorLayout = new QHBoxLayout;
+  auto* colorLabel = new QLabel("Color", widget);
+  colorLayout->addWidget(colorLabel);
+  colorLayout->addStretch();
+
+  auto* colorSelector = new pqColorChooserButton(widget);
+  colorSelector->setShowAlphaChannel(false);
   double rgb[3];
   color(rgb);
-  auto* rEdit = new QLineEdit(QString::number(rgb[0], 'f', 3), widget);
-  auto* gEdit = new QLineEdit(QString::number(rgb[1], 'f', 3), widget);
-  auto* bEdit = new QLineEdit(QString::number(rgb[2], 'f', 3), widget);
-  colorLayout->addWidget(rEdit);
-  colorLayout->addWidget(gEdit);
-  colorLayout->addWidget(bEdit);
-  layout->addRow("Color", colorLayout);
+  colorSelector->setChosenColor(
+    QColor::fromRgbF(rgb[0], rgb[1], rgb[2]));
+  QObject::connect(
+    colorSelector, &pqColorChooserButton::chosenColorChanged,
+    [this](const QColor& c) {
+      setColor(c.redF(), c.greenF(), c.blueF());
+    });
+  colorLayout->addWidget(colorSelector);
+  panelLayout->addLayout(colorLayout);
 
-  auto updateColor = [this, rEdit, gEdit, bEdit]() {
-    setColor(rEdit->text().toDouble(), gEdit->text().toDouble(),
-             bEdit->text().toDouble());
-  };
-  QObject::connect(rEdit, &QLineEdit::editingFinished, updateColor);
-  QObject::connect(gEdit, &QLineEdit::editingFinished, updateColor);
-  QObject::connect(bEdit, &QLineEdit::editingFinished, updateColor);
+  // --- Show Axes ---
+  auto* showAxesLayout = new QHBoxLayout;
+  auto* showAxes = new QCheckBox("Show Axes", widget);
+  showAxes->setChecked(showGridAxes());
+  showAxesLayout->addWidget(showAxes);
+  panelLayout->addLayout(showAxesLayout);
 
-  // --- Show Grid Axes ---
-  auto* gridCheck = new QCheckBox(widget);
-  {
-    QSignalBlocker blocker(gridCheck);
-    gridCheck->setChecked(showGridAxes());
-  }
-  layout->addRow("Show Grid Axes", gridCheck);
+  // --- Show Grid ---
+  auto* showGridLayout = new QHBoxLayout;
+  auto* showGrid = new QCheckBox("Show Grid", widget);
+  showGrid->setChecked(generateGrid());
+  showGridLayout->addWidget(showGrid);
+  panelLayout->addLayout(showGridLayout);
 
-  // --- Axis Titles ---
-  auto* titleGroup = new QGroupBox("Axis Titles", widget);
-  auto* titleLayout = new QFormLayout(titleGroup);
+  // --- Custom Axes Titles ---
+  auto* useCustomTitlesLayout = new QHBoxLayout;
+  auto* useCustomTitles = new QCheckBox("Custom Axes Titles", widget);
+  useCustomTitles->setChecked(useCustomAxesTitles());
+  useCustomTitlesLayout->addWidget(useCustomTitles);
+  panelLayout->addLayout(useCustomTitlesLayout);
 
+  // --- Custom titles group box ---
+  auto* titlesGroupBox = new QGroupBox(widget);
+  auto* titlesLayout = new QVBoxLayout(titlesGroupBox);
+
+  auto* xLayout = new QHBoxLayout;
+  xLayout->addWidget(new QLabel("X:", widget));
   auto* xTitleEdit = new QLineEdit(xTitle(), widget);
+  xLayout->addWidget(xTitleEdit);
+  titlesLayout->addLayout(xLayout);
+
+  auto* yLayout = new QHBoxLayout;
+  yLayout->addWidget(new QLabel("Y:", widget));
   auto* yTitleEdit = new QLineEdit(yTitle(), widget);
+  yLayout->addWidget(yTitleEdit);
+  titlesLayout->addLayout(yLayout);
+
+  auto* zLayout = new QHBoxLayout;
+  zLayout->addWidget(new QLabel("Z:", widget));
   auto* zTitleEdit = new QLineEdit(zTitle(), widget);
-  titleLayout->addRow("X Title", xTitleEdit);
-  titleLayout->addRow("Y Title", yTitleEdit);
-  titleLayout->addRow("Z Title", zTitleEdit);
-  titleGroup->setVisible(showGridAxes());
-  layout->addRow(titleGroup);
+  zLayout->addWidget(zTitleEdit);
+  titlesLayout->addLayout(zLayout);
 
-  QObject::connect(gridCheck, &QCheckBox::toggled, [this, titleGroup](bool on) {
-    setShowGridAxes(on);
-    titleGroup->setVisible(on);
-  });
-  QObject::connect(xTitleEdit, &QLineEdit::editingFinished,
-                   [this, xTitleEdit]() { setXTitle(xTitleEdit->text()); });
-  QObject::connect(yTitleEdit, &QLineEdit::editingFinished,
-                   [this, yTitleEdit]() { setYTitle(yTitleEdit->text()); });
-  QObject::connect(zTitleEdit, &QLineEdit::editingFinished,
-                   [this, zTitleEdit]() { setZTitle(zTitleEdit->text()); });
+  titlesGroupBox->setVisible(useCustomAxesTitles());
+  panelLayout->addWidget(titlesGroupBox);
 
+  // Disable grid/custom titles when axes not shown
+  if (!showAxes->isChecked()) {
+    showGrid->setEnabled(false);
+    useCustomTitles->setEnabled(false);
+    titlesGroupBox->setVisible(false);
+  }
+
+  // --- Connections ---
+  QObject::connect(
+    showAxes, &QCheckBox::checkStateChanged,
+    [this, showGrid, useCustomTitles](int state) {
+      bool checked = state == Qt::Checked;
+      setShowGridAxes(checked);
+      if (!checked) {
+        showGrid->setChecked(false);
+        useCustomTitles->setChecked(false);
+      }
+      showGrid->setEnabled(checked);
+      useCustomTitles->setEnabled(checked);
+    });
+
+  QObject::connect(showGrid, &QCheckBox::checkStateChanged,
+                   [this](int state) {
+                     setGenerateGrid(state == Qt::Checked);
+                   });
+
+  QObject::connect(useCustomTitles, &QCheckBox::toggled,
+                   [this, titlesGroupBox](bool b) {
+                     setUseCustomAxesTitles(b);
+                     titlesGroupBox->setVisible(b);
+                   });
+
+  QObject::connect(xTitleEdit, &QLineEdit::textChanged,
+                   [this](const QString& text) {
+                     setXTitle(text);
+                   });
+  QObject::connect(yTitleEdit, &QLineEdit::textChanged,
+                   [this](const QString& text) {
+                     setYTitle(text);
+                   });
+  QObject::connect(zTitleEdit, &QLineEdit::textChanged,
+                   [this](const QString& text) {
+                     setZTitle(text);
+                   });
+
+  panelLayout->addStretch();
   return widget;
 }
 
@@ -211,7 +286,7 @@ QString OutlineSink::xTitle() const
 void OutlineSink::setXTitle(const QString& title)
 {
   m_xTitle = title;
-  m_gridAxes->SetXTitle(title.toUtf8().data());
+  updateGridAxesTitles();
   emit renderNeeded();
 }
 
@@ -223,7 +298,7 @@ QString OutlineSink::yTitle() const
 void OutlineSink::setYTitle(const QString& title)
 {
   m_yTitle = title;
-  m_gridAxes->SetYTitle(title.toUtf8().data());
+  updateGridAxesTitles();
   emit renderNeeded();
 }
 
@@ -235,8 +310,68 @@ QString OutlineSink::zTitle() const
 void OutlineSink::setZTitle(const QString& title)
 {
   m_zTitle = title;
-  m_gridAxes->SetZTitle(title.toUtf8().data());
+  updateGridAxesTitles();
   emit renderNeeded();
+}
+
+bool OutlineSink::generateGrid() const
+{
+  return m_generateGrid;
+}
+
+void OutlineSink::setGenerateGrid(bool gen)
+{
+  m_generateGrid = gen;
+  m_gridAxes->SetGenerateGrid(gen);
+  emit renderNeeded();
+}
+
+bool OutlineSink::useCustomAxesTitles() const
+{
+  return m_useCustomAxesTitles;
+}
+
+void OutlineSink::setUseCustomAxesTitles(bool use)
+{
+  m_useCustomAxesTitles = use;
+  updateGridAxesTitles();
+  emit renderNeeded();
+}
+
+void OutlineSink::updateGridAxesColor(double r, double g, double b)
+{
+  m_property->SetColor(r, g, b);
+  for (int i = 0; i < 6; ++i) {
+    vtkNew<vtkTextProperty> prop;
+    prop->SetColor(r, g, b);
+    m_gridAxes->SetTitleTextProperty(i, prop);
+    m_gridAxes->SetLabelTextProperty(i, prop);
+  }
+}
+
+void OutlineSink::updateGridAxesTitles()
+{
+  QString xt, yt, zt;
+  if (m_useCustomAxesTitles) {
+    xt = m_xTitle;
+    yt = m_yTitle;
+    zt = m_zTitle;
+  } else {
+    auto vol = volumeData();
+    QString units = vol ? vol->units() : QString();
+    if (units.isEmpty()) {
+      xt = "X";
+      yt = "Y";
+      zt = "Z";
+    } else {
+      xt = QString("X (%1)").arg(units);
+      yt = QString("Y (%1)").arg(units);
+      zt = QString("Z (%1)").arg(units);
+    }
+  }
+  m_gridAxes->SetXTitle(xt.toUtf8().data());
+  m_gridAxes->SetYTitle(yt.toUtf8().data());
+  m_gridAxes->SetZTitle(zt.toUtf8().data());
 }
 
 QJsonObject OutlineSink::serialize() const
@@ -248,6 +383,8 @@ QJsonObject OutlineSink::serialize() const
   json["colorG"] = rgb[1];
   json["colorB"] = rgb[2];
   json["showGridAxes"] = m_showGridAxes;
+  json["generateGrid"] = m_generateGrid;
+  json["useCustomAxesTitles"] = m_useCustomAxesTitles;
   json["xTitle"] = m_xTitle;
   json["yTitle"] = m_yTitle;
   json["zTitle"] = m_zTitle;
@@ -265,6 +402,12 @@ bool OutlineSink::deserialize(const QJsonObject& json)
   }
   if (json.contains("showGridAxes")) {
     setShowGridAxes(json["showGridAxes"].toBool());
+  }
+  if (json.contains("generateGrid")) {
+    setGenerateGrid(json["generateGrid"].toBool());
+  }
+  if (json.contains("useCustomAxesTitles")) {
+    setUseCustomAxesTitles(json["useCustomAxesTitles"].toBool());
   }
   if (json.contains("xTitle")) {
     setXTitle(json["xTitle"].toString());

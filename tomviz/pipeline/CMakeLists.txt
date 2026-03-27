@@ -43,6 +43,8 @@ set(SOURCES
   sinks/ScaleCubeSink.cxx
   sinks/PlotSink.cxx
   sinks/MoleculeSink.cxx
+  sinks/VolumeSinkWidget.cxx
+  ../DoubleSliderWidget.cxx
   ParameterInterfaceBuilder.cxx
   CustomPythonTransformWidget.cxx
   EditTransformWidget.cxx
@@ -100,6 +102,8 @@ set(HEADERS
   sinks/ScaleCubeSink.h
   sinks/PlotSink.h
   sinks/MoleculeSink.h
+  sinks/VolumeSinkWidget.h
+  ../DoubleSliderWidget.h
   ParameterInterfaceBuilder.h
   EditTransformWidget.h
   TransformPropertiesWidget.h
@@ -135,7 +139,8 @@ target_link_libraries(tomviz_pipeline
 target_include_directories(tomviz_pipeline
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>)
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/..>)
 
 install(TARGETS tomviz_pipeline
   RUNTIME DESTINATION "${INSTALL_RUNTIME_DIR}"
