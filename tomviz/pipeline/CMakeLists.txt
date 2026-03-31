@@ -44,6 +44,7 @@ set(SOURCES
   sinks/PlotSink.cxx
   sinks/MoleculeSink.cxx
   sinks/VolumeSinkWidget.cxx
+  sinks/ContourSinkWidget.cxx
   ../DoubleSliderWidget.cxx
   ../IntSliderWidget.cxx
   ParameterInterfaceBuilder.cxx
@@ -104,6 +105,7 @@ set(HEADERS
   sinks/PlotSink.h
   sinks/MoleculeSink.h
   sinks/VolumeSinkWidget.h
+  sinks/ContourSinkWidget.h
   ../DoubleSliderWidget.h
   ../IntSliderWidget.h
   ParameterInterfaceBuilder.h

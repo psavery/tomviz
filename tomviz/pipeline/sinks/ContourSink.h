@@ -8,6 +8,9 @@
 
 #include "LegacyModuleSink.h"
 
+#include <QColor>
+#include <QPointer>
+#include <QString>
 #include <vtkNew.h>
 
 class vtkActor;
@@ -17,6 +20,9 @@ class vtkFlyingEdges3D;
 class vtkProperty;
 
 namespace tomviz {
+
+class ContourSinkWidget;
+
 namespace pipeline {
 
 /// Isosurface/contour visualization sink using vtkFlyingEdges3D.
@@ -65,6 +71,28 @@ public:
   void color(double rgb[3]) const;
   void setColor(double r, double g, double b);
 
+  /// QColor convenience accessors.
+  QColor qcolor() const;
+  void setQColor(const QColor& c);
+
+  /// String-based representation: "Surface", "Wireframe", "Points".
+  QString representationString() const;
+  void setRepresentationString(const QString& rep);
+
+  /// Solid color toggle (separate from mapScalars).
+  bool useSolidColor() const;
+  void setUseSolidColor(bool state);
+
+  /// Color by a different array than the contour array.
+  bool colorByArray() const;
+  void setColorByArray(bool state);
+  QString colorByArrayName() const;
+  void setColorByArrayName(const QString& name);
+
+  /// Active scalar index for contour-by-array (-1 = default).
+  int activeScalars() const;
+  void setActiveScalars(int idx);
+
   /// Cached scalar range from the last consume().
   void scalarRange(double range[2]) const;
 
@@ -80,6 +108,9 @@ public:
 protected:
   bool consume(const QMap<QString, PortData>& inputs) override;
   void updateColorMap() override;
+  void updatePanel();
+  void updateColorArray();
+  void updateScalarArrayOptions();
 
 private:
   vtkNew<vtkFlyingEdges3D> m_flyingEdges;
@@ -89,7 +120,13 @@ private:
   double m_isoValue = 0.0;
   bool m_isoValueSet = false;
   bool m_mapScalars = true;
+  bool m_useSolidColor = false;
+  bool m_colorByArray = false;
+  QString m_colorByArrayName;
+  int m_activeScalars = -1;
   double m_scalarRange[2] = { 0.0, 1.0 };
+  QStringList m_scalarArrayNames;
+  QPointer<ContourSinkWidget> m_controllers;
 };
 
 } // namespace pipeline

@@ -12,7 +12,14 @@
 #include "PresetDialog.h"
 #include "QVTKGLWidget.h"
 #include "Utilities.h"
+#include "pipeline/InputPort.h"
+#include "pipeline/Link.h"
 #include "pipeline/Node.h"
+#include "pipeline/OutputPort.h"
+#include "pipeline/Pipeline.h"
+#include "pipeline/PortType.h"
+#include "pipeline/data/VolumeData.h"
+#include "pipeline/sinks/ContourSink.h"
 
 #include "vtkChartHistogramColorOpacityEditor.h"
 
@@ -376,23 +383,79 @@ void HistogramWidget::onCurrentPointEditEvent()
 
 void HistogramWidget::histogramClicked(vtkObject*)
 {
-  // TODO: This method relied heavily on activeDataSource(), activeModule(),
-  // setActiveModule(), ModuleManager::findModules(), and
-  // ModuleManager::createAndAddModule(). These need to be reworked
-  // for the new pipeline architecture with nodes and ports.
-
-  auto view = ActiveObjects::instance().activeView();
+  auto& ao = ActiveObjects::instance();
+  auto* view = ao.activeView();
   if (!view) {
     return;
   }
 
   auto isoValue = m_histogramColorOpacityEditor->GetContourValue();
 
-  // TODO: Rework contour creation for new pipeline architecture.
-  // Previously this found or created a ModuleContour on the active
-  // DataSource and set the iso value. The new pipeline uses SinkNodes
-  // for visualization modules.
-  Q_UNUSED(isoValue);
+  auto* pip = ao.pipeline();
+  if (!pip) {
+    return;
+  }
+
+  pipeline::ContourSink* contour = nullptr;
+
+  // Priority 1: the active node is already a ContourSink.
+  contour = qobject_cast<pipeline::ContourSink*>(ao.activeNode());
+
+  // Priority 2: a ContourSink linked to the current tip output port.
+  if (!contour) {
+    auto* tipPort = ao.activeTipOutputPort();
+    if (tipPort) {
+      for (auto* link : tipPort->links()) {
+        auto* sink =
+          qobject_cast<pipeline::ContourSink*>(link->to()->node());
+        if (sink) {
+          contour = sink;
+          break;
+        }
+      }
+    }
+  }
+
+  // Priority 3: any ContourSink in the pipeline.
+  if (!contour) {
+    for (auto* node : pip->nodes()) {
+      auto* sink = qobject_cast<pipeline::ContourSink*>(node);
+      if (sink) {
+        contour = sink;
+        break;
+      }
+    }
+  }
+
+  // No existing ContourSink — ask the user to create one.
+  if (!contour) {
+    if (!createContourDialog(isoValue)) {
+      return;
+    }
+
+    auto* tipPort = ao.activeTipOutputPort();
+    if (!tipPort) {
+      return;
+    }
+
+    auto* newContour = new pipeline::ContourSink();
+    newContour->setLabel("Contour");
+    newContour->initialize(view);
+    pip->addNode(newContour);
+
+    auto* input = newContour->inputPorts().value(0);
+    if (input &&
+        pipeline::isPortTypeCompatible(tipPort->type(),
+                                       input->acceptedTypes())) {
+      pip->createLink(tipPort, input);
+    }
+
+    contour = newContour;
+  }
+
+  contour->setIsoValue(isoValue);
+  ao.setActiveNode(contour);
+  pip->execute();
 
   tomviz::convert<pqView*>(view)->render();
 }
@@ -406,10 +469,17 @@ bool HistogramWidget::createContourDialog(double& isoValue)
     return true;
   }
 
-  // TODO: activeDataSource() no longer exists on ActiveObjects.
-  // Need to obtain DataSource from active node to get data range.
-  // For now, use a placeholder range.
-  double range[2] = { 0.0, 1.0 }; // TODO: obtain range from active node data
+  // Obtain the scalar range from the tip output port's VolumeData.
+  double range[2] = { 0.0, 1.0 };
+  auto* tipPort = ActiveObjects::instance().activeTipOutputPort();
+  if (tipPort && tipPort->hasData()) {
+    auto vol = tipPort->data().value<pipeline::VolumeDataPtr>();
+    if (vol && vol->isValid()) {
+      auto r = vol->scalarRange();
+      range[0] = r[0];
+      range[1] = r[1];
+    }
+  }
 
   QDialog dialog;
   dialog.setFixedWidth(300);

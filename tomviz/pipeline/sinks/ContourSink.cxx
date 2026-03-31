@@ -2,28 +2,24 @@
    It is released under the 3-Clause BSD License, see "LICENSE". */
 
 #include "ContourSink.h"
+#include "ContourSinkWidget.h"
 
 #include "data/VolumeData.h"
 
 #include <QCheckBox>
-#include <QComboBox>
-#include <QDoubleSpinBox>
-#include <QFormLayout>
-#include <QGroupBox>
-#include <QHBoxLayout>
-#include <QLineEdit>
 #include <QSignalBlocker>
-#include <QSlider>
-#include <QWidget>
+#include <QStringList>
+#include <QVBoxLayout>
 
 #include <vtkActor.h>
 #include <vtkColorTransferFunction.h>
 #include <vtkDataSetMapper.h>
-#include <vtkSMProxy.h>
 #include <vtkFlyingEdges3D.h>
 #include <vtkImageData.h>
-#include <vtkPVRenderView.h>
+#include <vtkPointData.h>
 #include <vtkProperty.h>
+#include <vtkPVRenderView.h>
+#include <vtkSMProxy.h>
 
 namespace tomviz {
 namespace pipeline {
@@ -40,6 +36,8 @@ ContourSink::ContourSink(QObject* parent) : LegacyModuleSink(parent)
   m_property->SetRepresentationToSurface();
 
   m_mapper->SetInputConnection(m_flyingEdges->GetOutputPort());
+  m_mapper->SetScalarModeToUsePointFieldData();
+  m_mapper->SetColorModeToMapScalars();
   m_actor->SetMapper(m_mapper);
   m_actor->SetProperty(m_property);
 }
@@ -101,6 +99,24 @@ bool ContourSink::consume(const QMap<QString, PortData>& inputs)
   m_scalarRange[0] = range[0];
   m_scalarRange[1] = range[1];
 
+  // Cache scalar array names
+  m_scalarArrayNames.clear();
+  auto* pointData = volume->imageData()->GetPointData();
+  for (int i = 0; i < pointData->GetNumberOfArrays(); ++i) {
+    auto* arr = pointData->GetArray(i);
+    if (arr && arr->GetName()) {
+      m_scalarArrayNames.append(QString::fromUtf8(arr->GetName()));
+    }
+  }
+
+  // Initialize default color-by array name if not set
+  if (m_colorByArrayName.isEmpty() && !m_scalarArrayNames.isEmpty()) {
+    auto* scalars = pointData->GetScalars();
+    if (scalars && scalars->GetName()) {
+      m_colorByArrayName = QString::fromUtf8(scalars->GetName());
+    }
+  }
+
   // Auto-set iso value to 2/3 of range (matching old ModuleContour default)
   if (!m_isoValueSet) {
     m_isoValue = range[0] + (range[1] - range[0]) * (2.0 / 3.0);
@@ -109,9 +125,15 @@ bool ContourSink::consume(const QMap<QString, PortData>& inputs)
   m_flyingEdges->SetValue(0, m_isoValue);
   m_actor->SetVisibility(visibility() ? 1 : 0);
 
+  // Defer panel update to the main thread (consume() runs on a worker thread).
+  QMetaObject::invokeMethod(this, &ContourSink::updatePanel,
+                            Qt::QueuedConnection);
+
   emit renderNeeded();
   return true;
 }
+
+// --- Iso Value ---
 
 double ContourSink::isoValue() const
 {
@@ -123,8 +145,14 @@ void ContourSink::setIsoValue(double value)
   m_isoValue = value;
   m_isoValueSet = true;
   m_flyingEdges->SetValue(0, value);
+  if (m_controllers) {
+    QSignalBlocker blocker(m_controllers);
+    m_controllers->setIso(value);
+  }
   emit renderNeeded();
 }
+
+// --- Opacity ---
 
 double ContourSink::opacity() const
 {
@@ -196,6 +224,23 @@ void ContourSink::setRepresentation(int rep)
   emit renderNeeded();
 }
 
+QString ContourSink::representationString() const
+{
+  return QString::fromUtf8(m_property->GetRepresentationAsString());
+}
+
+void ContourSink::setRepresentationString(const QString& rep)
+{
+  if (rep == "Surface")
+    m_property->SetRepresentationToSurface();
+  else if (rep == "Points")
+    m_property->SetRepresentationToPoints();
+  else if (rep == "Wireframe")
+    m_property->SetRepresentationToWireframe();
+
+  emit renderNeeded();
+}
+
 // --- Color ---
 
 void ContourSink::color(double rgb[3]) const
@@ -209,139 +254,83 @@ void ContourSink::setColor(double r, double g, double b)
   emit renderNeeded();
 }
 
+QColor ContourSink::qcolor() const
+{
+  double rgb[3];
+  m_property->GetDiffuseColor(rgb);
+  return QColor(static_cast<int>(rgb[0] * 255.0 + 0.5),
+                static_cast<int>(rgb[1] * 255.0 + 0.5),
+                static_cast<int>(rgb[2] * 255.0 + 0.5));
+}
+
+void ContourSink::setQColor(const QColor& c)
+{
+  double rgb[3] = { c.red() / 255.0, c.green() / 255.0, c.blue() / 255.0 };
+  m_property->SetDiffuseColor(rgb);
+  emit renderNeeded();
+}
+
+// --- Solid Color ---
+
+bool ContourSink::useSolidColor() const
+{
+  return m_useSolidColor;
+}
+
+void ContourSink::setUseSolidColor(bool state)
+{
+  m_useSolidColor = state;
+  updateColorMap();
+  emit renderNeeded();
+}
+
+// --- Color By Array ---
+
+bool ContourSink::colorByArray() const
+{
+  return m_colorByArray;
+}
+
+void ContourSink::setColorByArray(bool state)
+{
+  m_colorByArray = state;
+  updateColorMap();
+  emit renderNeeded();
+}
+
+QString ContourSink::colorByArrayName() const
+{
+  return m_colorByArrayName;
+}
+
+void ContourSink::setColorByArrayName(const QString& name)
+{
+  m_colorByArrayName = name;
+  updateColorMap();
+  emit renderNeeded();
+}
+
+// --- Active Scalars ---
+
+int ContourSink::activeScalars() const
+{
+  return m_activeScalars;
+}
+
+void ContourSink::setActiveScalars(int idx)
+{
+  m_activeScalars = idx;
+}
+
+// --- Scalar Range ---
+
 void ContourSink::scalarRange(double range[2]) const
 {
   range[0] = m_scalarRange[0];
   range[1] = m_scalarRange[1];
 }
 
-QWidget* ContourSink::createPropertiesWidget(QWidget* parent)
-{
-  auto* widget = new QWidget(parent);
-  auto* layout = new QFormLayout(widget);
-
-  // --- Custom color map toggle ---
-  auto* customCmapCheck = new QCheckBox(widget);
-  {
-    QSignalBlocker blocker(customCmapCheck);
-    customCmapCheck->setChecked(useDetachedColorMap());
-  }
-  layout->addRow("Custom Color Map", customCmapCheck);
-  QObject::connect(customCmapCheck, &QCheckBox::toggled,
-                   [this](bool on) { setUseDetachedColorMap(on); });
-
-  // --- Iso Value ---
-  auto* isoSpin = new QDoubleSpinBox(widget);
-  isoSpin->setRange(m_scalarRange[0], m_scalarRange[1]);
-  isoSpin->setDecimals(4);
-  isoSpin->setSingleStep((m_scalarRange[1] - m_scalarRange[0]) / 100.0);
-  {
-    QSignalBlocker blocker(isoSpin);
-    isoSpin->setValue(isoValue());
-  }
-  layout->addRow("Iso Value", isoSpin);
-  QObject::connect(isoSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged),
-                   [this](double v) { setIsoValue(v); });
-
-  // --- Opacity ---
-  auto* opacitySlider = new QSlider(Qt::Horizontal, widget);
-  opacitySlider->setRange(0, 100);
-  {
-    QSignalBlocker blocker(opacitySlider);
-    opacitySlider->setValue(static_cast<int>(opacity() * 100));
-  }
-  layout->addRow("Opacity", opacitySlider);
-  QObject::connect(opacitySlider, &QSlider::valueChanged,
-                   [this](int v) { setOpacity(v / 100.0); });
-
-  // --- Representation ---
-  auto* repCombo = new QComboBox(widget);
-  repCombo->addItem("Points", 0);
-  repCombo->addItem("Wireframe", 1);
-  repCombo->addItem("Surface", 2);
-  {
-    QSignalBlocker blocker(repCombo);
-    int idx = repCombo->findData(representation());
-    repCombo->setCurrentIndex(idx >= 0 ? idx : 2);
-  }
-  layout->addRow("Representation", repCombo);
-  QObject::connect(repCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-                   [this, repCombo](int idx) {
-                     setRepresentation(repCombo->itemData(idx).toInt());
-                   });
-
-  // --- Map Scalars ---
-  auto* mapCheck = new QCheckBox(widget);
-  {
-    QSignalBlocker blocker(mapCheck);
-    mapCheck->setChecked(mapScalars());
-  }
-  layout->addRow("Map Scalars", mapCheck);
-
-  // --- Color (visible when !mapScalars) ---
-  auto* colorLayout = new QHBoxLayout();
-  double rgb[3];
-  color(rgb);
-  auto* rEdit = new QLineEdit(QString::number(rgb[0], 'f', 3), widget);
-  auto* gEdit = new QLineEdit(QString::number(rgb[1], 'f', 3), widget);
-  auto* bEdit = new QLineEdit(QString::number(rgb[2], 'f', 3), widget);
-  colorLayout->addWidget(rEdit);
-  colorLayout->addWidget(gEdit);
-  colorLayout->addWidget(bEdit);
-  layout->addRow("Color", colorLayout);
-  auto setColorVisible = [rEdit, gEdit, bEdit](bool visible) {
-    rEdit->setVisible(visible);
-    gEdit->setVisible(visible);
-    bEdit->setVisible(visible);
-  };
-  setColorVisible(!mapScalars());
-
-  auto updateColor = [this, rEdit, gEdit, bEdit]() {
-    setColor(rEdit->text().toDouble(), gEdit->text().toDouble(),
-             bEdit->text().toDouble());
-  };
-  QObject::connect(rEdit, &QLineEdit::editingFinished, updateColor);
-  QObject::connect(gEdit, &QLineEdit::editingFinished, updateColor);
-  QObject::connect(bEdit, &QLineEdit::editingFinished, updateColor);
-
-  QObject::connect(mapCheck, &QCheckBox::toggled,
-                   [this, setColorVisible](bool on) {
-                     setMapScalars(on);
-                     setColorVisible(!on);
-                   });
-
-  // --- Lighting ---
-  auto* lightGroup = new QGroupBox("Lighting", widget);
-  auto* lightLayout = new QFormLayout(lightGroup);
-
-  auto addLightSlider = [&](const QString& label, double initial, int maxVal,
-                            auto setter) {
-    auto* slider = new QSlider(Qt::Horizontal, widget);
-    slider->setRange(0, maxVal);
-    {
-      QSignalBlocker blocker(slider);
-      slider->setValue(static_cast<int>(initial * (maxVal == 150 ? 1.0 : 100.0)));
-    }
-    lightLayout->addRow(label, slider);
-    if (maxVal == 150) {
-      QObject::connect(slider, &QSlider::valueChanged,
-                       [this, setter](int v) { (this->*setter)(v); });
-    } else {
-      QObject::connect(slider, &QSlider::valueChanged,
-                       [this, setter](int v) { (this->*setter)(v / 100.0); });
-    }
-    return slider;
-  };
-
-  addLightSlider("Ambient", ambient(), 100, &ContourSink::setAmbient);
-  addLightSlider("Diffuse", diffuse(), 100, &ContourSink::setDiffuse);
-  addLightSlider("Specular", specular(), 100, &ContourSink::setSpecular);
-  addLightSlider("Specular Power", specularPower(), 150,
-                 &ContourSink::setSpecularPower);
-  layout->addRow(lightGroup);
-
-  return widget;
-}
+// --- Map Scalars ---
 
 bool ContourSink::mapScalars() const
 {
@@ -359,19 +348,142 @@ void ContourSink::setMapScalars(bool map)
   emit renderNeeded();
 }
 
+// --- Color Map ---
+
 void ContourSink::updateColorMap()
 {
-  if (m_mapScalars) {
-    auto* cmap = colorMap();
-    if (cmap) {
-      auto* ctf = vtkColorTransferFunction::SafeDownCast(
-        cmap->GetClientSideObject());
-      if (ctf) {
-        m_mapper->SetLookupTable(ctf);
+  auto* cmap = colorMap();
+  if (cmap) {
+    auto* ctf = vtkColorTransferFunction::SafeDownCast(
+      cmap->GetClientSideObject());
+    if (ctf) {
+      m_mapper->SetLookupTable(ctf);
+    }
+  }
+
+  updateColorArray();
+  emit renderNeeded();
+}
+
+void ContourSink::updateColorArray()
+{
+  std::string name;
+  if (m_colorByArray) {
+    name = m_colorByArrayName.toStdString();
+  } else if (m_useSolidColor) {
+    // Empty color array → use actor's diffuse color
+    name = "";
+  } else {
+    // Use the active scalars (contour-by array)
+    auto vol = volumeData();
+    if (vol && vol->isValid()) {
+      auto* scalars = vol->imageData()->GetPointData()->GetScalars();
+      if (scalars && scalars->GetName()) {
+        name = scalars->GetName();
       }
     }
   }
-  emit renderNeeded();
+
+  m_mapper->SelectColorArray(name.c_str());
+}
+
+// --- Properties Widget ---
+
+QWidget* ContourSink::createPropertiesWidget(QWidget* parent)
+{
+  auto* widget = new QWidget(parent);
+  auto* layout = new QVBoxLayout;
+  widget->setLayout(layout);
+
+  // --- Separate Color Map checkbox ---
+  auto* separateCmapCheck = new QCheckBox("Separate Color Map", widget);
+  {
+    QSignalBlocker blocker(separateCmapCheck);
+    separateCmapCheck->setChecked(useDetachedColorMap());
+  }
+  layout->addWidget(separateCmapCheck);
+  connect(separateCmapCheck, &QCheckBox::toggled,
+          [this](bool on) { setUseDetachedColorMap(on); });
+
+  // Create, update and connect
+  m_controllers = new ContourSinkWidget;
+  layout->addWidget(m_controllers);
+
+  updatePanel();
+
+  connect(m_controllers, &ContourSinkWidget::colorMapDataToggled, this,
+          [this](bool state) { setMapScalars(state); });
+  connect(m_controllers, &ContourSinkWidget::ambientChanged, this,
+          [this](double v) { setAmbient(v); });
+  connect(m_controllers, &ContourSinkWidget::diffuseChanged, this,
+          [this](double v) { setDiffuse(v); });
+  connect(m_controllers, &ContourSinkWidget::specularChanged, this,
+          [this](double v) { setSpecular(v); });
+  connect(m_controllers, &ContourSinkWidget::specularPowerChanged, this,
+          [this](double v) { setSpecularPower(v); });
+  connect(m_controllers, &ContourSinkWidget::isoChanged, this,
+          [this](double v) { setIsoValue(v); });
+  connect(m_controllers, &ContourSinkWidget::representationChanged, this,
+          [this](const QString& rep) { setRepresentationString(rep); });
+  connect(m_controllers, &ContourSinkWidget::opacityChanged, this,
+          [this](double v) { setOpacity(v); });
+  connect(m_controllers, &ContourSinkWidget::colorChanged, this,
+          [this](const QColor& c) { setQColor(c); });
+  connect(m_controllers, &ContourSinkWidget::useSolidColorToggled, this,
+          [this](bool state) { setUseSolidColor(state); });
+  connect(m_controllers, &ContourSinkWidget::contourByArrayValueChanged, this,
+          [this](int i) {
+            setActiveScalars(i);
+            // TODO: update contour array producer when multi-array
+            // support is added
+          });
+  connect(m_controllers, &ContourSinkWidget::colorByArrayToggled, this,
+          [this](bool state) { setColorByArray(state); });
+  connect(m_controllers, &ContourSinkWidget::colorByArrayNameChanged, this,
+          [this](const QString& name) { setColorByArrayName(name); });
+
+  return widget;
+}
+
+void ContourSink::updatePanel()
+{
+  if (!m_controllers)
+    return;
+
+  QSignalBlocker blocker(m_controllers);
+
+  m_controllers->setIsoRange(m_scalarRange);
+  updateScalarArrayOptions();
+
+  m_controllers->setColorMapData(mapScalars());
+  m_controllers->setAmbient(ambient());
+  m_controllers->setDiffuse(diffuse());
+  m_controllers->setSpecular(specular());
+  m_controllers->setSpecularPower(specularPower());
+  m_controllers->setIso(isoValue());
+  m_controllers->setRepresentation(representationString());
+  m_controllers->setOpacity(opacity());
+  m_controllers->setColor(qcolor());
+  m_controllers->setUseSolidColor(useSolidColor());
+  m_controllers->setContourByArrayValue(activeScalars());
+  m_controllers->setColorByArray(colorByArray());
+  m_controllers->setColorByArrayName(colorByArrayName());
+}
+
+void ContourSink::updateScalarArrayOptions()
+{
+  if (!m_controllers)
+    return;
+
+  QSignalBlocker blocker(m_controllers);
+  m_controllers->setContourByArrayOptions(m_scalarArrayNames, m_activeScalars);
+  m_controllers->setColorByArrayOptions(m_scalarArrayNames);
+
+  if (!m_scalarArrayNames.contains(m_colorByArrayName) &&
+      !m_scalarArrayNames.isEmpty()) {
+    m_colorByArrayName = m_scalarArrayNames.first();
+  }
+  m_controllers->setColorByArrayName(m_colorByArrayName);
 }
 
 // --- Clipping ---
@@ -403,8 +515,15 @@ QJsonObject ContourSink::serialize() const
   json["diffuse"] = m_property->GetDiffuse();
   json["specular"] = m_property->GetSpecular();
   json["specularPower"] = m_property->GetSpecularPower();
-  json["representation"] = m_property->GetRepresentation();
+  json["representation"] = representationString();
   json["mapScalars"] = m_mapScalars;
+  json["useSolidColor"] = m_useSolidColor;
+  json["colorByArray"] = m_colorByArray;
+  json["colorByArrayName"] = m_colorByArrayName;
+
+  auto c = qcolor();
+  json["color"] = c.name();
+
   return json;
 }
 
@@ -413,30 +532,49 @@ bool ContourSink::deserialize(const QJsonObject& json)
   if (!LegacyModuleSink::deserialize(json)) {
     return false;
   }
-  if (json.contains("isoValue")) {
-    setIsoValue(json["isoValue"].toDouble());
+
+  if (json.contains("useSolidColor")) {
+    setUseSolidColor(json["useSolidColor"].toBool());
   }
-  if (json.contains("opacity")) {
-    m_property->SetOpacity(json["opacity"].toDouble());
+  if (json.contains("color")) {
+    setQColor(QColor(json["color"].toString()));
   }
   if (json.contains("ambient")) {
-    m_property->SetAmbient(json["ambient"].toDouble());
+    setAmbient(json["ambient"].toDouble());
   }
   if (json.contains("diffuse")) {
-    m_property->SetDiffuse(json["diffuse"].toDouble());
+    setDiffuse(json["diffuse"].toDouble());
   }
   if (json.contains("specular")) {
-    m_property->SetSpecular(json["specular"].toDouble());
+    setSpecular(json["specular"].toDouble());
   }
   if (json.contains("specularPower")) {
-    m_property->SetSpecularPower(json["specularPower"].toDouble());
+    setSpecularPower(json["specularPower"].toDouble());
   }
   if (json.contains("representation")) {
-    setRepresentation(json["representation"].toInt());
+    setRepresentationString(json["representation"].toString());
+  }
+  if (json.contains("opacity")) {
+    setOpacity(json["opacity"].toDouble());
   }
   if (json.contains("mapScalars")) {
     setMapScalars(json["mapScalars"].toBool());
   }
+  if (json.contains("colorByArray")) {
+    setColorByArray(json["colorByArray"].toBool());
+  }
+  if (json.contains("colorByArrayName")) {
+    setColorByArrayName(json["colorByArrayName"].toString());
+  }
+
+  // Some of the above operations modify the contour value.
+  // Set this at the end.
+  if (json.contains("isoValue")) {
+    setIsoValue(json["isoValue"].toDouble());
+  }
+
+  updatePanel();
+
   return true;
 }
 
