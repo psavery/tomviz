@@ -29,6 +29,7 @@ struct OperatorDescription;
 class OperatorResult;
 
 namespace pipeline {
+class Link;
 class Node;
 class OutputPort;
 class Pipeline;
@@ -60,6 +61,9 @@ public slots:
 private slots:
   void onNodeSelected(pipeline::Node* node);
   void onPortSelected(pipeline::OutputPort* port);
+  void onActiveNodeChanged(pipeline::Node* node);
+  void onActivePortChanged(pipeline::OutputPort* port);
+  void onActiveLinkChanged(pipeline::Link* link);
   void openTilt();
   void openDataLink();
   void openReadTheDocs();
@@ -100,6 +104,7 @@ private:
   QString mostRecentStateFile() const;
 
   void initPipeline();
+  void clearDynamicPropertiesWidget();
   void updateColorMapDisplay();
 
   QScopedPointer<Ui::MainWindow> m_ui;

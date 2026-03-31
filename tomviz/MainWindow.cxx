@@ -222,6 +222,15 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   connect(m_pipelineStrip, &pipeline::PipelineStripWidget::linkSelected,
           &ActiveObjects::instance(), &ActiveObjects::setActiveLink);
 
+  // Sync ActiveObjects changes back to the strip widget and properties panel.
+  // This ensures programmatic setActiveNode/Port/Link calls are reflected.
+  connect(&ActiveObjects::instance(), &ActiveObjects::activeNodeChanged,
+          this, &MainWindow::onActiveNodeChanged);
+  connect(&ActiveObjects::instance(), &ActiveObjects::activePortChanged,
+          this, &MainWindow::onActivePortChanged);
+  connect(&ActiveObjects::instance(), &ActiveObjects::activeLinkChanged,
+          this, &MainWindow::onActiveLinkChanged);
+
   // Double-click on a transform node opens the edit dialog
   connect(m_pipelineStrip, &pipeline::PipelineStripWidget::nodeDoubleClicked,
           this, [this](pipeline::Node* node) {
@@ -1381,17 +1390,35 @@ pipeline::Pipeline* MainWindow::pipeline() const
 
 void MainWindow::onNodeSelected(pipeline::Node* node)
 {
+  // Forward to ActiveObjects; the rest (strip widget sync, properties panel,
+  // colormap) is handled by onActiveNodeChanged / onActivePortChanged.
   ActiveObjects::instance().setActiveNode(node);
   ActiveObjects::instance().setActivePort(nullptr);
-  disconnect(m_sinkColorMapChangedConn);
+  ActiveObjects::instance().setActiveLink(nullptr);
+}
 
-  // Clear previous dynamic widget
+void MainWindow::onPortSelected(pipeline::OutputPort* port)
+{
+  // Forward to ActiveObjects; the rest is handled by onActivePortChanged.
+  ActiveObjects::instance().setActivePort(port);
+  ActiveObjects::instance().setActiveLink(nullptr);
+}
+
+void MainWindow::clearDynamicPropertiesWidget()
+{
   if (m_dynamicPropertiesWidget) {
     auto* w = m_dynamicPropertiesWidget.data();
     m_dynamicPropertiesWidget = nullptr;
     m_ui->propertiesPanelStackedWidget->removeWidget(w);
     w->deleteLater();
   }
+}
+
+void MainWindow::onActiveNodeChanged(pipeline::Node* node)
+{
+  m_pipelineStrip->setSelectedNode(node);
+  disconnect(m_sinkColorMapChangedConn);
+  clearDynamicPropertiesWidget();
 
   if (!node) {
     m_ui->propertiesPanelStackedWidget->setCurrentWidget(m_ui->empty);
@@ -1439,23 +1466,18 @@ void MainWindow::onNodeSelected(pipeline::Node* node)
   updateColorMapDisplay();
 }
 
-void MainWindow::onPortSelected(pipeline::OutputPort* port)
+void MainWindow::onActivePortChanged(pipeline::OutputPort* port)
 {
-  ActiveObjects::instance().setActivePort(port);
-
-  // Clear previous dynamic widget
-  if (m_dynamicPropertiesWidget) {
-    auto* w = m_dynamicPropertiesWidget.data();
-    m_dynamicPropertiesWidget = nullptr;
-    m_ui->propertiesPanelStackedWidget->removeWidget(w);
-    w->deleteLater();
+  m_pipelineStrip->setSelectedPort(port);
+  if (!port) {
+    return; // Null port — leave current properties panel in place.
   }
+  clearDynamicPropertiesWidget();
 
-  if (port && pipeline::isVolumeType(port->type())) {
+  if (pipeline::isVolumeType(port->type())) {
     auto* propsWidget =
       new pipeline::VolumePropertiesWidget(m_ui->propertiesPanelStackedWidget);
     propsWidget->setOutputPort(port);
-    // Wire the time series label checkbox to ActiveObjects
     connect(propsWidget->showTimeSeriesLabelCheckBox(), &QCheckBox::toggled,
             &ActiveObjects::instance(),
             &ActiveObjects::setShowTimeSeriesLabel);
@@ -1469,6 +1491,17 @@ void MainWindow::onPortSelected(pipeline::OutputPort* port)
   } else {
     m_ui->propertiesPanelStackedWidget->setCurrentWidget(m_ui->empty);
   }
+}
+
+void MainWindow::onActiveLinkChanged(pipeline::Link* link)
+{
+  m_pipelineStrip->setSelectedLink(link);
+  if (!link) {
+    return; // Null link — leave current properties panel in place.
+  }
+  clearDynamicPropertiesWidget();
+  // No link properties panel yet — show empty.
+  m_ui->propertiesPanelStackedWidget->setCurrentWidget(m_ui->empty);
 }
 
 void MainWindow::updateColorMapDisplay()

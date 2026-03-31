@@ -70,6 +70,13 @@ public:
   OutputPort* selectedPort() const;
   Link* selectedLink() const;
 
+  /// Programmatic selection setters — update the visual selection state
+  /// without emitting signals. Use these to sync the widget when the active
+  /// object is changed externally (e.g. via ActiveObjects).
+  void setSelectedNode(Node* node);
+  void setSelectedPort(OutputPort* port);
+  void setSelectedLink(Link* link);
+
   void setTipOutputPort(OutputPort* port);
   OutputPort* tipOutputPort() const;
 

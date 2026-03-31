@@ -105,6 +105,87 @@ Link* PipelineStripWidget::selectedLink() const
   return m_selectedLink;
 }
 
+void PipelineStripWidget::setSelectedNode(Node* node)
+{
+  int index = -1;
+  if (node) {
+    for (int i = 0; i < m_layout.size(); ++i) {
+      if (m_layout[i].node == node &&
+          m_layout[i].type == LayoutItem::NodeCard) {
+        index = i;
+        break;
+      }
+    }
+    if (index < 0) {
+      return; // node not visible in layout
+    }
+  }
+  if (index == m_selectedIndex && !m_selectedPort && !m_selectedLink) {
+    return;
+  }
+  m_selectedIndex = index;
+  m_selectedPort = nullptr;
+  m_selectedLink = nullptr;
+  update();
+}
+
+void PipelineStripWidget::setSelectedPort(OutputPort* port)
+{
+  if (!port) {
+    // Clear port-dot selection only; preserve node card selection.
+    if (m_selectedPort) {
+      m_selectedPort = nullptr;
+      update();
+    }
+    return;
+  }
+  // Check for a visible port card first.
+  int index = -1;
+  for (int i = 0; i < m_layout.size(); ++i) {
+    if (m_layout[i].type == LayoutItem::PortCard &&
+        m_layout[i].port == port) {
+      index = i;
+      break;
+    }
+  }
+  if (index >= 0) {
+    if (index == m_selectedIndex && !m_selectedPort && !m_selectedLink) {
+      return;
+    }
+    m_selectedIndex = index;
+    m_selectedPort = nullptr;
+    m_selectedLink = nullptr;
+  } else {
+    // No port card — select via output-dot highlight.
+    if (m_selectedPort == port && m_selectedIndex < 0 && !m_selectedLink) {
+      return;
+    }
+    m_selectedIndex = -1;
+    m_selectedPort = port;
+    m_selectedLink = nullptr;
+  }
+  update();
+}
+
+void PipelineStripWidget::setSelectedLink(Link* link)
+{
+  if (!link) {
+    // Clear link selection only; preserve node/port selection.
+    if (m_selectedLink) {
+      m_selectedLink = nullptr;
+      update();
+    }
+    return;
+  }
+  if (link == m_selectedLink && m_selectedIndex < 0 && !m_selectedPort) {
+    return;
+  }
+  m_selectedIndex = -1;
+  m_selectedPort = nullptr;
+  m_selectedLink = link;
+  update();
+}
+
 void PipelineStripWidget::setTipOutputPort(OutputPort* port)
 {
   if (m_tipOutputPort != port) {
