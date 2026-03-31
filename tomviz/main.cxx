@@ -22,11 +22,21 @@
 
 #include <clocale>
 
+#if __has_include(<viskores/cont/Initialize.h>)
+#include <viskores/cont/Initialize.h>
+#define TOMVIZ_HAS_VISKORES
+#endif
+
 int main(int argc, char** argv)
 {
   // Set up loguru, for printing stack traces on crashes
   loguru::g_stderr_verbosity = loguru::Verbosity_ERROR;
   loguru::init(argc, argv);
+
+#ifdef TOMVIZ_HAS_VISKORES
+  // Initialize Viskores (VTK-m) runtime before any VTK filters use it.
+  viskores::cont::Initialize();
+#endif
 
   QSurfaceFormat::setDefaultFormat(QVTKOpenGLStereoWidget::defaultFormat());
 

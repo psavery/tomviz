@@ -761,8 +761,13 @@ set_target_properties(tomvizlib PROPERTIES ENABLE_EXPORTS TRUE)
 
 set_property(TARGET tomvizlib PROPERTY POSITION_INDEPENDENT_CODE TRUE)
 
+find_package(Viskores QUIET)
+
 add_executable(tomviz WIN32 MACOSX_BUNDLE ${exec_sources} resources.qrc)
 target_link_libraries(tomviz PRIVATE tomvizlib ${OPENGL_LIBRARIES} ${extra_link_libraries})
+if(Viskores_FOUND)
+  target_link_libraries(tomviz PRIVATE viskores::cont)
+endif()
 
 # Need to set this property so that in stack traces, tomviz symbols
 # can be resolved.

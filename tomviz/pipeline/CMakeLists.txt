@@ -45,6 +45,7 @@ set(SOURCES
   sinks/MoleculeSink.cxx
   sinks/VolumeSinkWidget.cxx
   sinks/ContourSinkWidget.cxx
+  sinks/ThresholdSinkWidget.cxx
   ../DoubleSliderWidget.cxx
   ../IntSliderWidget.cxx
   ParameterInterfaceBuilder.cxx
@@ -106,6 +107,7 @@ set(HEADERS
   sinks/MoleculeSink.h
   sinks/VolumeSinkWidget.h
   sinks/ContourSinkWidget.h
+  sinks/ThresholdSinkWidget.h
   ../DoubleSliderWidget.h
   ../IntSliderWidget.h
   ParameterInterfaceBuilder.h
@@ -129,7 +131,7 @@ generate_export_header(tomviz_pipeline)
 target_link_libraries(tomviz_pipeline
   PUBLIC Qt6::Core Qt6::Widgets VTK::CommonCore VTK::CommonDataModel
   PRIVATE Python3::Python pybind11::embed VTK::WrappingPythonCore
-          ParaView::pqPython
+          ParaView::pqPython ParaView::pqComponents
           VTK::IOImage VTK::IOXML VTK::IOLegacy
           VTK::RenderingCore VTK::RenderingVolume
           VTK::RenderingVolumeOpenGL2
