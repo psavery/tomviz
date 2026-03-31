@@ -54,6 +54,9 @@ public:
   int representation() const;
   void setRepresentation(int rep);
 
+  void addClippingPlane(vtkPlane* plane) override;
+  void removeClippingPlane(vtkPlane* plane) override;
+
   /// Toggle scalar color mapping.
   bool mapScalars() const;
   void setMapScalars(bool map);

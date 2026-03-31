@@ -400,6 +400,24 @@ void SliceSink::updateColorMap()
   emit renderNeeded();
 }
 
+// --- Clipping ---
+
+void SliceSink::addClippingPlane(vtkPlane* plane)
+{
+  if (plane && m_widget) {
+    m_widget->GetResliceMapper(plane, false);
+    emit renderNeeded();
+  }
+}
+
+void SliceSink::removeClippingPlane(vtkPlane* plane)
+{
+  if (plane && m_widget) {
+    m_widget->GetResliceMapper(plane, true);
+    emit renderNeeded();
+  }
+}
+
 void SliceSink::onPlaneChanged()
 {
   if (!m_widget) {

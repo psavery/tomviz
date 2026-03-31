@@ -193,6 +193,32 @@ void LegacyModuleSink::updateColorMap()
   // color/opacity into their VTK pipeline.
 }
 
+void LegacyModuleSink::addClippingPlane(vtkPlane*)
+{
+}
+
+void LegacyModuleSink::removeClippingPlane(vtkPlane*)
+{
+}
+
+QList<LegacyModuleSink*> LegacyModuleSink::siblingSinks(
+  const QString& inputPortName) const
+{
+  QList<LegacyModuleSink*> result;
+  auto* input = inputPort(inputPortName);
+  if (!input || !input->link()) {
+    return result;
+  }
+  auto* upstream = input->link()->from();
+  for (auto* link : upstream->links()) {
+    auto* sink = qobject_cast<LegacyModuleSink*>(link->to()->node());
+    if (sink && sink != this) {
+      result.append(sink);
+    }
+  }
+  return result;
+}
+
 QJsonObject LegacyModuleSink::serialize() const
 {
   QJsonObject json;

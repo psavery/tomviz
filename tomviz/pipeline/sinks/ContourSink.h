@@ -70,6 +70,9 @@ public:
 
   QWidget* createPropertiesWidget(QWidget* parent) override;
 
+  void addClippingPlane(vtkPlane* plane) override;
+  void removeClippingPlane(vtkPlane* plane) override;
+
   /// Toggle scalar color mapping on the surface.
   bool mapScalars() const;
   void setMapScalars(bool map);

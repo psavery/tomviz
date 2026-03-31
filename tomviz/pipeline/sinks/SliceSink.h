@@ -92,6 +92,9 @@ public:
   void setPlaneNormal(double x, double y, double z);
   void planeNormal(double xyz[3]) const;
 
+  void addClippingPlane(vtkPlane* plane) override;
+  void removeClippingPlane(vtkPlane* plane) override;
+
 signals:
   void sliceChanged(int slice);
   void directionChanged(Direction direction);

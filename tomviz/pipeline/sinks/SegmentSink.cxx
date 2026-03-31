@@ -279,6 +279,24 @@ void SegmentSink::updateColorMap()
   emit renderNeeded();
 }
 
+// --- Clipping ---
+
+void SegmentSink::addClippingPlane(vtkPlane* plane)
+{
+  if (plane) {
+    m_mapper->AddClippingPlane(plane);
+    emit renderNeeded();
+  }
+}
+
+void SegmentSink::removeClippingPlane(vtkPlane* plane)
+{
+  if (plane) {
+    m_mapper->RemoveClippingPlane(plane);
+    emit renderNeeded();
+  }
+}
+
 QJsonObject SegmentSink::serialize() const
 {
   auto json = LegacyModuleSink::serialize();

@@ -81,8 +81,8 @@ public:
   void setActiveScalars(int index);
 
   /// Clipping plane support.
-  void addClippingPlane(vtkPlane* plane);
-  void removeClippingPlane(vtkPlane* plane);
+  void addClippingPlane(vtkPlane* plane) override;
+  void removeClippingPlane(vtkPlane* plane) override;
   void removeAllClippingPlanes();
 
 protected:

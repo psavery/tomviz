@@ -11,12 +11,17 @@
 #include <vtkNew.h>
 #include <vtkSmartPointer.h>
 
+#include <QSet>
+
 class vtkImageData;
 class vtkNonOrthoImagePlaneWidget;
 class vtkPlane;
 
 namespace tomviz {
 namespace pipeline {
+
+class Link;
+class OutputPort;
 
 /// Clipping-plane visualization sink using vtkNonOrthoImagePlaneWidget.
 /// Matches the old ModuleClip: shows an interactive texture-mapped plane
@@ -61,16 +66,41 @@ public:
   bool invertPlane() const;
   void setInvertPlane(bool invert);
 
+  /// Show/hide the plane texture (independent of arrow visibility).
+  bool showPlane() const;
+  void setShowPlane(bool show);
+
+  /// Plane color.
+  void planeColor(double rgb[3]) const;
+  void setPlaneColor(double r, double g, double b);
+
+  /// Read the current plane center and normal from the widget/plane.
+  void planeCenter(double center[3]) const;
+  void planeNormal(double normal[3]) const;
+
   /// Custom plane origin and normal.
   void setPlaneOrigin(double x, double y, double z);
   void setPlaneNormal(double nx, double ny, double nz);
 
+  /// Max slice index for the current direction (-1 if Custom).
+  int maxSlice() const;
+
+  /// Direction axis: XY→2, YZ→0, XZ→1, Custom→-1.
+  int directionAxis() const;
+
+  /// True if direction is not Custom.
+  bool isOrtho() const;
+
   /// Access the clipping plane for use by other sinks/modules.
   vtkPlane* clippingPlane() const;
+
+  QWidget* createPropertiesWidget(QWidget* parent) override;
 
 signals:
   /// Emitted when the clip plane geometry is updated.
   void clipPlaneUpdated();
+  /// Emitted when the slice index changes (from widget interaction).
+  void sliceChanged(int slice);
 
 protected:
   bool consume(const QMap<QString, PortData>& inputs) override;
@@ -79,15 +109,31 @@ private:
   void setupWidget();
   void applyDirection();
 
+  // Sync m_clippingPlane from the widget when the user drags it
+  void onWidgetInteraction();
+
+  // Clipping plane propagation to sibling sinks
+  void connectToSiblings();
+  void disconnectFromSiblings();
+  void onInputConnectionChanged();
+  void onPipelineLinkCreated(Link* link);
+  void onPipelineLinkRemoved(Link* link);
+
   vtkSmartPointer<vtkNonOrthoImagePlaneWidget> m_widget;
   vtkNew<vtkPlane> m_clippingPlane;
+  unsigned long m_interactionTag = 0;
   Direction m_direction = XY;
   int m_slice = -1;
-  double m_opacity = 1.0;
+  double m_opacity = 0.5;
+  bool m_showPlane = true;
   bool m_showArrow = true;
   bool m_invertPlane = false;
+  double m_planeColor[3] = { 204.0 / 255, 204.0 / 255, 204.0 / 255 };
   int m_dims[3] = { 0, 0, 0 };
   double m_bounds[6] = { 0, 0, 0, 0, 0, 0 };
+
+  QSet<LegacyModuleSink*> m_clippedSinks;
+  OutputPort* m_upstreamPort = nullptr;
 };
 
 } // namespace pipeline

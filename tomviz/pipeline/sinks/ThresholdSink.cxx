@@ -185,6 +185,24 @@ void ThresholdSink::updateColorMap()
   emit renderNeeded();
 }
 
+// --- Clipping ---
+
+void ThresholdSink::addClippingPlane(vtkPlane* plane)
+{
+  if (plane) {
+    m_mapper->AddClippingPlane(plane);
+    emit renderNeeded();
+  }
+}
+
+void ThresholdSink::removeClippingPlane(vtkPlane* plane)
+{
+  if (plane) {
+    m_mapper->RemoveClippingPlane(plane);
+    emit renderNeeded();
+  }
+}
+
 QJsonObject ThresholdSink::serialize() const
 {
   auto json = LegacyModuleSink::serialize();

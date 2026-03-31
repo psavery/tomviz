@@ -18,6 +18,7 @@
 
 class QWidget;
 class vtkPiecewiseFunction;
+class vtkPlane;
 class vtkPVRenderView;
 class vtkSMProxy;
 class vtkSMRenderViewProxy;
@@ -82,6 +83,16 @@ public:
   /// Push active color/opacity maps into the VTK pipeline. Subclasses
   /// that need a color map should override this.
   virtual void updateColorMap();
+
+  /// Clipping plane support. Subclasses that clip geometry/volumes
+  /// should override these. Default implementations are no-ops.
+  virtual void addClippingPlane(vtkPlane* plane);
+  virtual void removeClippingPlane(vtkPlane* plane);
+
+  /// Return sibling LegacyModuleSinks connected to the same upstream
+  /// OutputPort as this sink's given input port (excluding this node).
+  QList<LegacyModuleSink*> siblingSinks(
+    const QString& inputPortName) const;
 
 signals:
   void visibilityChanged(bool visible);

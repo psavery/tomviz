@@ -64,6 +64,9 @@ public:
   int representation() const;
   void setRepresentation(int rep);
 
+  void addClippingPlane(vtkPlane* plane) override;
+  void removeClippingPlane(vtkPlane* plane) override;
+
 protected:
   bool consume(const QMap<QString, PortData>& inputs) override;
   void updateColorMap() override;

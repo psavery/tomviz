@@ -374,6 +374,24 @@ void ContourSink::updateColorMap()
   emit renderNeeded();
 }
 
+// --- Clipping ---
+
+void ContourSink::addClippingPlane(vtkPlane* plane)
+{
+  if (plane) {
+    m_mapper->AddClippingPlane(plane);
+    emit renderNeeded();
+  }
+}
+
+void ContourSink::removeClippingPlane(vtkPlane* plane)
+{
+  if (plane) {
+    m_mapper->RemoveClippingPlane(plane);
+    emit renderNeeded();
+  }
+}
+
 // --- Serialization ---
 
 QJsonObject ContourSink::serialize() const
