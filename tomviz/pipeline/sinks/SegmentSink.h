@@ -8,6 +8,7 @@
 
 #include "LegacyModuleSink.h"
 
+#include <QPointer>
 #include <vtkNew.h>
 
 #include <QString>
@@ -19,6 +20,9 @@ class vtkImageData;
 class vtkProperty;
 
 namespace tomviz {
+
+class SegmentSinkWidget;
+
 namespace pipeline {
 
 /// Segmentation visualization sink.
@@ -64,12 +68,19 @@ public:
   int representation() const;
   void setRepresentation(int rep);
 
+  /// String-based representation: "Surface", "Wireframe", "Points".
+  QString representationString() const;
+  void setRepresentationString(const QString& rep);
+
+  QWidget* createPropertiesWidget(QWidget* parent) override;
+
   void addClippingPlane(vtkPlane* plane) override;
   void removeClippingPlane(vtkPlane* plane) override;
 
 protected:
   bool consume(const QMap<QString, PortData>& inputs) override;
   void updateColorMap() override;
+  void updatePanel();
 
 private:
   bool runSegmentation(vtkImageData* input);
@@ -81,6 +92,7 @@ private:
   vtkNew<vtkImageData> m_segmentedData;
   QString m_script;
   double m_contourValue = 0.5;
+  QPointer<SegmentSinkWidget> m_controllers;
 };
 
 } // namespace pipeline

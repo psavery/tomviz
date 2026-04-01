@@ -2,7 +2,9 @@
    It is released under the 3-Clause BSD License, see "LICENSE". */
 
 #include "SegmentSink.h"
+#include "SegmentSinkWidget.h"
 
+#include "Pipeline.h"
 #include "data/VolumeData.h"
 
 // Qt defines 'slots' as a macro which conflicts with Python's object.h.
@@ -14,6 +16,10 @@
 
 #include "pybind11/PybindVTKTypeCaster.h"
 #pragma pop_macro("slots")
+
+#include <QCheckBox>
+#include <QSignalBlocker>
+#include <QVBoxLayout>
 
 #include <vtkActor.h>
 #include <vtkColorTransferFunction.h>
@@ -264,6 +270,81 @@ void SegmentSink::setRepresentation(int rep)
 {
   m_property->SetRepresentation(rep);
   emit renderNeeded();
+}
+
+QString SegmentSink::representationString() const
+{
+  return QString::fromUtf8(m_property->GetRepresentationAsString());
+}
+
+void SegmentSink::setRepresentationString(const QString& rep)
+{
+  if (rep == "Surface")
+    m_property->SetRepresentationToSurface();
+  else if (rep == "Points")
+    m_property->SetRepresentationToPoints();
+  else if (rep == "Wireframe")
+    m_property->SetRepresentationToWireframe();
+
+  emit renderNeeded();
+}
+
+// --- Properties Widget ---
+
+QWidget* SegmentSink::createPropertiesWidget(QWidget* parent)
+{
+  auto* widget = new QWidget(parent);
+  auto* layout = new QVBoxLayout;
+  widget->setLayout(layout);
+
+  // --- Separate Color Map checkbox ---
+  auto* separateCmapCheck = new QCheckBox("Separate Color Map", widget);
+  {
+    QSignalBlocker blocker(separateCmapCheck);
+    separateCmapCheck->setChecked(useDetachedColorMap());
+  }
+  layout->addWidget(separateCmapCheck);
+  connect(separateCmapCheck, &QCheckBox::toggled,
+          [this](bool on) { setUseDetachedColorMap(on); });
+
+  // Create, update and connect
+  m_controllers = new SegmentSinkWidget;
+  layout->addWidget(m_controllers);
+
+  updatePanel();
+
+  connect(m_controllers, &SegmentSinkWidget::scriptApplied, this,
+          [this](const QString& s) {
+            setScript(s);
+            // Re-run the pipeline so the new script is executed.
+            if (auto* pip = qobject_cast<Pipeline*>(QObject::parent())) {
+              pip->execute();
+            }
+          });
+  connect(m_controllers, &SegmentSinkWidget::contourValueChanged, this,
+          [this](double v) { setContourValue(v); });
+  connect(m_controllers, &SegmentSinkWidget::representationChanged, this,
+          [this](const QString& rep) { setRepresentationString(rep); });
+  connect(m_controllers, &SegmentSinkWidget::opacityChanged, this,
+          [this](double v) { setOpacity(v); });
+  connect(m_controllers, &SegmentSinkWidget::specularChanged, this,
+          [this](double v) { setSpecular(v); });
+
+  return widget;
+}
+
+void SegmentSink::updatePanel()
+{
+  if (!m_controllers)
+    return;
+
+  QSignalBlocker blocker(m_controllers);
+
+  m_controllers->setScript(m_script);
+  m_controllers->setContourValue(m_contourValue);
+  m_controllers->setRepresentation(representationString());
+  m_controllers->setOpacity(opacity());
+  m_controllers->setSpecular(specular());
 }
 
 void SegmentSink::updateColorMap()

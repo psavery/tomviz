@@ -18,7 +18,6 @@
 #include "pipeline/sinks/ClipSink.h"
 #include "pipeline/sinks/RulerSink.h"
 #include "pipeline/sinks/ScaleCubeSink.h"
-#include "pipeline/sinks/SegmentSink.h"
 #include "pipeline/sinks/MoleculeSink.h"
 #include "pipeline/sinks/PlotSink.h"
 
@@ -153,7 +152,7 @@ PipelineModuleMenu::~PipelineModuleMenu() = default;
 QList<QString> PipelineModuleMenu::sinkTypes()
 {
   return { "Volume", "Outline", "Slice", "Contour", "Threshold", "Clip",
-           "Segment", "Ruler", "Scale Cube", "Molecule", "Plot" };
+           "Ruler", "Scale Cube", "Molecule", "Plot" };
 }
 
 QIcon PipelineModuleMenu::sinkIcon(const QString& type)
@@ -166,7 +165,6 @@ QIcon PipelineModuleMenu::sinkIcon(const QString& type)
     { "Contour", ":pqWidgets/Icons/pqIsosurface.svg" },
     { "Threshold", ":/pqWidgets/Icons/pqThreshold.svg" },
     { "Clip", ":/pqWidgets/Icons/pqClip.svg" },
-    { "Segment", ":/pqWidgets/Icons/pqCalculator.svg" },
     { "Ruler", ":/pqWidgets/Icons/pqRuler.svg" },
     { "Scale Cube", ":/icons/pqMeasurementCube.png" },
     { "Molecule", ":/pqWidgets/Icons/pqGroup.svg" },
@@ -233,8 +231,6 @@ pipeline::LegacyModuleSink* PipelineModuleMenu::createSink(const QString& type)
     return new pipeline::ThresholdSink();
   } else if (type == "Clip") {
     return new pipeline::ClipSink();
-  } else if (type == "Segment") {
-    return new pipeline::SegmentSink();
   } else if (type == "Ruler") {
     return new pipeline::RulerSink();
   } else if (type == "Scale Cube") {
