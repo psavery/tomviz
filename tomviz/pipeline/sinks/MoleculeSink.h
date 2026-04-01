@@ -8,10 +8,15 @@
 
 #include "LegacyModuleSink.h"
 
+#include <QPointer>
 #include <vtkNew.h>
 
 class vtkActor;
 class vtkMoleculeMapper;
+
+namespace tomviz {
+class DoubleSliderWidget;
+}
 
 namespace tomviz {
 namespace pipeline {
@@ -34,6 +39,8 @@ public:
   bool initialize(vtkSMViewProxy* view) override;
   bool finalize() override;
 
+  QWidget* createPropertiesWidget(QWidget* parent) override;
+
   QJsonObject serialize() const override;
   bool deserialize(const QJsonObject& json) override;
 
@@ -49,6 +56,8 @@ protected:
 private:
   vtkNew<vtkMoleculeMapper> m_moleculeMapper;
   vtkNew<vtkActor> m_actor;
+  QPointer<DoubleSliderWidget> m_ballSlider;
+  QPointer<DoubleSliderWidget> m_stickSlider;
 };
 
 } // namespace pipeline

@@ -15,6 +15,8 @@
 #include <vtkSMPropertyHelper.h>
 #include <vtkSMSettings.h>
 #include <vtkSMViewProxy.h>
+#include <vtkMolecule.h>
+#include <vtkSmartPointer.h>
 #include <vtkVector.h>
 
 #include <QCheckBox>
@@ -56,6 +58,7 @@
 #include "pipeline/TransformEditDialog.h"
 #include "pipeline/TransformPropertiesPanel.h"
 #include "pipeline/VolumePropertiesWidget.h"
+#include "MoleculeProperties.h"
 #include "CentralWidget.h"
 #include "OperatorFactory.h"
 #include "OperatorProxy.h"
@@ -1488,6 +1491,22 @@ void MainWindow::onActivePortChanged(pipeline::OutputPort* port)
     m_dynamicPropertiesWidget = propsWidget;
     m_ui->propertiesPanelStackedWidget->addWidget(propsWidget);
     m_ui->propertiesPanelStackedWidget->setCurrentWidget(propsWidget);
+  } else if (port->type() == pipeline::PortType::Molecule && port->hasData()) {
+    try {
+      auto molecule =
+        port->data().value<vtkSmartPointer<vtkMolecule>>();
+      if (molecule) {
+        auto* propsWidget = new MoleculeProperties(
+          molecule, m_ui->propertiesPanelStackedWidget);
+        m_dynamicPropertiesWidget = propsWidget;
+        m_ui->propertiesPanelStackedWidget->addWidget(propsWidget);
+        m_ui->propertiesPanelStackedWidget->setCurrentWidget(propsWidget);
+      } else {
+        m_ui->propertiesPanelStackedWidget->setCurrentWidget(m_ui->empty);
+      }
+    } catch (const std::bad_any_cast&) {
+      m_ui->propertiesPanelStackedWidget->setCurrentWidget(m_ui->empty);
+    }
   } else {
     m_ui->propertiesPanelStackedWidget->setCurrentWidget(m_ui->empty);
   }

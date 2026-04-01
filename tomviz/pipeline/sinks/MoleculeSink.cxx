@@ -3,12 +3,17 @@
 
 #include "MoleculeSink.h"
 
+#include "DoubleSliderWidget.h"
+
 #include <vtkActor.h>
 #include <vtkMolecule.h>
 #include <vtkMoleculeMapper.h>
 #include <vtkPVRenderView.h>
 #include <vtkRenderer.h>
 #include <vtkSmartPointer.h>
+
+#include <QFormLayout>
+#include <QSignalBlocker>
 
 namespace tomviz {
 namespace pipeline {
@@ -98,6 +103,32 @@ void MoleculeSink::setBondRadius(double radius)
 {
   m_moleculeMapper->SetBondRadius(radius);
   emit renderNeeded();
+}
+
+QWidget* MoleculeSink::createPropertiesWidget(QWidget* parent)
+{
+  auto* widget = new QWidget(parent);
+  auto* layout = new QFormLayout;
+  widget->setLayout(layout);
+
+  m_ballSlider = new DoubleSliderWidget(true);
+  m_ballSlider->setLineEditWidth(50);
+  m_ballSlider->setMaximum(4.0);
+  m_ballSlider->setValue(ballRadius());
+  layout->addRow("Ball Radius", m_ballSlider);
+
+  m_stickSlider = new DoubleSliderWidget(true);
+  m_stickSlider->setLineEditWidth(50);
+  m_stickSlider->setMaximum(2.0);
+  m_stickSlider->setValue(bondRadius());
+  layout->addRow("Stick Radius", m_stickSlider);
+
+  connect(m_ballSlider, &DoubleSliderWidget::valueEdited, this,
+          [this](double val) { setBallRadius(val); });
+  connect(m_stickSlider, &DoubleSliderWidget::valueEdited, this,
+          [this](double val) { setBondRadius(val); });
+
+  return widget;
 }
 
 QJsonObject MoleculeSink::serialize() const

@@ -46,6 +46,7 @@ set(SOURCES
   sinks/VolumeSinkWidget.cxx
   sinks/ContourSinkWidget.cxx
   sinks/ThresholdSinkWidget.cxx
+  sinks/SegmentSinkWidget.cxx
   ../DoubleSliderWidget.cxx
   ../IntSliderWidget.cxx
   ParameterInterfaceBuilder.cxx
@@ -108,6 +109,7 @@ set(HEADERS
   sinks/VolumeSinkWidget.h
   sinks/ContourSinkWidget.h
   sinks/ThresholdSinkWidget.h
+  sinks/SegmentSinkWidget.h
   ../DoubleSliderWidget.h
   ../IntSliderWidget.h
   ParameterInterfaceBuilder.h

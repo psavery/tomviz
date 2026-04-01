@@ -21,6 +21,7 @@
 #pragma pop_macro("slots")
 
 #include <vtkImageData.h>
+#include <vtkMolecule.h>
 #include <vtkNew.h>
 #include <vtkPythonUtil.h>
 #include <vtkTable.h>
@@ -517,6 +518,19 @@ QMap<QString, PortData> LegacyPythonTransform::transform(
           } else {
             qWarning("LegacyPythonTransform: Result '%s' is not a "
                      "vtkTable",
+                     qPrintable(m_resultNames[i]));
+          }
+        } else if (m_resultTypes[i] == "molecule") {
+          auto* raw = vtkMolecule::SafeDownCast(
+            vtkPythonUtil::GetPointerFromObject(
+              pyObj.ptr(), "vtkObjectBase"));
+          if (raw) {
+            vtkSmartPointer<vtkMolecule> molecule = raw;
+            result[m_resultNames[i]] =
+              PortData(std::any(molecule), PortType::Molecule);
+          } else {
+            qWarning("LegacyPythonTransform: Result '%s' is not a "
+                     "vtkMolecule",
                      qPrintable(m_resultNames[i]));
           }
         }
