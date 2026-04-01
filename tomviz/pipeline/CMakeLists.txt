@@ -132,6 +132,7 @@ target_link_libraries(tomviz_pipeline
   PUBLIC Qt6::Core Qt6::Widgets VTK::CommonCore VTK::CommonDataModel
   PRIVATE Python3::Python pybind11::embed VTK::WrappingPythonCore
           ParaView::pqPython ParaView::pqComponents
+          ParaView::pqApplicationComponents
           VTK::IOImage VTK::IOXML VTK::IOLegacy
           VTK::RenderingCore VTK::RenderingVolume
           VTK::RenderingVolumeOpenGL2

@@ -8,18 +8,26 @@
 
 #include "LegacyModuleSink.h"
 
+#include <QPointer>
 #include <vtkNew.h>
+#include <vtkSmartPointer.h>
 
+class pqLinePropertyWidget;
 class vtkActor;
+class vtkBillboardTextActor3D;
+class vtkImageData;
 class vtkLineSource;
 class vtkPolyDataMapper;
-class vtkProperty;
+class vtkSMSourceProxy;
 
 namespace tomviz {
 namespace pipeline {
 
 /// Ruler/measurement annotation visualization sink.
-/// Displays a measurement line between two user-defined points.
+/// Displays a measurement line between two user-defined points with
+/// a distance label and units.  Provides an interactive 3D line widget
+/// (pqLinePropertyWidget) for adjusting endpoints.
+/// Matches the old ModuleRuler feature set.
 class TOMVIZ_PIPELINE_EXPORT RulerSink : public LegacyModuleSink
 {
   Q_OBJECT
@@ -38,19 +46,49 @@ public:
   QJsonObject serialize() const override;
   bool deserialize(const QJsonObject& json) override;
 
-  void setPoint1(double x, double y, double z);
-  void setPoint2(double x, double y, double z);
-  double length() const;
+  QWidget* createPropertiesWidget(QWidget* parent) override;
+
+  void onMetadataChanged() override;
+
+signals:
+  void newEndpointData(double val1, double val2);
 
 protected:
   bool consume(const QMap<QString, PortData>& inputs) override;
 
+private slots:
+  void endPointsUpdated();
+
 private:
+  /// Build or update the SM proxy and VTK actors on the main thread.
+  void setupOrUpdatePipeline();
+  /// Sync the VTK line and distance label with the proxy's Point1/Point2.
+  void updateRulerVisual();
+  /// Update the distance label units string from the volume data.
+  void updateUnits();
+
+  // SM source proxy — needed for pqLinePropertyWidget binding.
+  // We intentionally do NOT create an SM representation (via
+  // controller->Show) because vtkRulerSourceRepresentation has a
+  // crash bug in ProcessViewRequest during selection renders.
+  vtkSmartPointer<vtkSMSourceProxy> m_rulerSource;
+
+  // Raw VTK visual: persistent line + distance label.
   vtkNew<vtkLineSource> m_lineSource;
   vtkNew<vtkPolyDataMapper> m_mapper;
-  vtkNew<vtkActor> m_actor;
-  vtkNew<vtkProperty> m_property;
-  bool m_firstConsume = true;
+  vtkNew<vtkActor> m_lineActor;
+  vtkNew<vtkBillboardTextActor3D> m_textActor;
+
+  vtkSmartPointer<vtkImageData> m_pendingImage;
+  QPointer<pqLinePropertyWidget> m_widget;
+
+  bool m_showLine = true;
+  QString m_units;
+
+  // Deserialized points to apply when SM pipeline is created.
+  double m_pendingPoint1[3] = { 0, 0, 0 };
+  double m_pendingPoint2[3] = { 0, 0, 0 };
+  bool m_hasPendingPoints = false;
 };
 
 } // namespace pipeline
