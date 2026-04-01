@@ -5,13 +5,26 @@
 
 #include "data/VolumeData.h"
 
-#include <vtkActor.h>
 #include <vtkBillboardTextActor3D.h>
-#include <vtkCubeSource.h>
+#include <vtkCommand.h>
+#include <vtkHandleWidget.h>
+#include <vtkMeasurementCubeHandleRepresentation3D.h>
 #include <vtkPVRenderView.h>
-#include <vtkPolyDataMapper.h>
 #include <vtkProperty.h>
 #include <vtkTextProperty.h>
+
+#include <pqColorChooserButton.h>
+
+#include <QCheckBox>
+#include <QColor>
+#include <QDoubleValidator>
+#include <QFormLayout>
+#include <QHBoxLayout>
+#include <QLabel>
+#include <QLineEdit>
+#include <QSignalBlocker>
+#include <QVBoxLayout>
+#include <QWidget>
 
 #include <algorithm>
 #include <cmath>
@@ -24,28 +37,17 @@ ScaleCubeSink::ScaleCubeSink(QObject* parent) : LegacyModuleSink(parent)
   addInput("volume", PortType::ImageData);
   setLabel("Scale Cube");
 
-  m_cubeSource->SetXLength(m_sideLength);
-  m_cubeSource->SetYLength(m_sideLength);
-  m_cubeSource->SetZLength(m_sideLength);
+  m_cubeRep->SetAdaptiveScaling(0);
 
-  m_mapper->SetInputConnection(m_cubeSource->GetOutputPort());
-  m_actor->SetMapper(m_mapper);
-  m_actor->SetProperty(m_property);
-  m_property->SetRepresentationToWireframe();
-  m_property->SetColor(1.0, 1.0, 1.0);
-  m_property->SetLineWidth(2.0);
-
-  // Configure text annotation
-  auto* textProp = m_textActor->GetTextProperty();
-  textProp->SetColor(1.0, 1.0, 1.0);
-  textProp->SetFontSize(14);
-  textProp->SetBold(1);
-  textProp->SetJustificationToCentered();
-  m_textActor->SetVisibility(0);
+  // Observe modifications on the representation (user drags the cube)
+  // to emit position/sideLength change signals.
+  m_observedId = m_cubeRep->AddObserver(
+    vtkCommand::ModifiedEvent, this, &ScaleCubeSink::observeModified);
 }
 
 ScaleCubeSink::~ScaleCubeSink()
 {
+  m_cubeRep->RemoveObserver(m_observedId);
   finalize();
 }
 
@@ -56,8 +58,10 @@ QIcon ScaleCubeSink::icon() const
 
 void ScaleCubeSink::setVisibility(bool visible)
 {
-  m_actor->SetVisibility(visible ? 1 : 0);
-  m_textActor->SetVisibility((visible && m_showAnnotation) ? 1 : 0);
+  m_cubeRep->SetHandleVisibility(visible ? 1 : 0);
+  if (!visible || m_annotationVisibility) {
+    m_cubeRep->SetLabelVisibility(visible ? 1 : 0);
+  }
   LegacyModuleSink::setVisibility(visible);
 }
 
@@ -67,17 +71,15 @@ bool ScaleCubeSink::initialize(vtkSMViewProxy* view)
     return false;
   }
 
-  renderView()->AddPropToRenderer(m_actor);
-  renderView()->AddPropToRenderer(m_textActor);
+  m_handleWidget->SetInteractor(renderView()->GetInteractor());
+  m_handleWidget->SetRepresentation(m_cubeRep);
+  m_handleWidget->EnabledOn();
   return true;
 }
 
 bool ScaleCubeSink::finalize()
 {
-  if (renderView()) {
-    renderView()->RemovePropFromRenderer(m_actor);
-    renderView()->RemovePropFromRenderer(m_textActor);
-  }
+  m_handleWidget->EnabledOff();
   return LegacyModuleSink::finalize();
 }
 
@@ -94,137 +96,309 @@ bool ScaleCubeSink::consume(const QMap<QString, PortData>& inputs)
 
   auto bounds = volume->bounds();
 
-  // Adaptive scaling on first consume: set side length to ~10% of max extent
-  if (m_firstConsume && m_adaptiveScaling) {
+  if (m_firstConsume) {
+    // Match old ModuleScaleCube::initialize(): 10% of X extent, floored.
     double extentX = bounds[1] - bounds[0];
-    double extentY = bounds[3] - bounds[2];
-    double extentZ = bounds[5] - bounds[4];
-    double maxExtent = std::max({ extentX, extentY, extentZ });
-    m_sideLength = maxExtent * 0.1;
-    m_cubeSource->SetXLength(m_sideLength);
-    m_cubeSource->SetYLength(m_sideLength);
-    m_cubeSource->SetZLength(m_sideLength);
+    double length = std::max(std::floor(extentX * 0.1), 1.0);
+    m_cubeRep->SetSideLength(length);
+    emit sideLengthChanged(length);
+
+    // Position at lower corner + half side length offset
+    double pos[3];
+    pos[0] = bounds[0] + 0.5 * length;
+    pos[1] = bounds[2] + 0.5 * length;
+    pos[2] = bounds[4] + 0.5 * length;
+    m_cubeRep->PlaceWidget(pos);
+    m_cubeRep->SetWorldPosition(pos);
+    emit positionChanged(pos[0], pos[1], pos[2]);
+
     m_firstConsume = false;
   }
 
-  // Position at the lower corner of the volume bounds
-  m_cubeSource->SetCenter(bounds[0] + m_sideLength / 2.0,
-                          bounds[2] + m_sideLength / 2.0,
-                          bounds[4] + m_sideLength / 2.0);
-
-  updateAnnotation();
-
-  m_actor->SetVisibility(visibility() ? 1 : 0);
-  m_textActor->SetVisibility(
-    (visibility() && m_showAnnotation) ? 1 : 0);
+  // Update length unit from volume data
+  auto unit = volume->units();
+  if (!unit.isEmpty() && unit != m_lengthUnit) {
+    m_lengthUnit = unit;
+    m_cubeRep->SetLengthUnit(m_lengthUnit.toStdString().c_str());
+    emit lengthUnitChanged(m_lengthUnit);
+  }
 
   emit renderNeeded();
   return true;
 }
 
-void ScaleCubeSink::updateAnnotation()
+void ScaleCubeSink::observeModified()
 {
-  double center[3];
-  m_cubeSource->GetCenter(center);
-
-  // Position text below the cube
-  m_textActor->SetPosition(center[0],
-                           center[1] - m_sideLength * 0.7,
-                           center[2]);
-
-  // Generate annotation text
-  QString text = m_annotationText;
-  if (text.isEmpty()) {
-    // Format the side length nicely
-    if (m_sideLength >= 1.0) {
-      text = QString::number(m_sideLength, 'g', 3);
-    } else {
-      text = QString::number(m_sideLength, 'g', 2);
-    }
-  }
-  m_textActor->SetInput(text.toUtf8().data());
+  double p[3];
+  m_cubeRep->GetWorldPosition(p);
+  emit positionChanged(p[0], p[1], p[2]);
+  emit sideLengthChanged(m_cubeRep->GetSideLength());
 }
 
 double ScaleCubeSink::sideLength() const
 {
-  return m_sideLength;
+  return m_cubeRep->GetSideLength();
 }
 
 void ScaleCubeSink::setSideLength(double length)
 {
-  m_sideLength = length;
-  m_cubeSource->SetXLength(length);
-  m_cubeSource->SetYLength(length);
-  m_cubeSource->SetZLength(length);
-  updateAnnotation();
+  m_cubeRep->SetSideLength(length);
+  emit sideLengthChanged(length);
   emit renderNeeded();
+}
+
+void ScaleCubeSink::position(double pos[3]) const
+{
+  m_cubeRep->GetWorldPosition(pos);
 }
 
 void ScaleCubeSink::setPosition(double x, double y, double z)
 {
-  m_cubeSource->SetCenter(x, y, z);
-  updateAnnotation();
+  double pos[3] = { x, y, z };
+  m_cubeRep->SetWorldPosition(pos);
+  emit positionChanged(x, y, z);
   emit renderNeeded();
 }
 
 bool ScaleCubeSink::adaptiveScaling() const
 {
-  return m_adaptiveScaling;
+  return m_cubeRep->GetAdaptiveScaling() == 1;
 }
 
 void ScaleCubeSink::setAdaptiveScaling(bool adaptive)
 {
-  m_adaptiveScaling = adaptive;
+  m_cubeRep->SetAdaptiveScaling(adaptive ? 1 : 0);
+}
+
+void ScaleCubeSink::color(double rgb[3]) const
+{
+  m_cubeRep->GetProperty()->GetDiffuseColor(rgb);
 }
 
 void ScaleCubeSink::setColor(double r, double g, double b)
 {
-  m_property->SetColor(r, g, b);
+  m_cubeRep->GetProperty()->SetDiffuseColor(r, g, b);
+  emit renderNeeded();
+}
+
+void ScaleCubeSink::textColor(double rgb[3]) const
+{
+  m_cubeRep->GetLabelText()->GetTextProperty()->GetColor(rgb);
+}
+
+void ScaleCubeSink::setTextColor(double r, double g, double b)
+{
+  m_cubeRep->GetLabelText()->GetTextProperty()->SetColor(r, g, b);
   emit renderNeeded();
 }
 
 bool ScaleCubeSink::showAnnotation() const
 {
-  return m_showAnnotation;
+  return m_annotationVisibility;
 }
 
 void ScaleCubeSink::setShowAnnotation(bool show)
 {
-  m_showAnnotation = show;
-  m_textActor->SetVisibility(
-    (visibility() && m_showAnnotation) ? 1 : 0);
+  m_annotationVisibility = show;
+  m_cubeRep->SetLabelVisibility(show ? 1 : 0);
   emit renderNeeded();
 }
 
-QString ScaleCubeSink::annotationText() const
+QString ScaleCubeSink::lengthUnit() const
 {
-  return m_annotationText;
+  return m_lengthUnit;
 }
 
-void ScaleCubeSink::setAnnotationText(const QString& text)
+void ScaleCubeSink::setLengthUnit(const QString& unit)
 {
-  m_annotationText = text;
-  updateAnnotation();
+  m_lengthUnit = unit;
+  m_cubeRep->SetLengthUnit(unit.toStdString().c_str());
+  emit lengthUnitChanged(unit);
   emit renderNeeded();
+}
+
+void ScaleCubeSink::onMetadataChanged()
+{
+  auto vol = volumeData();
+  if (!vol) {
+    return;
+  }
+  auto unit = vol->units();
+  if (unit != m_lengthUnit) {
+    setLengthUnit(unit);
+  }
+}
+
+QWidget* ScaleCubeSink::createPropertiesWidget(QWidget* parent)
+{
+  auto* widget = new QWidget(parent);
+  auto* layout = new QFormLayout(widget);
+
+  // --- Adaptive Scaling ---
+  auto* adaptiveScalingCheck = new QCheckBox(widget);
+  adaptiveScalingCheck->setChecked(adaptiveScaling());
+  layout->addRow("Adaptive scaling", adaptiveScalingCheck);
+
+  // --- Side Length ---
+  auto* lengthLabelWidget = new QWidget(widget);
+  auto* lengthLabelLayout = new QHBoxLayout(lengthLabelWidget);
+  lengthLabelLayout->setContentsMargins(0, 0, 0, 0);
+  lengthLabelLayout->setSpacing(0);
+  lengthLabelLayout->addWidget(new QLabel("Length of side (", lengthLabelWidget));
+  auto* lengthUnitLabel = new QLabel(m_lengthUnit, lengthLabelWidget);
+  lengthLabelLayout->addWidget(lengthUnitLabel);
+  lengthLabelLayout->addWidget(new QLabel(")", lengthLabelWidget));
+
+  auto* sideLengthEdit = new QLineEdit(widget);
+  sideLengthEdit->setValidator(new QDoubleValidator(widget));
+  sideLengthEdit->setText(QString::number(sideLength()));
+  layout->addRow(lengthLabelWidget, sideLengthEdit);
+
+  // --- Position ---
+  auto* posLabelWidget = new QWidget(widget);
+  auto* posLabelLayout = new QHBoxLayout(posLabelWidget);
+  posLabelLayout->setContentsMargins(0, 0, 0, 0);
+  posLabelLayout->setSpacing(0);
+  posLabelLayout->addWidget(new QLabel("Position (", posLabelWidget));
+  auto* posUnitLabel = new QLabel(m_lengthUnit, posLabelWidget);
+  posLabelLayout->addWidget(posUnitLabel);
+  posLabelLayout->addWidget(new QLabel(")", posLabelWidget));
+  layout->addRow(posLabelWidget, new QWidget(widget)); // label-only row
+
+  double pos[3];
+  position(pos);
+  QLineEdit* posInputs[3];
+  auto* posRow = new QHBoxLayout;
+  const char* posLabels[] = { "X:", "Y:", "Z:" };
+  for (int i = 0; i < 3; ++i) {
+    posRow->addWidget(new QLabel(posLabels[i], widget));
+    auto* edit = new QLineEdit(QString::number(pos[i]), widget);
+    edit->setValidator(new QDoubleValidator(edit));
+    posRow->addWidget(edit);
+    posInputs[i] = edit;
+  }
+  layout->addRow(posRow);
+
+  // --- Annotation ---
+  auto* annotationCheck = new QCheckBox(widget);
+  annotationCheck->setChecked(m_annotationVisibility);
+  layout->addRow("Annotation", annotationCheck);
+
+  // --- Box Color ---
+  auto* boxColorButton = new pqColorChooserButton(widget);
+  boxColorButton->setText("...");
+  double rgb[3];
+  color(rgb);
+  boxColorButton->setChosenColor(
+    QColor(static_cast<int>(rgb[0] * 255.0 + 0.5),
+           static_cast<int>(rgb[1] * 255.0 + 0.5),
+           static_cast<int>(rgb[2] * 255.0 + 0.5)));
+  layout->addRow("Box Color", boxColorButton);
+
+  // --- Text Color ---
+  auto* textColorButton = new pqColorChooserButton(widget);
+  textColorButton->setText("...");
+  double tc[3];
+  textColor(tc);
+  textColorButton->setChosenColor(
+    QColor(static_cast<int>(tc[0] * 255.0 + 0.5),
+           static_cast<int>(tc[1] * 255.0 + 0.5),
+           static_cast<int>(tc[2] * 255.0 + 0.5)));
+  layout->addRow("Text Color", textColorButton);
+
+  // --- Connections: UI → Sink ---
+  QObject::connect(
+    adaptiveScalingCheck, &QCheckBox::toggled,
+    [this](bool checked) { setAdaptiveScaling(checked); });
+
+  QObject::connect(
+    sideLengthEdit, &QLineEdit::editingFinished,
+    [this, sideLengthEdit]() {
+      setSideLength(sideLengthEdit->text().toDouble());
+    });
+
+  QObject::connect(
+    annotationCheck, &QCheckBox::toggled,
+    [this](bool checked) { setShowAnnotation(checked); });
+
+  QObject::connect(
+    boxColorButton, &pqColorChooserButton::chosenColorChanged,
+    [this](const QColor& c) {
+      setColor(c.red() / 255.0, c.green() / 255.0, c.blue() / 255.0);
+    });
+
+  QObject::connect(
+    textColorButton, &pqColorChooserButton::chosenColorChanged,
+    [this](const QColor& c) {
+      setTextColor(c.red() / 255.0, c.green() / 255.0, c.blue() / 255.0);
+    });
+
+  // Position text fields → Sink
+  auto updatePosFn = [this, posInputs]() {
+    setPosition(posInputs[0]->text().toDouble(),
+                posInputs[1]->text().toDouble(),
+                posInputs[2]->text().toDouble());
+  };
+  for (int i = 0; i < 3; ++i) {
+    QObject::connect(posInputs[i], &QLineEdit::editingFinished, updatePosFn);
+  }
+
+  // --- Connections: Sink → UI ---
+  QObject::connect(
+    this, &ScaleCubeSink::sideLengthChanged,
+    sideLengthEdit, [sideLengthEdit](double length) {
+      QSignalBlocker b(sideLengthEdit);
+      sideLengthEdit->setText(QString::number(length));
+    });
+
+  // Update position text fields when the cube is dragged in the 3D view
+  QObject::connect(
+    this, &ScaleCubeSink::positionChanged,
+    widget, [posInputs](double x, double y, double z) {
+      double vals[3] = { x, y, z };
+      for (int i = 0; i < 3; ++i) {
+        QSignalBlocker b(posInputs[i]);
+        posInputs[i]->setText(QString::number(vals[i]));
+      }
+    });
+
+  QObject::connect(
+    this, &ScaleCubeSink::lengthUnitChanged,
+    lengthUnitLabel, [lengthUnitLabel](const QString& unit) {
+      lengthUnitLabel->setText(unit);
+    });
+
+  QObject::connect(
+    this, &ScaleCubeSink::lengthUnitChanged,
+    posUnitLabel, [posUnitLabel](const QString& unit) {
+      posUnitLabel->setText(unit);
+    });
+
+  return widget;
 }
 
 QJsonObject ScaleCubeSink::serialize() const
 {
   auto json = LegacyModuleSink::serialize();
-  json["sideLength"] = m_sideLength;
-  json["adaptiveScaling"] = m_adaptiveScaling;
-  json["showAnnotation"] = m_showAnnotation;
-  json["annotationText"] = m_annotationText;
-  double center[3];
-  m_cubeSource->GetCenter(center);
-  json["centerX"] = center[0];
-  json["centerY"] = center[1];
-  json["centerZ"] = center[2];
+  json["adaptiveScaling"] = adaptiveScaling();
+  json["sideLength"] = sideLength();
+  json["showAnnotation"] = m_annotationVisibility;
+  json["lengthUnit"] = m_lengthUnit;
+  double pos[3];
+  m_cubeRep->GetWorldPosition(pos);
+  json["positionX"] = pos[0];
+  json["positionY"] = pos[1];
+  json["positionZ"] = pos[2];
   double rgb[3];
-  m_property->GetColor(rgb);
+  m_cubeRep->GetProperty()->GetDiffuseColor(rgb);
   json["colorR"] = rgb[0];
   json["colorG"] = rgb[1];
   json["colorB"] = rgb[2];
+  double tc[3];
+  m_cubeRep->GetLabelText()->GetTextProperty()->GetColor(tc);
+  json["textColorR"] = tc[0];
+  json["textColorG"] = tc[1];
+  json["textColorB"] = tc[2];
   return json;
 }
 
@@ -233,25 +407,31 @@ bool ScaleCubeSink::deserialize(const QJsonObject& json)
   if (!LegacyModuleSink::deserialize(json)) {
     return false;
   }
-  if (json.contains("sideLength")) {
-    setSideLength(json["sideLength"].toDouble());
-  }
   if (json.contains("adaptiveScaling")) {
     setAdaptiveScaling(json["adaptiveScaling"].toBool());
+  }
+  if (json.contains("sideLength")) {
+    setSideLength(json["sideLength"].toDouble());
   }
   if (json.contains("showAnnotation")) {
     setShowAnnotation(json["showAnnotation"].toBool());
   }
-  if (json.contains("annotationText")) {
-    setAnnotationText(json["annotationText"].toString());
+  if (json.contains("lengthUnit")) {
+    setLengthUnit(json["lengthUnit"].toString());
   }
-  if (json.contains("centerX")) {
-    setPosition(json["centerX"].toDouble(), json["centerY"].toDouble(),
-                json["centerZ"].toDouble());
+  if (json.contains("positionX")) {
+    setPosition(json["positionX"].toDouble(),
+                json["positionY"].toDouble(),
+                json["positionZ"].toDouble());
   }
   if (json.contains("colorR")) {
     setColor(json["colorR"].toDouble(), json["colorG"].toDouble(),
              json["colorB"].toDouble());
+  }
+  if (json.contains("textColorR")) {
+    setTextColor(json["textColorR"].toDouble(),
+                 json["textColorG"].toDouble(),
+                 json["textColorB"].toDouble());
   }
   return true;
 }

@@ -193,6 +193,8 @@ void LegacyModuleSink::updateColorMap()
   // color/opacity into their VTK pipeline.
 }
 
+void LegacyModuleSink::onMetadataChanged() {}
+
 void LegacyModuleSink::addClippingPlane(vtkPlane*)
 {
 }
@@ -251,6 +253,13 @@ bool LegacyModuleSink::execute()
           auto vol = outPort->data().value<VolumeDataPtr>();
           if (vol) {
             m_volumeData = vol;
+            // Connect once to upstream port metadata changes so sinks
+            // can react without a full pipeline re-execution.
+            if (!m_metadataConnected) {
+              connect(outPort, &OutputPort::metadataChanged,
+                      this, &LegacyModuleSink::onMetadataChanged);
+              m_metadataConnected = true;
+            }
             break;
           }
         }

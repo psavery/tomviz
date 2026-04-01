@@ -84,6 +84,11 @@ public:
   /// that need a color map should override this.
   virtual void updateColorMap();
 
+  /// Called when lightweight metadata (units, label, spacing, origin)
+  /// changes on an upstream port without a full pipeline re-execution.
+  /// Subclasses can override to update annotations/UI.  Default is a no-op.
+  virtual void onMetadataChanged();
+
   /// Clipping plane support. Subclasses that clip geometry/volumes
   /// should override these. Default implementations are no-ops.
   virtual void addClippingPlane(vtkPlane* plane);
@@ -113,6 +118,7 @@ private:
 
   bool m_visible = true;
   bool m_firstConsume = true;
+  bool m_metadataConnected = false;
   vtkWeakPointer<vtkSMViewProxy> m_viewProxy;
   vtkWeakPointer<vtkPVRenderView> m_renderView;
 

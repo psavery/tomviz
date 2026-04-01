@@ -539,7 +539,9 @@ void VolumePropertiesWidget::onLabelEdited()
     return;
   }
   vol->setLabel(m_labelEdit->text());
-  emit volumeDataModified();
+  if (m_port) {
+    emit m_port->metadataChanged();
+  }
 }
 
 void VolumePropertiesWidget::onActiveScalarsChanged(const QString& name)
@@ -558,7 +560,9 @@ void VolumePropertiesWidget::onActiveScalarsChanged(const QString& name)
   }
   pointData->SetActiveScalars(name.toUtf8().constData());
   updateData();
-  emit volumeDataModified();
+  if (m_port) {
+    emit m_port->metadataChanged();
+  }
 }
 
 void VolumePropertiesWidget::onComponentNameEdited(const QString& name)
@@ -574,7 +578,9 @@ void VolumePropertiesWidget::onComponentNameEdited(const QString& name)
   int index = m_componentNamesCombo->currentIndex();
   if (index >= 0 && index < scalars->GetNumberOfComponents()) {
     scalars->SetComponentName(index, name.toUtf8().constData());
-    emit volumeDataModified();
+    if (m_port) {
+      emit m_port->metadataChanged();
+    }
   }
 }
 
@@ -585,7 +591,9 @@ void VolumePropertiesWidget::onUnitsEdited()
     return;
   }
   vol->setUnits(m_unitBox->text());
-  emit volumeDataModified();
+  if (m_port) {
+    emit m_port->metadataChanged();
+  }
 }
 
 void VolumePropertiesWidget::onLengthEdited(int axis)
@@ -611,7 +619,9 @@ void VolumePropertiesWidget::onLengthEdited(int axis)
   sp[axis] = newLength / dimSize;
   vol->setSpacing(sp[0], sp[1], sp[2]);
   updateData();
-  emit volumeDataModified();
+  if (m_port) {
+    emit m_port->metadataChanged();
+  }
 }
 
 void VolumePropertiesWidget::onVoxelSizeEdited(int axis)
@@ -631,7 +641,9 @@ void VolumePropertiesWidget::onVoxelSizeEdited(int axis)
   sp[axis] = newSize;
   vol->setSpacing(sp[0], sp[1], sp[2]);
   updateData();
-  emit volumeDataModified();
+  if (m_port) {
+    emit m_port->metadataChanged();
+  }
 }
 
 void VolumePropertiesWidget::onOriginEdited(int axis)
@@ -650,7 +662,9 @@ void VolumePropertiesWidget::onOriginEdited(int axis)
   auto orig = vol->origin();
   orig[axis] = newValue;
   vol->setOrigin(orig[0], orig[1], orig[2]);
-  emit volumeDataModified();
+  if (m_port) {
+    emit m_port->metadataChanged();
+  }
 }
 
 void VolumePropertiesWidget::onScalarsRenamed(const QString& oldName,
@@ -671,7 +685,9 @@ void VolumePropertiesWidget::onScalarsRenamed(const QString& oldName,
   }
 
   updateData();
-  emit volumeDataModified();
+  if (m_port) {
+    emit m_port->metadataChanged();
+  }
 }
 
 void VolumePropertiesWidget::updateTiltAnglesSection()

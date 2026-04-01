@@ -10,18 +10,16 @@
 
 #include <vtkNew.h>
 
-class vtkActor;
-class vtkBillboardTextActor3D;
-class vtkCubeSource;
-class vtkPolyDataMapper;
-class vtkProperty;
+class vtkHandleWidget;
+class vtkMeasurementCubeHandleRepresentation3D;
 
 namespace tomviz {
 namespace pipeline {
 
 /// Scale cube annotation visualization sink.
-/// Displays a cube of known size for spatial reference with optional
-/// text annotation. Matches the old ModuleScaleCube.
+/// Displays an interactive cube of known size for spatial reference with
+/// optional text annotation.  The user can drag the cube in the 3D view.
+/// Matches the old ModuleScaleCube.
 class TOMVIZ_PIPELINE_EXPORT ScaleCubeSink : public LegacyModuleSink
 {
   Q_OBJECT
@@ -40,41 +38,46 @@ public:
   QJsonObject serialize() const override;
   bool deserialize(const QJsonObject& json) override;
 
+  QWidget* createPropertiesWidget(QWidget* parent) override;
+
   double sideLength() const;
   void setSideLength(double length);
 
+  void position(double pos[3]) const;
   void setPosition(double x, double y, double z);
 
-  /// Adaptive sizing: set side length to ~10% of the volume extent.
   bool adaptiveScaling() const;
   void setAdaptiveScaling(bool adaptive);
 
-  /// Box color.
+  void color(double rgb[3]) const;
   void setColor(double r, double g, double b);
 
-  /// Annotation text (label below the cube).
+  void textColor(double rgb[3]) const;
+  void setTextColor(double r, double g, double b);
+
   bool showAnnotation() const;
   void setShowAnnotation(bool show);
 
-  /// Annotation label text.
-  QString annotationText() const;
-  void setAnnotationText(const QString& text);
+  QString lengthUnit() const;
+  void setLengthUnit(const QString& unit);
+
+  void onMetadataChanged() override;
+
+signals:
+  void sideLengthChanged(double length);
+  void positionChanged(double x, double y, double z);
+  void lengthUnitChanged(const QString& unit);
 
 protected:
   bool consume(const QMap<QString, PortData>& inputs) override;
 
 private:
-  void updateAnnotation();
-
-  vtkNew<vtkCubeSource> m_cubeSource;
-  vtkNew<vtkPolyDataMapper> m_mapper;
-  vtkNew<vtkActor> m_actor;
-  vtkNew<vtkProperty> m_property;
-  vtkNew<vtkBillboardTextActor3D> m_textActor;
-  double m_sideLength = 1.0;
-  bool m_adaptiveScaling = true;
-  bool m_showAnnotation = true;
-  QString m_annotationText;
+  void observeModified();
+  vtkNew<vtkHandleWidget> m_handleWidget;
+  vtkNew<vtkMeasurementCubeHandleRepresentation3D> m_cubeRep;
+  unsigned long m_observedId = 0;
+  bool m_annotationVisibility = true;
+  QString m_lengthUnit;
   bool m_firstConsume = true;
 };
 

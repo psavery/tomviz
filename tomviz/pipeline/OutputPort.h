@@ -58,6 +58,12 @@ signals:
   void staleChanged(bool stale);
   void effectiveTypeChanged(PortType newType);
 
+  /// Emitted when lightweight metadata (units, label, spacing, origin)
+  /// changes on the data held by this port, without the image data itself
+  /// being replaced. Sinks can listen to this to update annotations/UI
+  /// without a full pipeline re-execution.
+  void metadataChanged();
+
 private:
   friend class Link;
   void addLink(Link* link);

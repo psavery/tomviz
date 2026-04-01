@@ -8,6 +8,7 @@
 #include <vtkDoubleArray.h>
 #include <vtkFieldData.h>
 #include <vtkImageData.h>
+#include <vtkStringArray.h>
 #include <vtkPiecewiseFunction.h>
 #include <vtkPointData.h>
 #include <vtkSMPropertyHelper.h>
@@ -99,7 +100,20 @@ VolumeData::VolumeData() = default;
 
 VolumeData::VolumeData(vtkSmartPointer<vtkImageData> imageData)
   : m_imageData(imageData)
-{}
+{
+  // Extract units from field data if available (legacy format stores a
+  // vtkStringArray named "units" where value 0 is the unit string).
+  if (m_imageData) {
+    auto* fd = m_imageData->GetFieldData();
+    if (fd && fd->HasArray("units")) {
+      auto* arr =
+        vtkStringArray::SafeDownCast(fd->GetAbstractArray("units"));
+      if (arr && arr->GetNumberOfValues() > 0) {
+        m_units = QString::fromStdString(arr->GetValue(0));
+      }
+    }
+  }
+}
 
 VolumeData::~VolumeData() = default;
 
