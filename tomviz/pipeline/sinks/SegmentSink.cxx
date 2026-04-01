@@ -213,6 +213,7 @@ bool SegmentSink::consume(const QMap<QString, PortData>& inputs)
   m_contour->SetValue(0, m_contourValue);
   m_actor->SetVisibility(visibility() ? 1 : 0);
 
+  onMetadataChanged();
   emit renderNeeded();
   return true;
 }
@@ -410,6 +411,17 @@ bool SegmentSink::deserialize(const QJsonObject& json)
     setScript(json["script"].toString());
   }
   return true;
+}
+
+void SegmentSink::onMetadataChanged()
+{
+  auto vol = volumeData();
+  if (!vol) return;
+  auto pos = vol->displayPosition();
+  auto orient = vol->displayOrientation();
+  m_actor->SetPosition(pos.data());
+  m_actor->SetOrientation(orient.data());
+  emit renderNeeded();
 }
 
 } // namespace pipeline

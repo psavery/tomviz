@@ -65,6 +65,8 @@ public:
   bool useCustomAxesTitles() const;
   void setUseCustomAxesTitles(bool use);
 
+  void onMetadataChanged() override;
+
 protected:
   bool consume(const QMap<QString, PortData>& inputs) override;
 

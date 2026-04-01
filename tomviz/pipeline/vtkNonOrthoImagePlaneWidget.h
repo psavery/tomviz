@@ -183,6 +183,12 @@ public:
   void GetDisplayOrientation(double xyz[3]);
 
   // Description:
+  // Set/Get the display scale.
+  void SetDisplayScale(const double xyz[3]);
+  const double* GetDisplayScale();
+  void GetDisplayScale(double xyz[3]);
+
+  // Description:
   // Update the display transform.
   void UpdateDisplayTransform();
 
@@ -461,6 +467,7 @@ protected:
   // display offset
   double DisplayOffset[3];
   double DisplayOrientation[3];
+  double DisplayScale[3];
   vtkTransform* DisplayTransform;
 
   // The geometric representation of the plane and it's outline

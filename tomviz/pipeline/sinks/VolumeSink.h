@@ -85,6 +85,8 @@ public:
   void removeClippingPlane(vtkPlane* plane) override;
   void removeAllClippingPlanes();
 
+  void onMetadataChanged() override;
+
 protected:
   bool consume(const QMap<QString, PortData>& inputs) override;
   void updateColorMap() override;

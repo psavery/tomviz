@@ -125,6 +125,7 @@ bool VolumeSink::consume(const QMap<QString, PortData>& inputs)
   applyActiveScalars();
   m_volume->SetVisibility(visibility() ? 1 : 0);
 
+  onMetadataChanged();
   return true;
 }
 
@@ -472,6 +473,17 @@ bool VolumeSink::deserialize(const QJsonObject& json)
     m_activeScalars = json["activeScalars"].toInt(-1);
   }
   return true;
+}
+
+void VolumeSink::onMetadataChanged()
+{
+  auto vol = volumeData();
+  if (!vol) return;
+  auto pos = vol->displayPosition();
+  auto orient = vol->displayOrientation();
+  m_volume->SetPosition(pos.data());
+  m_volume->SetOrientation(orient.data());
+  emit renderNeeded();
 }
 
 } // namespace pipeline

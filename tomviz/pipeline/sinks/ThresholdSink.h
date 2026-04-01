@@ -12,6 +12,8 @@
 #include <QSet>
 #include <vtkSmartPointer.h>
 
+#include <array>
+
 class vtkImageData;
 class vtkPlane;
 class vtkSMProxy;
@@ -75,6 +77,8 @@ public:
 
   QWidget* createPropertiesWidget(QWidget* parent) override;
 
+  void onMetadataChanged() override;
+
 protected:
   bool consume(const QMap<QString, PortData>& inputs) override;
   void updateColorMap() override;
@@ -99,6 +103,7 @@ private:
   double m_scalarRange[2] = { 0.0, 1.0 };
   QPointer<ThresholdSinkWidget> m_controllers;
   QSet<vtkPlane*> m_clippingPlanes;
+  std::array<double, 3> m_lastSpacing = { 0.0, 0.0, 0.0 };
 };
 
 } // namespace pipeline

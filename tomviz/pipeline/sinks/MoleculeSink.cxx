@@ -4,6 +4,7 @@
 #include "MoleculeSink.h"
 
 #include "DoubleSliderWidget.h"
+#include "data/VolumeData.h"
 
 #include <vtkActor.h>
 #include <vtkMolecule.h>
@@ -79,6 +80,7 @@ bool MoleculeSink::consume(const QMap<QString, PortData>& inputs)
 
   m_actor->SetVisibility(visibility() ? 1 : 0);
 
+  onMetadataChanged();
   emit renderNeeded();
   return true;
 }
@@ -151,6 +153,17 @@ bool MoleculeSink::deserialize(const QJsonObject& json)
     setBondRadius(json["bondRadius"].toDouble());
   }
   return true;
+}
+
+void MoleculeSink::onMetadataChanged()
+{
+  auto vol = volumeData();
+  if (!vol) return;
+  auto pos = vol->displayPosition();
+  auto orient = vol->displayOrientation();
+  m_actor->SetPosition(pos.data());
+  m_actor->SetOrientation(orient.data());
+  emit renderNeeded();
 }
 
 } // namespace pipeline

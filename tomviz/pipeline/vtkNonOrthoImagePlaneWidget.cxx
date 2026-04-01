@@ -132,6 +132,10 @@ vtkNonOrthoImagePlaneWidget::vtkNonOrthoImagePlaneWidget()
   this->DisplayOrientation[1] = 0;
   this->DisplayOrientation[2] = 0;
 
+  this->DisplayScale[0] = 1;
+  this->DisplayScale[1] = 1;
+  this->DisplayScale[2] = 1;
+
   this->DisplayTransform = vtkTransform::New();
 
   // Represent the plane's outline
@@ -1673,6 +1677,9 @@ void vtkNonOrthoImagePlaneWidget::SetDisplayOffset(const double xyz[3])
   for (int i = 0; i < 3; ++i) {
     this->DisplayOffset[i] = xyz[i];
   }
+  // Only update the live transform, not the full placement. The
+  // DisplayTransform is set as UserTransform on all actors, so modifying
+  // it in-place is enough for the next render.
   this->UpdateDisplayTransform();
 }
 
@@ -1708,6 +1715,26 @@ void vtkNonOrthoImagePlaneWidget::GetDisplayOrientation(double xyz[3])
   }
 }
 
+void vtkNonOrthoImagePlaneWidget::SetDisplayScale(const double xyz[3])
+{
+  for (int i = 0; i < 3; ++i) {
+    this->DisplayScale[i] = xyz[i];
+  }
+  this->UpdateDisplayTransform();
+}
+
+const double* vtkNonOrthoImagePlaneWidget::GetDisplayScale()
+{
+  return this->DisplayScale;
+}
+
+void vtkNonOrthoImagePlaneWidget::GetDisplayScale(double xyz[3])
+{
+  for (int i = 0; i < 3; ++i) {
+    xyz[i] = this->DisplayScale[i];
+  }
+}
+
 void vtkNonOrthoImagePlaneWidget::UpdateDisplayTransform()
 {
   this->DisplayTransform->Identity();
@@ -1715,8 +1742,8 @@ void vtkNonOrthoImagePlaneWidget::UpdateDisplayTransform()
   this->DisplayTransform->RotateZ(this->DisplayOrientation[2]);
   this->DisplayTransform->RotateX(this->DisplayOrientation[0]);
   this->DisplayTransform->RotateY(this->DisplayOrientation[1]);
+  this->DisplayTransform->Scale(this->DisplayScale);
   this->DisplayTransform->Update();
-  this->UpdatePlacement();
 }
 
 void vtkNonOrthoImagePlaneWidget::GetPolyData(vtkPolyData* pd)

@@ -51,6 +51,7 @@ ClipSink::ClipSink(QObject* parent) : LegacyModuleSink(parent)
 
   connect(inputPort("volume"), &Port::connectionChanged,
           this, &ClipSink::onInputConnectionChanged);
+
 }
 
 ClipSink::~ClipSink()
@@ -214,6 +215,12 @@ bool ClipSink::consume(const QMap<QString, PortData>& inputs)
     m_clippingPlane->SetNormal(n);
   }
 
+  auto vol = volumeData();
+  if (vol && vol->isValid()) {
+    m_lastSpacing = vol->spacing();
+  }
+
+  onMetadataChanged();
   emit clipPlaneUpdated();
   emit renderNeeded();
   return true;
@@ -912,6 +919,39 @@ void ClipSink::onPipelineLinkRemoved(Link* link)
     sink->removeClippingPlane(m_clippingPlane);
     m_clippedSinks.remove(sink);
   }
+}
+
+void ClipSink::onMetadataChanged()
+{
+  auto vol = volumeData();
+  if (!vol || !m_widget) {
+    return;
+  }
+
+  // Position and orientation are cheap — only the live UserTransform updates.
+  auto pos = vol->displayPosition();
+  auto orient = vol->displayOrientation();
+  m_widget->SetDisplayOffset(pos.data());
+  m_widget->SetDisplayOrientation(orient.data());
+
+  if (vol->isValid()) {
+    auto sp = vol->spacing();
+    if (sp != m_lastSpacing) {
+      double center[3];
+      m_widget->GetCenter(center);
+      for (int i = 0; i < 3; ++i) {
+        if (m_lastSpacing[i] != 0.0) {
+          center[i] *= sp[i] / m_lastSpacing[i];
+        }
+      }
+      m_lastSpacing = sp;
+      m_widget->SetPlaneOrientation(m_widget->GetPlaneOrientation());
+      m_widget->SetCenter(center);
+      m_widget->UpdatePlacement();
+    }
+  }
+
+  emit renderNeeded();
 }
 
 } // namespace pipeline

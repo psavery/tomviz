@@ -124,6 +124,7 @@ bool ThresholdSink::consume(const QMap<QString, PortData>& inputs)
   QMetaObject::invokeMethod(this, &ThresholdSink::setupOrUpdatePipeline,
                             Qt::QueuedConnection);
 
+  onMetadataChanged();
   return true;
 }
 
@@ -200,6 +201,13 @@ void ThresholdSink::setupOrUpdatePipeline()
       .Set(visibility() ? 1 : 0);
 
     updateColorMap();
+  }
+
+  // Snapshot the spacing baked into the pipeline output. onMetadataChanged()
+  // uses this as the reference to compute actor scale ratios.
+  auto vol = volumeData();
+  if (vol && vol->isValid()) {
+    m_lastSpacing = vol->spacing();
   }
 
   m_pendingImage = nullptr;
@@ -560,6 +568,52 @@ bool ThresholdSink::deserialize(const QJsonObject& json)
   updatePanel();
 
   return true;
+}
+
+void ThresholdSink::onMetadataChanged()
+{
+  auto vol = volumeData();
+  if (!vol || !m_thresholdRepresentation) {
+    return;
+  }
+
+  // Go straight to the client-side VTK actor, bypassing the SM layer entirely.
+  // This avoids the expensive SM pipeline update for interactive transforms.
+  auto* clientObj = m_thresholdRepresentation->GetClientSideObject();
+  auto* compositeRep = vtkCompositeRepresentation::SafeDownCast(clientObj);
+  vtkGeometryRepresentation* geoRep = nullptr;
+  if (compositeRep) {
+    geoRep = vtkGeometryRepresentation::SafeDownCast(
+      compositeRep->GetActiveRepresentation());
+  } else {
+    geoRep = vtkGeometryRepresentation::SafeDownCast(clientObj);
+  }
+  if (!geoRep || !geoRep->GetActor()) {
+    return;
+  }
+  auto* actor = geoRep->GetActor();
+
+  auto pos = vol->displayPosition();
+  auto orient = vol->displayOrientation();
+  actor->SetPosition(pos.data());
+  actor->SetOrientation(orient.data());
+
+  // The threshold filter output has geometry baked at the spacing that was
+  // current when the pipeline last executed (m_lastSpacing). Apply the ratio
+  // of current-to-baked spacing as an actor scale so the visual matches
+  // without re-executing the expensive SM pipeline.
+  if (vol->isValid()) {
+    auto sp = vol->spacing();
+    double scale[3] = { 1.0, 1.0, 1.0 };
+    for (int i = 0; i < 3; ++i) {
+      if (m_lastSpacing[i] != 0.0) {
+        scale[i] = sp[i] / m_lastSpacing[i];
+      }
+    }
+    actor->SetScale(scale);
+  }
+
+  emit renderNeeded();
 }
 
 } // namespace pipeline

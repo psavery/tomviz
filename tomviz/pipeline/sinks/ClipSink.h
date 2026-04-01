@@ -13,6 +13,8 @@
 
 #include <QSet>
 
+#include <array>
+
 class vtkImageData;
 class vtkNonOrthoImagePlaneWidget;
 class vtkPlane;
@@ -96,6 +98,8 @@ public:
 
   QWidget* createPropertiesWidget(QWidget* parent) override;
 
+  void onMetadataChanged() override;
+
 signals:
   /// Emitted when the clip plane geometry is updated.
   void clipPlaneUpdated();
@@ -132,6 +136,7 @@ private:
   int m_dims[3] = { 0, 0, 0 };
   double m_bounds[6] = { 0, 0, 0, 0, 0, 0 };
 
+  std::array<double, 3> m_lastSpacing = { 0.0, 0.0, 0.0 };
   QSet<LegacyModuleSink*> m_clippedSinks;
   OutputPort* m_upstreamPort = nullptr;
 };

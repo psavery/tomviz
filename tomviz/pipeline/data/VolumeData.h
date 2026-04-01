@@ -67,6 +67,16 @@ public:
   /// Get the physical bounds [xmin, xmax, ymin, ymax, zmin, zmax]
   std::array<double, 6> bounds() const;
 
+  /// Display transform: additional visual translation applied to actors
+  /// (separate from vtkImageData origin).
+  std::array<double, 3> displayPosition() const;
+  void setDisplayPosition(double x, double y, double z);
+
+  /// Display transform: Euler angles applied to actors
+  /// (vtkImageData has no rotation support).
+  std::array<double, 3> displayOrientation() const;
+  void setDisplayOrientation(double x, double y, double z);
+
   // -- Scalar data accessors --
 
   /// Get the active scalars array
@@ -158,6 +168,8 @@ private:
   vtkPiecewiseFunction* m_opacity = nullptr;
   QString m_label;
   QString m_units;
+  std::array<double, 3> m_displayPosition = { 0.0, 0.0, 0.0 };
+  std::array<double, 3> m_displayOrientation = { 0.0, 0.0, 0.0 };
   QList<TimeStep> m_timeSteps;
   int m_currentTimeStep = 0;
 };

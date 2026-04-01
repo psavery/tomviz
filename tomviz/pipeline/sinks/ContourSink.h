@@ -13,6 +13,8 @@
 #include <QString>
 #include <vtkNew.h>
 
+#include <array>
+
 class vtkActor;
 class vtkColorTransferFunction;
 class vtkDataSetMapper;
@@ -105,6 +107,8 @@ public:
   bool mapScalars() const;
   void setMapScalars(bool map);
 
+  void onMetadataChanged() override;
+
 protected:
   bool consume(const QMap<QString, PortData>& inputs) override;
   void updateColorMap() override;
@@ -125,6 +129,7 @@ private:
   QString m_colorByArrayName;
   int m_activeScalars = -1;
   double m_scalarRange[2] = { 0.0, 1.0 };
+  std::array<double, 3> m_baseSpacing = { 0.0, 0.0, 0.0 };
   QStringList m_scalarArrayNames;
   QPointer<ContourSinkWidget> m_controllers;
 };

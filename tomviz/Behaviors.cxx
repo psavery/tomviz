@@ -7,7 +7,6 @@
 #include "AddRenderViewContextMenuBehavior.h"
 #include "ManualManipulationWidget.h"
 #include "ShiftRotationCenterWidget.h"
-#include "MoveActiveObject.h"
 #include "RotateAlignWidget.h"
 #include "transforms/LegacyPythonTransform.h"
 #include "TimeSeriesLabel.h"
@@ -88,7 +87,6 @@ Behaviors::Behaviors(QMainWindow* mainWindow) : QObject(mainWindow)
 
   new tomviz::AddRenderViewContextMenuBehavior(this);
 
-  m_moveActiveBehavior.reset(new tomviz::MoveActiveObject(this));
   m_timeSeriesLabel.reset(new tomviz::TimeSeriesLabel(this));
 
   // This will trigger the logic to setup reader/writer factories, etc.

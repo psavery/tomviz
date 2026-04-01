@@ -21,6 +21,7 @@
 #include <QFileDialog>
 #include <QFrame>
 #include <QGridLayout>
+#include <QGroupBox>
 #include <QGuiApplication>
 #include <QHeaderView>
 #include <QKeyEvent>
@@ -236,6 +237,28 @@ VolumePropertiesWidget::VolumePropertiesWidget(QWidget* parent)
 
   mainLayout->addWidget(originWidget);
 
+  // --- Interaction section ---
+  m_interactionGroup = new QGroupBox("Interaction", this);
+  auto* interactionLayout = new QGridLayout(m_interactionGroup);
+  m_interactTranslate = new QCheckBox("Translate", m_interactionGroup);
+  m_interactTranslate->setToolTip(
+    "Translate by either left-clicking and dragging the central handle, "
+    "or by middle-clicking and dragging the data source.");
+  m_interactRotate = new QCheckBox("Rotate", m_interactionGroup);
+  m_interactRotate->setToolTip(
+    "Rotate by left-clicking a face and dragging it. "
+    "Rotation interactions are performed about the center of the data "
+    "source.");
+  m_interactScale = new QCheckBox("Scale", m_interactionGroup);
+  m_interactScale->setToolTip(
+    "Rescale individual axes by left-clicking the handles on the faces "
+    "and dragging them. Rescale with fixed aspect ratio by right-clicking "
+    "the data source and moving the mouse.");
+  interactionLayout->addWidget(m_interactTranslate, 0, 0);
+  interactionLayout->addWidget(m_interactRotate, 0, 1);
+  interactionLayout->addWidget(m_interactScale, 0, 2);
+  mainLayout->addWidget(m_interactionGroup);
+
   // --- Tilt Angles section (initially hidden) ---
   m_tiltAnglesHeader = createSectionHeader("Tilt Angles", this);
   mainLayout->addWidget(m_tiltAnglesHeader);
@@ -419,6 +442,7 @@ void VolumePropertiesWidget::updateData()
   // Tilt angles and time series
   updateTiltAnglesSection();
   updateTimeSeriesSection();
+
 }
 
 void VolumePropertiesWidget::gatherAndUpdateArraysInfo()
@@ -523,6 +547,9 @@ void VolumePropertiesWidget::clear()
     m_voxelSizeBoxes[i]->clear();
     m_originBoxes[i]->clear();
   }
+  m_interactTranslate->setChecked(false);
+  m_interactRotate->setChecked(false);
+  m_interactScale->setChecked(false);
   m_tiltAnglesHeader->hide();
   m_tiltAnglesTable->clear();
   m_tiltAnglesTable->setRowCount(0);

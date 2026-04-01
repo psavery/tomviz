@@ -130,6 +130,7 @@ bool OutlineSink::consume(const QMap<QString, PortData>& inputs)
   m_gridAxes->SetVisibility(
     (visibility() && m_showGridAxes) ? 1 : 0);
 
+  onMetadataChanged();
   emit renderNeeded();
   return true;
 }
@@ -419,6 +420,19 @@ bool OutlineSink::deserialize(const QJsonObject& json)
     setZTitle(json["zTitle"].toString());
   }
   return true;
+}
+
+void OutlineSink::onMetadataChanged()
+{
+  auto vol = volumeData();
+  if (!vol) return;
+  auto pos = vol->displayPosition();
+  auto orient = vol->displayOrientation();
+  m_actor->SetPosition(pos.data());
+  m_actor->SetOrientation(orient.data());
+  m_gridAxes->SetPosition(pos.data());
+  m_gridAxes->SetOrientation(orient.data());
+  emit renderNeeded();
 }
 
 } // namespace pipeline

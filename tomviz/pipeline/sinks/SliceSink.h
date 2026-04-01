@@ -10,6 +10,8 @@
 
 #include <vtkSmartPointer.h>
 
+#include <array>
+
 class vtkNonOrthoImagePlaneWidget;
 class vtkScalarsToColors;
 
@@ -95,6 +97,8 @@ public:
   void addClippingPlane(vtkPlane* plane) override;
   void removeClippingPlane(vtkPlane* plane) override;
 
+  void onMetadataChanged() override;
+
 signals:
   void sliceChanged(int slice);
   void directionChanged(Direction direction);
@@ -130,6 +134,7 @@ private:
 
   int m_dims[3] = { 0, 0, 0 };
   double m_bounds[6] = { 0, 0, 0, 0, 0, 0 };
+  std::array<double, 3> m_lastSpacing = { 0.0, 0.0, 0.0 };
 };
 
 } // namespace pipeline

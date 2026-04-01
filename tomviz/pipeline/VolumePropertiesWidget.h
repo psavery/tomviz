@@ -10,6 +10,7 @@
 
 class QCheckBox;
 class QComboBox;
+class QGroupBox;
 class QLabel;
 class QLineEdit;
 class QPushButton;
@@ -42,6 +43,11 @@ public:
   {
     return m_showTimeSeriesLabel;
   }
+
+  /// Access interaction checkboxes for wiring to InteractiveTransformWidget.
+  QCheckBox* translateCheckBox() const { return m_interactTranslate; }
+  QCheckBox* rotateCheckBox() const { return m_interactRotate; }
+  QCheckBox* scaleCheckBox() const { return m_interactScale; }
 
 signals:
   void volumeDataModified();
@@ -90,6 +96,12 @@ private:
   QLineEdit* m_voxelSizeBoxes[3];
   QLineEdit* m_originBoxes[3];
   QLineEdit* m_unitBox;
+
+  // Widgets — interaction
+  QGroupBox* m_interactionGroup = nullptr;
+  QCheckBox* m_interactTranslate = nullptr;
+  QCheckBox* m_interactRotate = nullptr;
+  QCheckBox* m_interactScale = nullptr;
 
   // Widgets — tilt angles
   QWidget* m_tiltAnglesHeader = nullptr;

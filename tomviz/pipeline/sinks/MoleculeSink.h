@@ -50,6 +50,8 @@ public:
   double bondRadius() const;
   void setBondRadius(double radius);
 
+  void onMetadataChanged() override;
+
 protected:
   bool consume(const QMap<QString, PortData>& inputs) override;
 

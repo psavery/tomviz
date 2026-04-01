@@ -145,8 +145,8 @@ set(SOURCES
   MoleculeProperties.h
   MoleculePropertiesPanel.cxx
   MoleculePropertiesPanel.h
-  MoveActiveObject.cxx
-  MoveActiveObject.h
+  InteractiveTransformWidget.cxx
+  InteractiveTransformWidget.h
   legacy/Pipeline.cxx
   legacy/Pipeline.h
   legacy/PipelineExecutor.cxx

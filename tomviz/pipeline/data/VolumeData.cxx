@@ -173,6 +173,26 @@ void VolumeData::setOrigin(double x, double y, double z)
   }
 }
 
+std::array<double, 3> VolumeData::displayPosition() const
+{
+  return m_displayPosition;
+}
+
+void VolumeData::setDisplayPosition(double x, double y, double z)
+{
+  m_displayPosition = { x, y, z };
+}
+
+std::array<double, 3> VolumeData::displayOrientation() const
+{
+  return m_displayOrientation;
+}
+
+void VolumeData::setDisplayOrientation(double x, double y, double z)
+{
+  m_displayOrientation = { x, y, z };
+}
+
 std::array<int, 6> VolumeData::extent() const
 {
   std::array<int, 6> e = { 0, 0, 0, 0, 0, 0 };

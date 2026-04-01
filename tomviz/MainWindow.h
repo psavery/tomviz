@@ -34,6 +34,7 @@ class Node;
 class OutputPort;
 class Pipeline;
 class PipelineStripWidget;
+class VolumePropertiesWidget;
 } // namespace pipeline
 
 /// The main window for the tomviz application.
@@ -106,6 +107,8 @@ private:
   void initPipeline();
   void clearDynamicPropertiesWidget();
   void updateColorMapDisplay();
+  void setupInteractiveTransformWidget(
+    pipeline::VolumePropertiesWidget* propsWidget);
 
   QScopedPointer<Ui::MainWindow> m_ui;
   QMenu* m_customTransformsMenu = nullptr;

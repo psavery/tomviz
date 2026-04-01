@@ -75,18 +75,9 @@ public slots:
   /// Renders all views.
   void renderAllViews();
 
-  /// Edit interaction modes for all data sources
-  void enableTranslation(bool b);
-  void enableRotation(bool b);
-  void enableScaling(bool b);
-
   /// Set whether to enable time series animations.
   void enableTimeSeriesAnimations(bool b);
   void setShowTimeSeriesLabel(bool b);
-
-  bool translationEnabled() const { return m_translationEnabled; }
-  bool rotationEnabled() const { return m_rotationEnabled; }
-  bool scalingEnabled() const { return m_scalingEnabled; }
 
   bool timeSeriesAnimationsEnabled() const
   {
@@ -97,11 +88,6 @@ public slots:
 signals:
   /// Fired whenever the active view changes.
   void viewChanged(vtkSMViewProxy*);
-
-  /// Fired when interaction modes change
-  void translationStateChanged(bool b);
-  void rotationStateChanged(bool b);
-  void scalingStateChanged(bool b);
 
   /// Fired when time series animations enable state is changed.
   void timeSeriesAnimationsEnableStateChanged(bool b);
@@ -140,11 +126,6 @@ protected:
   pipeline::Link* m_activeLink = nullptr;
   pipeline::OutputPort* m_activeTipOutputPort = nullptr;
 
-  /// interaction states
-  bool m_translationEnabled = false;
-  bool m_rotationEnabled = false;
-  bool m_scalingEnabled = false;
-
   /// Time series
   bool m_timeSeriesAnimationsEnabled = true;
   bool m_showTimeSeriesLabel = true;
@@ -153,36 +134,6 @@ private:
   void setActiveTipOutputPort(pipeline::OutputPort* port);
   Q_DISABLE_COPY(ActiveObjects)
 };
-
-inline void ActiveObjects::enableTranslation(bool b)
-{
-  if (m_translationEnabled == b) {
-    return;
-  }
-
-  m_translationEnabled = b;
-  emit translationStateChanged(b);
-}
-
-inline void ActiveObjects::enableRotation(bool b)
-{
-  if (m_rotationEnabled == b) {
-    return;
-  }
-
-  m_rotationEnabled = b;
-  emit rotationStateChanged(b);
-}
-
-inline void ActiveObjects::enableScaling(bool b)
-{
-  if (m_scalingEnabled == b) {
-    return;
-  }
-
-  m_scalingEnabled = b;
-  emit scalingStateChanged(b);
-}
 
 inline void ActiveObjects::enableTimeSeriesAnimations(bool b)
 {

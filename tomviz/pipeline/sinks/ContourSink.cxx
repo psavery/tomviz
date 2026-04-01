@@ -125,10 +125,20 @@ bool ContourSink::consume(const QMap<QString, PortData>& inputs)
   m_flyingEdges->SetValue(0, m_isoValue);
   m_actor->SetVisibility(visibility() ? 1 : 0);
 
+  // Snapshot spacing so onMetadataChanged can compute actor scale ratios.
+  // Also disconnect the mapper from the pipeline so that spacing changes
+  // on the shared vtkImageData don't trigger an expensive FlyingEdges
+  // re-execution on the next render.  We feed the mapper a static copy
+  // of the contour output and reconnect on the next consume().
+  m_baseSpacing = volume->spacing();
+  m_flyingEdges->Update();
+  m_mapper->SetInputDataObject(m_flyingEdges->GetOutput());
+
   // Defer panel update to the main thread (consume() runs on a worker thread).
   QMetaObject::invokeMethod(this, &ContourSink::updatePanel,
                             Qt::QueuedConnection);
 
+  onMetadataChanged();
   emit renderNeeded();
   return true;
 }
@@ -576,6 +586,34 @@ bool ContourSink::deserialize(const QJsonObject& json)
   updatePanel();
 
   return true;
+}
+
+void ContourSink::onMetadataChanged()
+{
+  auto vol = volumeData();
+  if (!vol) {
+    return;
+  }
+  auto pos = vol->displayPosition();
+  auto orient = vol->displayOrientation();
+  m_actor->SetPosition(pos.data());
+  m_actor->SetOrientation(orient.data());
+
+  // The FlyingEdges output has geometry baked at the spacing that was current
+  // when consume() last ran. Apply the ratio as actor scale so the contour
+  // visually matches without re-executing the expensive filter.
+  if (vol->isValid()) {
+    auto sp = vol->spacing();
+    double scale[3] = { 1.0, 1.0, 1.0 };
+    for (int i = 0; i < 3; ++i) {
+      if (m_baseSpacing[i] != 0.0) {
+        scale[i] = sp[i] / m_baseSpacing[i];
+      }
+    }
+    m_actor->SetScale(scale);
+  }
+
+  emit renderNeeded();
 }
 
 } // namespace pipeline
