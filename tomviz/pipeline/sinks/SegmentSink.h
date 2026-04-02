@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineSegmentSink_h
 #define tomvizPipelineSegmentSink_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "LegacyModuleSink.h"
 
 #include <QPointer>
@@ -29,7 +27,7 @@ namespace pipeline {
 /// Matches the old ModuleSegment: runs a user-editable Python/ITK
 /// segmentation script on the input volume, then displays a contour
 /// of the segmentation result.
-class TOMVIZ_PIPELINE_EXPORT SegmentSink : public LegacyModuleSink
+class SegmentSink : public LegacyModuleSink
 {
   Q_OBJECT
 

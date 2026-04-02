@@ -208,9 +208,18 @@ void ThresholdSink::setupOrUpdatePipeline()
   auto vol = volumeData();
   if (vol && vol->isValid()) {
     m_lastSpacing = vol->spacing();
+    m_lastOrigin = vol->origin();
   }
 
   m_pendingImage = nullptr;
+
+  // Force a render so the SM representation fully initialises its internal
+  // geometry representation and mapper — without this the actor/mapper
+  // lookups in onMetadataChanged / applyClippingPlanes silently bail out.
+  vtkView->StillRender();
+
+  // Apply current position/orientation/scale to the actor.
+  onMetadataChanged();
   applyClippingPlanes();
   updatePanel();
   emit renderNeeded();
@@ -593,23 +602,26 @@ void ThresholdSink::onMetadataChanged()
   }
   auto* actor = geoRep->GetActor();
 
-  auto pos = vol->displayPosition();
   auto orient = vol->displayOrientation();
-  actor->SetPosition(pos.data());
   actor->SetOrientation(orient.data());
 
-  // The threshold filter output has geometry baked at the spacing that was
-  // current when the pipeline last executed (m_lastSpacing). Apply the ratio
-  // of current-to-baked spacing as an actor scale so the visual matches
+  // The threshold filter output has geometry baked at the origin/spacing that
+  // was current when the pipeline last executed. Apply the origin delta as
+  // actor position and the spacing ratio as actor scale so the visual matches
   // without re-executing the expensive SM pipeline.
   if (vol->isValid()) {
+    auto orig = vol->origin();
     auto sp = vol->spacing();
+    auto displayPos = vol->displayPosition();
+    double pos[3] = { 0, 0, 0 };
     double scale[3] = { 1.0, 1.0, 1.0 };
     for (int i = 0; i < 3; ++i) {
+      pos[i] = displayPos[i] + orig[i] - m_lastOrigin[i];
       if (m_lastSpacing[i] != 0.0) {
         scale[i] = sp[i] / m_lastSpacing[i];
       }
     }
+    actor->SetPosition(pos);
     actor->SetScale(scale);
   }
 

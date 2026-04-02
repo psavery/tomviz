@@ -39,6 +39,7 @@
 #include <vtkRenderWindow.h>
 #include <vtkRenderWindowInteractor.h>
 #include <vtkSMViewProxy.h>
+#include <vtkTransform.h>
 #include <vtkTrivialProducer.h>
 
 namespace tomviz {
@@ -191,10 +192,7 @@ bool ClipSink::consume(const QMap<QString, PortData>& inputs)
     m_widget->SetInputConnection(producer->GetOutputPort());
 
     applyDirection();
-
-    // Sync the clipping plane from the widget (widget normal is authoritative)
-    m_clippingPlane->SetOrigin(m_widget->GetCenter());
-    m_clippingPlane->SetNormal(m_widget->GetNormal());
+    syncClippingPlane();
 
     m_widget->SetEnabled(visibility() ? 1 : 0);
   } else {
@@ -218,6 +216,7 @@ bool ClipSink::consume(const QMap<QString, PortData>& inputs)
   auto vol = volumeData();
   if (vol && vol->isValid()) {
     m_lastSpacing = vol->spacing();
+    m_lastOrigin = vol->origin();
   }
 
   onMetadataChanged();
@@ -269,11 +268,7 @@ void ClipSink::setDirection(Direction dir)
 {
   m_direction = dir;
   applyDirection();
-  // Sync clipping plane from the updated widget
-  if (m_widget) {
-    m_clippingPlane->SetOrigin(m_widget->GetCenter());
-    m_clippingPlane->SetNormal(m_widget->GetNormal());
-  }
+  syncClippingPlane();
   emit clipPlaneUpdated();
   emit renderNeeded();
 }
@@ -290,10 +285,8 @@ void ClipSink::setSlice(int s)
     int axis = directionAxis();
     m_slice = qBound(0, m_slice, m_dims[axis] - 1);
     m_widget->SetSliceIndex(m_slice);
-    // Sync clipping plane from the updated widget position
-    m_clippingPlane->SetOrigin(m_widget->GetCenter());
-    m_clippingPlane->SetNormal(m_widget->GetNormal());
   }
+  syncClippingPlane();
   emit sliceChanged(m_slice);
   emit clipPlaneUpdated();
   emit renderNeeded();
@@ -423,7 +416,7 @@ void ClipSink::setInvertPlane(bool invert)
   }
   m_invertPlane = invert;
 
-  // Flip the widget's normal and sync the clipping plane directly
+  // Flip the widget's normal
   if (m_widget) {
     double normal[3];
     m_widget->GetNormal(normal);
@@ -432,9 +425,9 @@ void ClipSink::setInvertPlane(bool invert)
     normal[2] = -normal[2];
     m_widget->SetNormal(normal);
     m_widget->UpdatePlacement();
-    m_clippingPlane->SetNormal(normal);
   }
 
+  syncClippingPlane();
   emit clipPlaneUpdated();
   emit renderNeeded();
 }
@@ -445,7 +438,7 @@ void ClipSink::setPlaneOrigin(double x, double y, double z)
     double c[3] = { x, y, z };
     m_widget->SetCenter(c);
   }
-  m_clippingPlane->SetOrigin(x, y, z);
+  syncClippingPlane();
   emit clipPlaneUpdated();
   emit renderNeeded();
 }
@@ -456,7 +449,7 @@ void ClipSink::setPlaneNormal(double nx, double ny, double nz)
     double n[3] = { nx, ny, nz };
     m_widget->SetNormal(n);
   }
-  m_clippingPlane->SetNormal(nx, ny, nz);
+  syncClippingPlane();
   emit clipPlaneUpdated();
   emit renderNeeded();
 }
@@ -806,28 +799,56 @@ QWidget* ClipSink::createPropertiesWidget(QWidget* parent)
 
 // --- Widget interaction → clipping plane sync ---
 
+void ClipSink::syncClippingPlane()
+{
+  if (!m_widget) {
+    return;
+  }
+
+  // The widget center/normal are in data coordinates.  Sibling sinks'
+  // mappers clip in world coordinates, so transform by the volume's
+  // display position and orientation (same transform the actors use).
+  double center[3], normal[3];
+  m_widget->GetCenter(center);
+  m_widget->GetNormal(normal);
+
+  auto vol = volumeData();
+  if (vol) {
+    auto pos = vol->displayPosition();
+    auto orient = vol->displayOrientation();
+
+    vtkNew<vtkTransform> t;
+    t->Translate(pos.data());
+    t->RotateZ(orient[2]);
+    t->RotateX(orient[0]);
+    t->RotateY(orient[1]);
+
+    t->TransformPoint(center, center);
+    t->TransformNormal(normal, normal);
+  }
+
+  m_clippingPlane->SetOrigin(center);
+  m_clippingPlane->SetNormal(normal);
+}
+
 void ClipSink::onWidgetInteraction()
 {
   if (!m_widget) {
     return;
   }
 
-  // The widget's normal is authoritative — copy it directly
-  double* center = m_widget->GetCenter();
-  double* normal = m_widget->GetNormal();
-
-  m_clippingPlane->SetOrigin(center);
-  m_clippingPlane->SetNormal(normal);
+  syncClippingPlane();
 
   // For orthogonal directions, update the slice index from the widget
   if (isOrtho()) {
     int axis = directionAxis();
     if (axis >= 0 && m_dims[axis] > 1) {
+      double* widgetCenter = m_widget->GetCenter();
       double spacing = (m_bounds[2 * axis + 1] - m_bounds[2 * axis]) /
                         (m_dims[axis] - 1);
       if (spacing > 0) {
         int newSlice = static_cast<int>(
-          (center[axis] - m_bounds[2 * axis]) / spacing + 0.5);
+          (widgetCenter[axis] - m_bounds[2 * axis]) / spacing + 0.5);
         newSlice = qBound(0, newSlice, m_dims[axis] - 1);
         if (newSlice != m_slice) {
           m_slice = newSlice;
@@ -928,12 +949,14 @@ void ClipSink::onMetadataChanged()
     return;
   }
 
-  // Position and orientation are cheap — only the live UserTransform updates.
   auto pos = vol->displayPosition();
   auto orient = vol->displayOrientation();
   m_widget->SetDisplayOffset(pos.data());
   m_widget->SetDisplayOrientation(orient.data());
 
+  // Spacing changes require re-setting the plane orientation to resize the
+  // plane geometry to the new physical extent.  Preserve the plane's relative
+  // position so it doesn't jump to the midpoint.
   if (vol->isValid()) {
     auto sp = vol->spacing();
     if (sp != m_lastSpacing) {
@@ -951,6 +974,8 @@ void ClipSink::onMetadataChanged()
     }
   }
 
+  syncClippingPlane();
+  emit clipPlaneUpdated();
   emit renderNeeded();
 }
 

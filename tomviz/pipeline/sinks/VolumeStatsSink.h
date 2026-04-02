@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineVolumeStatsSink_h
 #define tomvizPipelineVolumeStatsSink_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "SinkNode.h"
 
 namespace tomviz {
@@ -13,7 +11,7 @@ namespace pipeline {
 
 /// Sink node that computes basic statistics on an input volume:
 /// min, max, mean, and voxel count.
-class TOMVIZ_PIPELINE_EXPORT VolumeStatsSink : public SinkNode
+class VolumeStatsSink : public SinkNode
 {
   Q_OBJECT
 

@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineThresholdSink_h
 #define tomvizPipelineThresholdSink_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "LegacyModuleSink.h"
 
 #include <QPointer>
@@ -28,7 +26,7 @@ namespace pipeline {
 /// Threshold visualization sink. Shows the region of a volume within
 /// a specified scalar range, with configurable appearance properties
 /// matching the old ModuleThreshold.
-class TOMVIZ_PIPELINE_EXPORT ThresholdSink : public LegacyModuleSink
+class ThresholdSink : public LegacyModuleSink
 {
   Q_OBJECT
 
@@ -104,6 +102,7 @@ private:
   QPointer<ThresholdSinkWidget> m_controllers;
   QSet<vtkPlane*> m_clippingPlanes;
   std::array<double, 3> m_lastSpacing = { 0.0, 0.0, 0.0 };
+  std::array<double, 3> m_lastOrigin = { 0.0, 0.0, 0.0 };
 };
 
 } // namespace pipeline

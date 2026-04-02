@@ -131,6 +131,7 @@ bool ContourSink::consume(const QMap<QString, PortData>& inputs)
   // re-execution on the next render.  We feed the mapper a static copy
   // of the contour output and reconnect on the next consume().
   m_baseSpacing = volume->spacing();
+  m_baseOrigin = volume->origin();
   m_flyingEdges->Update();
   m_mapper->SetInputDataObject(m_flyingEdges->GetOutput());
 
@@ -594,22 +595,26 @@ void ContourSink::onMetadataChanged()
   if (!vol) {
     return;
   }
-  auto pos = vol->displayPosition();
   auto orient = vol->displayOrientation();
-  m_actor->SetPosition(pos.data());
   m_actor->SetOrientation(orient.data());
 
-  // The FlyingEdges output has geometry baked at the spacing that was current
-  // when consume() last ran. Apply the ratio as actor scale so the contour
-  // visually matches without re-executing the expensive filter.
+  // The FlyingEdges output has geometry baked at the origin/spacing that was
+  // current when consume() last ran. Apply the origin delta as actor position
+  // and the spacing ratio as actor scale so the contour visually matches
+  // without re-executing the expensive filter.
   if (vol->isValid()) {
+    auto orig = vol->origin();
     auto sp = vol->spacing();
+    auto displayPos = vol->displayPosition();
+    double pos[3] = { 0, 0, 0 };
     double scale[3] = { 1.0, 1.0, 1.0 };
     for (int i = 0; i < 3; ++i) {
+      pos[i] = displayPos[i] + orig[i] - m_baseOrigin[i];
       if (m_baseSpacing[i] != 0.0) {
         scale[i] = sp[i] / m_baseSpacing[i];
       }
     }
+    m_actor->SetPosition(pos);
     m_actor->SetScale(scale);
   }
 

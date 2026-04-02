@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineOutlineSink_h
 #define tomvizPipelineOutlineSink_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "LegacyModuleSink.h"
 
 #include <vtkNew.h>
@@ -22,7 +20,7 @@ namespace pipeline {
 /// Bounding-box outline visualization sink with optional grid axes.
 /// Matches the old ModuleOutline: outline box + configurable grid axes actor
 /// with axis labels/titles.
-class TOMVIZ_PIPELINE_EXPORT OutlineSink : public LegacyModuleSink
+class OutlineSink : public LegacyModuleSink
 {
   Q_OBJECT
 

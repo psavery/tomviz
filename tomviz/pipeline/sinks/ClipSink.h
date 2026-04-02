@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineClipSink_h
 #define tomvizPipelineClipSink_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "LegacyModuleSink.h"
 
 #include <vtkNew.h>
@@ -28,7 +26,7 @@ class OutputPort;
 /// Clipping-plane visualization sink using vtkNonOrthoImagePlaneWidget.
 /// Matches the old ModuleClip: shows an interactive texture-mapped plane
 /// and emits the clipping plane geometry for other modules to clip against.
-class TOMVIZ_PIPELINE_EXPORT ClipSink : public LegacyModuleSink
+class ClipSink : public LegacyModuleSink
 {
   Q_OBJECT
 
@@ -113,7 +111,11 @@ private:
   void setupWidget();
   void applyDirection();
 
-  // Sync m_clippingPlane from the widget when the user drags it
+  // Sync m_clippingPlane from the widget, transforming data-coordinate
+  // center/normal into world coordinates via the volume's display transform.
+  void syncClippingPlane();
+
+  // Called when the user drags the widget interactively
   void onWidgetInteraction();
 
   // Clipping plane propagation to sibling sinks
@@ -137,6 +139,7 @@ private:
   double m_bounds[6] = { 0, 0, 0, 0, 0, 0 };
 
   std::array<double, 3> m_lastSpacing = { 0.0, 0.0, 0.0 };
+  std::array<double, 3> m_lastOrigin = { 0.0, 0.0, 0.0 };
   QSet<LegacyModuleSink*> m_clippedSinks;
   OutputPort* m_upstreamPort = nullptr;
 };

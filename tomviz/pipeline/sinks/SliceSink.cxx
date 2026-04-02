@@ -190,6 +190,7 @@ bool SliceSink::consume(const QMap<QString, PortData>& inputs)
   auto vol = volumeData();
   if (vol && vol->isValid()) {
     m_lastSpacing = vol->spacing();
+    m_lastOrigin = vol->origin();
   }
 
   onMetadataChanged();
@@ -931,21 +932,17 @@ void SliceSink::onMetadataChanged()
     return;
   }
 
-  // Position and orientation are cheap — only the live UserTransform updates.
   auto pos = vol->displayPosition();
   auto orient = vol->displayOrientation();
   m_widget->SetDisplayOffset(pos.data());
   m_widget->SetDisplayOrientation(orient.data());
 
   // Spacing changes require re-setting the plane orientation to resize the
-  // plane geometry to the new physical extent, then UpdatePlacement to
-  // rebuild the reslice and clip bounds.
+  // plane geometry to the new physical extent.  Preserve the plane's relative
+  // position so it doesn't jump to the midpoint.
   if (vol->isValid()) {
     auto sp = vol->spacing();
     if (sp != m_lastSpacing) {
-      // Save the plane center and scale it by the spacing ratio so the
-      // plane stays at the same relative visual position when the volume
-      // is interactively scaled.
       double center[3];
       m_widget->GetCenter(center);
       for (int i = 0; i < 3; ++i) {

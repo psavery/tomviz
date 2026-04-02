@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineRulerSink_h
 #define tomvizPipelineRulerSink_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "LegacyModuleSink.h"
 
 #include <QPointer>
@@ -28,7 +26,7 @@ namespace pipeline {
 /// a distance label and units.  Provides an interactive 3D line widget
 /// (pqLinePropertyWidget) for adjusting endpoints.
 /// Matches the old ModuleRuler feature set.
-class TOMVIZ_PIPELINE_EXPORT RulerSink : public LegacyModuleSink
+class RulerSink : public LegacyModuleSink
 {
   Q_OBJECT
 

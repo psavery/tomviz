@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineLegacyModuleSink_h
 #define tomvizPipelineLegacyModuleSink_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "SinkNode.h"
 
 #include <QJsonObject>
@@ -32,7 +30,7 @@ using VolumeDataPtr = std::shared_ptr<VolumeData>;
 
 /// Base class for visualization sink nodes that replace old Module classes.
 /// Provides common view management, visibility, colormap, and serialization.
-class TOMVIZ_PIPELINE_EXPORT LegacyModuleSink : public SinkNode
+class LegacyModuleSink : public SinkNode
 {
   Q_OBJECT
 

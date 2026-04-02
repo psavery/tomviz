@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineSliceSink_h
 #define tomvizPipelineSliceSink_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "LegacyModuleSink.h"
 
 #include <vtkSmartPointer.h>
@@ -21,7 +19,7 @@ namespace pipeline {
 /// Slice visualization sink using vtkNonOrthoImagePlaneWidget.
 /// Supports orthogonal (XY, YZ, XZ) and custom (arbitrary plane) slicing
 /// with interactive widget, thick slicing, texture interpolation, and more.
-class TOMVIZ_PIPELINE_EXPORT SliceSink : public LegacyModuleSink
+class SliceSink : public LegacyModuleSink
 {
   Q_OBJECT
 
@@ -135,6 +133,7 @@ private:
   int m_dims[3] = { 0, 0, 0 };
   double m_bounds[6] = { 0, 0, 0, 0, 0, 0 };
   std::array<double, 3> m_lastSpacing = { 0.0, 0.0, 0.0 };
+  std::array<double, 3> m_lastOrigin = { 0.0, 0.0, 0.0 };
 };
 
 } // namespace pipeline

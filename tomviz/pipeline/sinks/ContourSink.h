@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineContourSink_h
 #define tomvizPipelineContourSink_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "LegacyModuleSink.h"
 
 #include <QColor>
@@ -30,7 +28,7 @@ namespace pipeline {
 /// Isosurface/contour visualization sink using vtkFlyingEdges3D.
 /// Matches the old ModuleContour pipeline with lighting, representation
 /// mode, opacity, and color map support.
-class TOMVIZ_PIPELINE_EXPORT ContourSink : public LegacyModuleSink
+class ContourSink : public LegacyModuleSink
 {
   Q_OBJECT
 
@@ -130,6 +128,7 @@ private:
   int m_activeScalars = -1;
   double m_scalarRange[2] = { 0.0, 1.0 };
   std::array<double, 3> m_baseSpacing = { 0.0, 0.0, 0.0 };
+  std::array<double, 3> m_baseOrigin = { 0.0, 0.0, 0.0 };
   QStringList m_scalarArrayNames;
   QPointer<ContourSinkWidget> m_controllers;
 };

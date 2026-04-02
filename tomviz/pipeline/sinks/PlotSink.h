@@ -4,8 +4,6 @@
 #ifndef tomvizPipelinePlotSink_h
 #define tomvizPipelinePlotSink_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "LegacyModuleSink.h"
 
 #include <vtkSmartPointer.h>
@@ -24,7 +22,7 @@ namespace pipeline {
 /// Line/chart plot visualization sink for table data.
 /// Uses a vtkPVContextView (chart view) obtained from the vtkSMViewProxy
 /// passed to initialize().
-class TOMVIZ_PIPELINE_EXPORT PlotSink : public LegacyModuleSink
+class PlotSink : public LegacyModuleSink
 {
   Q_OBJECT
 

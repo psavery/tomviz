@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineMoleculeSink_h
 #define tomvizPipelineMoleculeSink_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "LegacyModuleSink.h"
 
 #include <QPointer>
@@ -24,7 +22,7 @@ namespace pipeline {
 /// Molecular structure visualization sink using ball-and-stick rendering.
 /// Full implementation requires a Molecule data type in the pipeline;
 /// currently accepts molecule port data and renders via vtkMoleculeMapper.
-class TOMVIZ_PIPELINE_EXPORT MoleculeSink : public LegacyModuleSink
+class MoleculeSink : public LegacyModuleSink
 {
   Q_OBJECT
 

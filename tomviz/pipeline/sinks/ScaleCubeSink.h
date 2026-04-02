@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineScaleCubeSink_h
 #define tomvizPipelineScaleCubeSink_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "LegacyModuleSink.h"
 
 #include <vtkNew.h>
@@ -20,7 +18,7 @@ namespace pipeline {
 /// Displays an interactive cube of known size for spatial reference with
 /// optional text annotation.  The user can drag the cube in the 3D view.
 /// Matches the old ModuleScaleCube.
-class TOMVIZ_PIPELINE_EXPORT ScaleCubeSink : public LegacyModuleSink
+class ScaleCubeSink : public LegacyModuleSink
 {
   Q_OBJECT
 

@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineVolumeSink_h
 #define tomvizPipelineVolumeSink_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "LegacyModuleSink.h"
 
 #include <vtkNew.h>
@@ -25,7 +23,7 @@ class SmartVolumeMapper;
 /// Matches the old ModuleVolume VTK pipeline: SmartVolumeMapper + Volume +
 /// VolumeProperty with jittering, lighting, blending, interpolation, gradient
 /// opacity, clipping planes, and external transfer function support.
-class TOMVIZ_PIPELINE_EXPORT VolumeSink : public LegacyModuleSink
+class VolumeSink : public LegacyModuleSink
 {
   Q_OBJECT
 
