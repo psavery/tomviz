@@ -3,6 +3,8 @@
 
 #include "VolumePropertiesWidget.h"
 
+#include "ActiveObjects.h"
+#include "InteractiveTransformWidget.h"
 #include "OutputPort.h"
 #include "PortData.h"
 #include "VolumeScalarsModel.h"
@@ -220,25 +222,40 @@ VolumePropertiesWidget::VolumePropertiesWidget(QWidget* parent)
 
   mainLayout->addWidget(sizeWidget);
 
-  // --- Origin section ---
-  mainLayout->addWidget(createSectionHeader("Origin", this));
-
-  auto* originWidget = new QWidget(this);
-  auto* originLayout = new QGridLayout(originWidget);
-  originLayout->setContentsMargins(0, 0, 0, 0);
+  // --- Transformations section (Origin, Rotation, Interaction) ---
+  mainLayout->addWidget(createSectionHeader("Transformations", this));
+  auto* transformWidget = new QWidget(this);
+  auto* transformLayout = new QGridLayout(transformWidget);
+  transformLayout->setContentsMargins(0, 0, 0, 0);
+  transformLayout->setSpacing(2);
 
   const char* axisLabels[] = { "X", "Y", "Z" };
   for (int i = 0; i < 3; ++i) {
-    originLayout->addWidget(new QLabel(axisLabels[i], originWidget), 0, i);
-    m_originBoxes[i] = new QLineEdit(originWidget);
-    m_originBoxes[i]->setValidator(new QDoubleValidator(m_originBoxes[i]));
-    originLayout->addWidget(m_originBoxes[i], 1, i);
+    transformLayout->addWidget(
+      new QLabel(axisLabels[i], transformWidget), 0, 1 + i, Qt::AlignHCenter);
   }
 
-  mainLayout->addWidget(originWidget);
+  // Origin row
+  transformLayout->addWidget(new QLabel("Origin:", transformWidget), 1, 0);
+  for (int i = 0; i < 3; ++i) {
+    m_originBoxes[i] = new QLineEdit(transformWidget);
+    m_originBoxes[i]->setValidator(new QDoubleValidator(m_originBoxes[i]));
+    m_originBoxes[i]->setAlignment(Qt::AlignCenter);
+    transformLayout->addWidget(m_originBoxes[i], 1, 1 + i);
+  }
 
-  // --- Interaction section ---
-  m_interactionGroup = new QGroupBox("Interaction", this);
+  // Rotation row
+  transformLayout->addWidget(new QLabel("Rotation:", transformWidget), 2, 0);
+  for (int i = 0; i < 3; ++i) {
+    m_orientationBoxes[i] = new QLineEdit(transformWidget);
+    m_orientationBoxes[i]->setValidator(
+      new QDoubleValidator(m_orientationBoxes[i]));
+    m_orientationBoxes[i]->setAlignment(Qt::AlignCenter);
+    transformLayout->addWidget(m_orientationBoxes[i], 2, 1 + i);
+  }
+
+  // Interaction group
+  m_interactionGroup = new QGroupBox("Interaction", transformWidget);
   auto* interactionLayout = new QGridLayout(m_interactionGroup);
   m_interactTranslate = new QCheckBox("Translate", m_interactionGroup);
   m_interactTranslate->setToolTip(
@@ -257,7 +274,9 @@ VolumePropertiesWidget::VolumePropertiesWidget(QWidget* parent)
   interactionLayout->addWidget(m_interactTranslate, 0, 0);
   interactionLayout->addWidget(m_interactRotate, 0, 1);
   interactionLayout->addWidget(m_interactScale, 0, 2);
-  mainLayout->addWidget(m_interactionGroup);
+  transformLayout->addWidget(m_interactionGroup, 3, 0, 1, 4);
+
+  mainLayout->addWidget(transformWidget);
 
   // --- Tilt Angles section (initially hidden) ---
   m_tiltAnglesHeader = createSectionHeader("Tilt Angles", this);
@@ -310,6 +329,8 @@ VolumePropertiesWidget::VolumePropertiesWidget(QWidget* parent)
             [this, i]() { onVoxelSizeEdited(i); });
     connect(m_originBoxes[i], &QLineEdit::editingFinished, this,
             [this, i]() { onOriginEdited(i); });
+    connect(m_orientationBoxes[i], &QLineEdit::editingFinished, this,
+            [this, i]() { onOrientationEdited(i); });
   }
 
   // Tilt angles signals
@@ -323,7 +344,13 @@ VolumePropertiesWidget::VolumePropertiesWidget(QWidget* parent)
   clear();
 }
 
-VolumePropertiesWidget::~VolumePropertiesWidget() = default;
+VolumePropertiesWidget::~VolumePropertiesWidget()
+{
+  auto& itw = InteractiveTransformWidget::instance();
+  if (itw.currentUser() == this) {
+    itw.release(this);
+  }
+}
 
 void VolumePropertiesWidget::setOutputPort(OutputPort* port)
 {
@@ -337,6 +364,8 @@ void VolumePropertiesWidget::setOutputPort(OutputPort* port)
   if (m_port) {
     connect(m_port, &OutputPort::dataChanged, this,
             &VolumePropertiesWidget::updateData);
+    connect(m_port, &OutputPort::metadataChanged, this,
+            &VolumePropertiesWidget::updateTransformFields);
     updateData();
   } else {
     clear();
@@ -413,11 +442,18 @@ void VolumePropertiesWidget::updateData()
     }
   }
 
-  // Origin
-  auto origin = vol->origin();
+  // Origin (display position)
+  auto displayPos = vol->displayPosition();
   for (int i = 0; i < 3; ++i) {
     QSignalBlocker b(m_originBoxes[i]);
-    m_originBoxes[i]->setText(QString::number(origin[i]));
+    m_originBoxes[i]->setText(QString::number(displayPos[i]));
+  }
+
+  // Orientation
+  auto orient = vol->displayOrientation();
+  for (int i = 0; i < 3; ++i) {
+    QSignalBlocker b(m_orientationBoxes[i]);
+    m_orientationBoxes[i]->setText(QString::number(orient[i]));
   }
 
   // Scalars arrays info and active scalars combo
@@ -546,6 +582,7 @@ void VolumePropertiesWidget::clear()
     m_lengthBoxes[i]->clear();
     m_voxelSizeBoxes[i]->clear();
     m_originBoxes[i]->clear();
+    m_orientationBoxes[i]->clear();
   }
   m_interactTranslate->setChecked(false);
   m_interactRotate->setChecked(false);
@@ -676,7 +713,7 @@ void VolumePropertiesWidget::onVoxelSizeEdited(int axis)
 void VolumePropertiesWidget::onOriginEdited(int axis)
 {
   auto* vol = volumeData();
-  if (!vol || !vol->isValid()) {
+  if (!vol) {
     return;
   }
 
@@ -686,11 +723,76 @@ void VolumePropertiesWidget::onOriginEdited(int axis)
     return;
   }
 
-  auto orig = vol->origin();
-  orig[axis] = newValue;
-  vol->setOrigin(orig[0], orig[1], orig[2]);
+  auto pos = vol->displayPosition();
+  pos[axis] = newValue;
+  vol->setDisplayPosition(pos[0], pos[1], pos[2]);
   if (m_port) {
     emit m_port->metadataChanged();
+  }
+}
+
+void VolumePropertiesWidget::onOrientationEdited(int axis)
+{
+  auto* vol = volumeData();
+  if (!vol) {
+    return;
+  }
+
+  bool ok = false;
+  double newValue = m_orientationBoxes[axis]->text().toDouble(&ok);
+  if (!ok) {
+    return;
+  }
+
+  auto orient = vol->displayOrientation();
+  orient[axis] = newValue;
+  vol->setDisplayOrientation(orient[0], orient[1], orient[2]);
+  if (m_port) {
+    emit m_port->metadataChanged();
+  }
+}
+
+void VolumePropertiesWidget::updateTransformFields()
+{
+  auto* vol = volumeData();
+  if (!vol || !vol->isValid()) {
+    return;
+  }
+
+  auto spacing = vol->spacing();
+  auto displayPos = vol->displayPosition();
+  auto orient = vol->displayOrientation();
+
+  int dims[3];
+  vol->imageData()->GetDimensions(dims);
+
+  for (int i = 0; i < 3; ++i) {
+    {
+      QSignalBlocker b(m_voxelSizeBoxes[i]);
+      m_voxelSizeBoxes[i]->setText(QString::number(spacing[i]));
+    }
+    {
+      QSignalBlocker b(m_lengthBoxes[i]);
+      double length = spacing[i] * (dims[i] - 1);
+      m_lengthBoxes[i]->setText(QString::number(length));
+    }
+    {
+      QSignalBlocker b(m_originBoxes[i]);
+      m_originBoxes[i]->setText(QString::number(displayPos[i]));
+    }
+    {
+      QSignalBlocker b(m_orientationBoxes[i]);
+      m_orientationBoxes[i]->setText(QString::number(orient[i]));
+    }
+  }
+
+  // Keep the interactive box widget in sync if it's active and the change
+  // came from the text fields (not from the widget itself).
+  if (!m_interacting) {
+    auto& itw = InteractiveTransformWidget::instance();
+    if (itw.currentUser() == this) {
+      placeTransformWidget();
+    }
   }
 }
 
@@ -918,6 +1020,113 @@ void VolumePropertiesWidget::editTimeSeries()
 
   dlg->resize(300, 400);
   dlg->show();
+}
+
+// --- Interactive transform widget integration ---
+
+void VolumePropertiesWidget::setupInteractiveTransform()
+{
+  auto& itw = InteractiveTransformWidget::instance();
+
+  connect(m_interactTranslate, &QCheckBox::clicked, this,
+          &VolumePropertiesWidget::updateTransformWidget);
+  connect(m_interactRotate, &QCheckBox::clicked, this,
+          &VolumePropertiesWidget::updateTransformWidget);
+  connect(m_interactScale, &QCheckBox::clicked, this,
+          &VolumePropertiesWidget::updateTransformWidget);
+
+  connect(&itw, &InteractiveTransformWidget::widgetReleased, this,
+          [this, &itw]() {
+            if (itw.currentUser() != this) {
+              m_interactTranslate->setChecked(false);
+              m_interactRotate->setChecked(false);
+              m_interactScale->setChecked(false);
+            }
+          });
+
+  connect(&itw, &InteractiveTransformWidget::transformChanged, this,
+          &VolumePropertiesWidget::onTransformChanged);
+}
+
+void VolumePropertiesWidget::placeTransformWidget()
+{
+  if (!m_port || !m_port->hasData()) {
+    return;
+  }
+  try {
+    auto ptr = m_port->data().value<VolumeDataPtr>();
+    if (ptr && ptr->isValid()) {
+      auto& itw = InteractiveTransformWidget::instance();
+      auto ext = ptr->extent();
+      double bounds[6];
+      for (int i = 0; i < 6; ++i) {
+        bounds[i] = static_cast<double>(ext[i]);
+      }
+      itw.setBounds(bounds);
+
+      auto pos = ptr->displayPosition();
+      auto orient = ptr->displayOrientation();
+      auto spacing = ptr->spacing();
+      itw.setTransform(pos.data(), orient.data(), spacing.data());
+    }
+  } catch (const std::bad_any_cast&) {
+  }
+}
+
+void VolumePropertiesWidget::updateTransformWidget()
+{
+  auto& itw = InteractiveTransformWidget::instance();
+  bool translate = m_interactTranslate->isChecked();
+  bool rotate = m_interactRotate->isChecked();
+  bool scale = m_interactScale->isChecked();
+  bool anyEnabled = translate || rotate || scale;
+
+  if (!anyEnabled) {
+    if (itw.currentUser() == this) {
+      itw.release(this);
+    }
+    return;
+  }
+
+  bool freshAcquire = (itw.currentUser() != this);
+  if (freshAcquire && !itw.acquire(this)) {
+    m_interactTranslate->setChecked(false);
+    m_interactRotate->setChecked(false);
+    m_interactScale->setChecked(false);
+    return;
+  }
+
+  if (freshAcquire) {
+    itw.setView(ActiveObjects::instance().activePqView());
+    placeTransformWidget();
+  }
+
+  itw.setTranslationEnabled(translate);
+  itw.setRotationEnabled(rotate);
+  itw.setScalingEnabled(scale);
+}
+
+void VolumePropertiesWidget::onTransformChanged(const double position[3],
+                                                const double orientation[3],
+                                                const double scale[3])
+{
+  auto& itw = InteractiveTransformWidget::instance();
+  if (itw.currentUser() != this || !m_port || !m_port->hasData()) {
+    return;
+  }
+  try {
+    auto ptr = m_port->data().value<VolumeDataPtr>();
+    if (ptr && ptr->isValid()) {
+      m_interacting = true;
+      ptr->setDisplayPosition(position[0], position[1], position[2]);
+      ptr->setDisplayOrientation(orientation[0], orientation[1],
+                                  orientation[2]);
+      ptr->setSpacing(scale[0], scale[1], scale[2]);
+      emit m_port->metadataChanged();
+      m_interacting = false;
+    }
+  } catch (const std::bad_any_cast&) {
+  }
 }
 
 } // namespace pipeline

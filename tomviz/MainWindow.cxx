@@ -36,7 +36,6 @@
 #include "DataBrokerSaveReaction.h"
 #include "DataTransformMenu.h"
 #include "FileFormatManager.h"
-#include "InteractiveTransformWidget.h"
 #include "LoadDataReaction.h"
 #include "LoadPaletteReaction.h"
 #include "LoadStackReaction.h"
@@ -1418,115 +1417,6 @@ void MainWindow::clearDynamicPropertiesWidget()
   }
 }
 
-void MainWindow::setupInteractiveTransformWidget(
-  pipeline::VolumePropertiesWidget* propsWidget)
-{
-  auto& itw = InteractiveTransformWidget::instance();
-
-  // Helper: place the widget to match the current volume geometry.
-  auto placeWidget = [propsWidget, &itw]() {
-    if (!propsWidget->outputPort() || !propsWidget->outputPort()->hasData()) {
-      return;
-    }
-    try {
-      auto ptr =
-        propsWidget->outputPort()->data().value<pipeline::VolumeDataPtr>();
-      if (ptr && ptr->isValid()) {
-        auto ext = ptr->extent();
-        double bounds[6];
-        for (int i = 0; i < 6; ++i) {
-          bounds[i] = static_cast<double>(ext[i]);
-        }
-        itw.setBounds(bounds);
-
-        auto pos = ptr->displayPosition();
-        auto orient = ptr->displayOrientation();
-        auto spacing = ptr->spacing();
-        itw.setTransform(pos.data(), orient.data(), spacing.data());
-      }
-    } catch (const std::bad_any_cast&) {
-    }
-  };
-
-  auto updateWidget = [propsWidget, &itw, placeWidget]() {
-    bool translate = propsWidget->translateCheckBox()->isChecked();
-    bool rotate = propsWidget->rotateCheckBox()->isChecked();
-    bool scale = propsWidget->scaleCheckBox()->isChecked();
-    bool anyEnabled = translate || rotate || scale;
-
-    if (!anyEnabled) {
-      if (itw.currentUser() == propsWidget) {
-        itw.release(propsWidget);
-      }
-      return;
-    }
-
-    bool freshAcquire = (itw.currentUser() != propsWidget);
-    if (freshAcquire && !itw.acquire(propsWidget)) {
-      propsWidget->translateCheckBox()->setChecked(false);
-      propsWidget->rotateCheckBox()->setChecked(false);
-      propsWidget->scaleCheckBox()->setChecked(false);
-      return;
-    }
-
-    if (freshAcquire) {
-      // First-time setup: set view, place widget, THEN enable modes.
-      // This ensures the widget geometry is correct before it becomes visible.
-      itw.setView(ActiveObjects::instance().activePqView());
-      placeWidget();
-    }
-
-    // Update which interaction modes are active (safe to call any time).
-    itw.setTranslationEnabled(translate);
-    itw.setRotationEnabled(rotate);
-    itw.setScalingEnabled(scale);
-  };
-
-  connect(propsWidget->translateCheckBox(), &QCheckBox::clicked, propsWidget,
-          updateWidget);
-  connect(propsWidget->rotateCheckBox(), &QCheckBox::clicked, propsWidget,
-          updateWidget);
-  connect(propsWidget->scaleCheckBox(), &QCheckBox::clicked, propsWidget,
-          updateWidget);
-
-  // When the widget is released externally, uncheck all boxes
-  connect(&itw, &InteractiveTransformWidget::widgetReleased, propsWidget,
-          [propsWidget, &itw]() {
-            if (itw.currentUser() != propsWidget) {
-              propsWidget->translateCheckBox()->setChecked(false);
-              propsWidget->rotateCheckBox()->setChecked(false);
-              propsWidget->scaleCheckBox()->setChecked(false);
-            }
-          });
-
-  // Apply transform changes to the volume metadata
-  connect(&itw, &InteractiveTransformWidget::transformChanged, propsWidget,
-          [propsWidget, &itw](const double position[3],
-                              const double orientation[3],
-                              const double scale[3]) {
-            if (itw.currentUser() != propsWidget) {
-              return;
-            }
-            if (!propsWidget->outputPort() ||
-                !propsWidget->outputPort()->hasData()) {
-              return;
-            }
-            try {
-              auto ptr = propsWidget->outputPort()
-                           ->data()
-                           .value<pipeline::VolumeDataPtr>();
-              if (ptr && ptr->isValid()) {
-                ptr->setDisplayPosition(position[0], position[1],
-                                        position[2]);
-                ptr->setDisplayOrientation(orientation[0], orientation[1],
-                                           orientation[2]);
-                ptr->setSpacing(scale[0], scale[1], scale[2]);
-                emit propsWidget->outputPort()->metadataChanged();
-              }
-            } catch (const std::bad_any_cast&) {
-            }
-          });
-}
 
 void MainWindow::onActiveNodeChanged(pipeline::Node* node)
 {
@@ -1599,7 +1489,7 @@ void MainWindow::onActivePortChanged(pipeline::OutputPort* port)
             &ActiveObjects::showTimeSeriesLabelChanged,
             propsWidget->showTimeSeriesLabelCheckBox(),
             &QCheckBox::setChecked);
-    setupInteractiveTransformWidget(propsWidget);
+    propsWidget->setupInteractiveTransform();
     m_dynamicPropertiesWidget = propsWidget;
     m_ui->propertiesPanelStackedWidget->addWidget(propsWidget);
     m_ui->propertiesPanelStackedWidget->setCurrentWidget(propsWidget);

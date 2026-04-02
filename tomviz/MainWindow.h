@@ -107,9 +107,6 @@ private:
   void initPipeline();
   void clearDynamicPropertiesWidget();
   void updateColorMapDisplay();
-  void setupInteractiveTransformWidget(
-    pipeline::VolumePropertiesWidget* propsWidget);
-
   QScopedPointer<Ui::MainWindow> m_ui;
   QMenu* m_customTransformsMenu = nullptr;
   QMenu* m_pipelineTemplates = nullptr;

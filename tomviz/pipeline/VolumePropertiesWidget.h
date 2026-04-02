@@ -42,15 +42,24 @@ public:
     return m_showTimeSeriesLabel;
   }
 
-  /// Access interaction checkboxes for wiring to InteractiveTransformWidget.
+  /// Access interaction checkboxes (e.g. for external state queries).
   QCheckBox* translateCheckBox() const { return m_interactTranslate; }
   QCheckBox* rotateCheckBox() const { return m_interactRotate; }
   QCheckBox* scaleCheckBox() const { return m_interactScale; }
+
+  /// Wire up the interactive transform widget to the checkboxes and volume.
+  /// Call once after setOutputPort().
+  void setupInteractiveTransform();
 
 signals:
   void volumeDataModified();
 
 private:
+  void placeTransformWidget();
+  void updateTransformWidget();
+  void onTransformChanged(const double position[3],
+                          const double orientation[3],
+                          const double scale[3]);
   void updateData();
   void clear();
   VolumeData* volumeData() const;
@@ -66,6 +75,8 @@ private:
   void onLengthEdited(int axis);
   void onVoxelSizeEdited(int axis);
   void onOriginEdited(int axis);
+  void onOrientationEdited(int axis);
+  void updateTransformFields();
   void onScalarsRenamed(const QString& oldName, const QString& newName);
 
   // Tilt angles slots
@@ -78,6 +89,7 @@ private:
   void editTimeSeries();
 
   OutputPort* m_port = nullptr;
+  bool m_interacting = false;
   VolumeScalarsModel* m_scalarsModel;
   QList<int> m_scalarIndexes;
 
@@ -93,6 +105,7 @@ private:
   QLineEdit* m_lengthBoxes[3];
   QLineEdit* m_voxelSizeBoxes[3];
   QLineEdit* m_originBoxes[3];
+  QLineEdit* m_orientationBoxes[3];
   QLineEdit* m_unitBox;
 
   // Widgets — interaction
