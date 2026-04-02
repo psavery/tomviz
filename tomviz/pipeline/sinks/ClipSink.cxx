@@ -767,9 +767,9 @@ QWidget* ClipSink::createPropertiesWidget(QWidget* parent)
   // Update slider range after pipeline execution (m_dims may not be
   // populated when the properties widget is first created, because
   // nodeAdded fires before execute()).
-  connect(this, &ClipSink::executionFinished, widget,
-          [this, sliceSlider](bool success) {
-            if (success && isOrtho()) {
+  connect(this, &ClipSink::execStateChanged, widget,
+          [this, sliceSlider](NodeExecState state) {
+            if (state == NodeExecState::Idle && isOrtho()) {
               int ms = maxSlice();
               if (ms >= 0) {
                 sliceSlider->setMaximum(ms);

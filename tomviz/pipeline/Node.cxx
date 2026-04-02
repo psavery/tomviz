@@ -37,6 +37,9 @@ void Node::markStale()
   }
   m_state = NodeState::Stale;
   emit stateChanged(m_state);
+  if (m_execState == NodeExecState::Failed) {
+    setExecState(NodeExecState::Idle);
+  }
 
   for (auto* output : m_outputPorts) {
     output->setStale(true);
@@ -55,6 +58,35 @@ void Node::markCurrent()
 {
   m_state = NodeState::Current;
   emit stateChanged(m_state);
+  if (m_execState == NodeExecState::Failed) {
+    setExecState(NodeExecState::Idle);
+  }
+}
+
+NodeExecState Node::execState() const
+{
+  return m_execState;
+}
+
+void Node::setExecState(NodeExecState state)
+{
+  if (m_execState != state) {
+    m_execState = state;
+    emit execStateChanged(m_execState);
+  }
+}
+
+bool Node::isEditing() const
+{
+  return m_editing;
+}
+
+void Node::setEditing(bool editing)
+{
+  if (m_editing != editing) {
+    m_editing = editing;
+    emit editingChanged(m_editing);
+  }
 }
 
 bool Node::hasBreakpoint() const

@@ -4,6 +4,7 @@
 #ifndef tomvizPipelineNode_h
 #define tomvizPipelineNode_h
 
+#include "NodeExecState.h"
 #include "NodeState.h"
 #include "PortType.h"
 
@@ -35,6 +36,11 @@ public:
   NodeState state() const;
   void markStale();
   void markCurrent();
+
+  NodeExecState execState() const;
+
+  bool isEditing() const;
+  void setEditing(bool editing);
 
   bool hasBreakpoint() const;
   void setBreakpoint(bool enabled);
@@ -84,18 +90,21 @@ public:
 
 signals:
   void stateChanged(NodeState state);
+  void execStateChanged(NodeExecState state);
+  void editingChanged(bool editing);
   void labelChanged();
   void breakpointChanged();
-  void executionStarted();
-  void executionFinished(bool success);
 
 protected:
+  void setExecState(NodeExecState state);
   InputPort* addInputPort(const QString& name, PortTypes acceptedTypes);
   OutputPort* addOutputPort(const QString& name, PortType type);
 
 private:
   QString m_label;
   NodeState m_state = NodeState::New;
+  NodeExecState m_execState = NodeExecState::Idle;
+  bool m_editing = false;
   bool m_breakpoint = false;
   QList<InputPort*> m_inputPorts;
   QList<OutputPort*> m_outputPorts;

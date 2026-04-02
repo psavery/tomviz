@@ -861,9 +861,7 @@ include_directories(
 configure_file(tomvizConfig.h.in tomvizConfig.h @ONLY)
 configure_file(tomvizPythonConfig.h.in tomvizPythonConfig.h @ONLY)
 
-qt_add_resources(PIPELINE_RESOURCES pipeline/pipeline_icons.qrc)
-
-add_library(tomvizlib STATIC ${SOURCES} ${PIPELINE_RESOURCES} ${accel_srcs})
+add_library(tomvizlib STATIC ${SOURCES} ${accel_srcs})
 if(NOT WIN32)
   set_target_properties(tomvizlib PROPERTIES OUTPUT_NAME tomviz)
   set_target_properties(tomvizlib PROPERTIES AUTOUIC_SEARCH_PATHS
@@ -878,7 +876,7 @@ set_property(TARGET tomvizlib PROPERTY POSITION_INDEPENDENT_CODE TRUE)
 
 find_package(Viskores QUIET)
 
-add_executable(tomviz WIN32 MACOSX_BUNDLE ${exec_sources} resources.qrc)
+add_executable(tomviz WIN32 MACOSX_BUNDLE ${exec_sources} resources.qrc pipeline/pipeline_icons.qrc)
 target_link_libraries(tomviz PRIVATE tomvizlib ${OPENGL_LIBRARIES} ${extra_link_libraries})
 if(Viskores_FOUND)
   target_link_libraries(tomviz PRIVATE viskores::cont)

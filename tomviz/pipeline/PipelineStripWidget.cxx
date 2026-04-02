@@ -6,6 +6,7 @@
 #include "InputPort.h"
 #include "Link.h"
 #include "Node.h"
+#include "NodeExecState.h"
 #include "OutputPort.h"
 #include "Pipeline.h"
 #include "PortType.h"
@@ -467,19 +468,32 @@ void PipelineStripWidget::connectPipeline()
   auto connectNode = [this](Node* node) {
     connect(node, &Node::stateChanged, this,
             QOverload<>::of(&QWidget::update));
+    connect(node, &Node::execStateChanged, this, [this](NodeExecState state) {
+      if (state == NodeExecState::Running) {
+        if (!m_spinnerTimer.isActive()) {
+          m_spinnerTimer.start();
+        }
+      } else {
+        // Stop the spinner only if no other node is still running
+        bool anyRunning = false;
+        for (const auto& item : m_layout) {
+          if (item.node && item.node->execState() == NodeExecState::Running) {
+            anyRunning = true;
+            break;
+          }
+        }
+        if (!anyRunning) {
+          m_spinnerTimer.stop();
+        }
+      }
+      update();
+    });
+    connect(node, &Node::editingChanged, this,
+            QOverload<>::of(&QWidget::update));
     connect(node, &Node::labelChanged, this,
             QOverload<>::of(&QWidget::update));
     connect(node, &Node::breakpointChanged, this,
             QOverload<>::of(&QWidget::update));
-    connect(node, &Node::executionStarted, this, [this]() {
-      if (!m_spinnerTimer.isActive()) {
-        m_spinnerTimer.start();
-      }
-    });
-    connect(node, &Node::executionFinished, this, [this](bool) {
-      m_spinnerTimer.stop();
-      update();
-    });
     auto* sink = qobject_cast<LegacyModuleSink*>(node);
     if (sink) {
       connect(sink, &LegacyModuleSink::visibilityChanged, this,
@@ -715,7 +729,8 @@ void PipelineStripWidget::paintNodeCard(QPainter& painter,
   int stateY = r.top() + (headerHeight - HeaderIconSize) / 2;
   QRect stateRect(stateX, stateY, HeaderIconSize, HeaderIconSize);
 
-  if (m_spinnerTimer.isActive() && node->state() == NodeState::Stale) {
+  if (m_spinnerTimer.isActive() &&
+      node->execState() == NodeExecState::Running) {
     // Draw rotating spinner icon
     QPixmap spinner(QStringLiteral(":/pipeline/spinner.png"));
     painter.save();
@@ -1342,13 +1357,28 @@ QColor PipelineStripWidget::portTypeColor(OutputPort* port) const
 
 QIcon PipelineStripWidget::stateIcon(Node* node) const
 {
+  // Editing takes priority over everything else
+  if (node->isEditing()) {
+    return QIcon(QStringLiteral(":/pipeline/edit.png"));
+  }
+
+  // Non-idle execution state takes priority over data state
+  switch (node->execState()) {
+    case NodeExecState::Running:
+      return QIcon(QStringLiteral(":/pipeline/spinner.png"));
+    case NodeExecState::Failed:
+      return QIcon(QStringLiteral(":/pipeline/error.png"));
+    case NodeExecState::Idle:
+      break;
+  }
+
+  // Data state
   switch (node->state()) {
     case NodeState::Current:
       return QIcon(QStringLiteral(":/pipeline/check.png"));
     case NodeState::Stale:
       return QIcon(QStringLiteral(":/pipeline/question.png"));
     case NodeState::New:
-      return QIcon(QStringLiteral(":/pipeline/edit.png"));
     default:
       return QIcon();
   }

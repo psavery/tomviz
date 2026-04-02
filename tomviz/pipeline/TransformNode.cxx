@@ -50,13 +50,13 @@ EditTransformWidget* TransformNode::createPropertiesWidget(
 
 bool TransformNode::execute()
 {
-  emit executionStarted();
+  setExecState(NodeExecState::Running);
 
   // Check that all input ports are connected and have data.
   // If any required input is missing, skip execution rather than crash.
   for (auto* port : inputPorts()) {
     if (!port->link() || !port->hasData()) {
-      emit executionFinished(false);
+      setExecState(NodeExecState::Failed);
       return false;
     }
   }
@@ -67,6 +67,13 @@ bool TransformNode::execute()
   }
 
   auto outputs = transform(inputs);
+
+  // An empty output map when the node declares output ports means the
+  // transform failed (e.g. a Python exception was caught).
+  if (outputs.isEmpty() && !outputPorts().isEmpty()) {
+    setExecState(NodeExecState::Failed);
+    return false;
+  }
 
   for (auto it = outputs.constBegin(); it != outputs.constEnd(); ++it) {
     auto* port = outputPort(it.key());
@@ -97,7 +104,7 @@ bool TransformNode::execute()
   }
 
   markCurrent();
-  emit executionFinished(true);
+  setExecState(NodeExecState::Idle);
   return true;
 }
 

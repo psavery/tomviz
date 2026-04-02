@@ -87,16 +87,20 @@ add_test(NAME "PipelineLib" COMMAND pipelineLibTests)
 set_tests_properties("PipelineLib" PROPERTIES
   ENVIRONMENT "PYTHONPATH=${_pipeline_pythonpath}")
 
+# Pipeline icon resources (must be compiled into each executable, not the
+# static library, so Qt's resource system can initialise them).
+set(PIPELINE_ICONS_QRC "${PROJECT_SOURCE_DIR}/tomviz/pipeline/pipeline_icons.qrc")
+
 # Manual demo app for visually testing PipelineStripWidget
-add_executable(pipelineStripDemo PipelineStripWidgetDemo.cxx)
+add_executable(pipelineStripDemo PipelineStripWidgetDemo.cxx ${PIPELINE_ICONS_QRC})
 target_link_libraries(pipelineStripDemo tomvizlib)
 
 # Manual demo app for visually testing pipeline Sinks with ParaView views
-add_executable(pipelineSinkDemo PipelineSinkDemo.cxx)
+add_executable(pipelineSinkDemo PipelineSinkDemo.cxx ${PIPELINE_ICONS_QRC})
 target_link_libraries(pipelineSinkDemo tomvizlib)
 
 # Manual demo app with full pipeline: source -> transform -> 3 sinks + properties
-add_executable(pipelineDemo PipelineDemo.cxx)
+add_executable(pipelineDemo PipelineDemo.cxx ${PIPELINE_ICONS_QRC})
 target_compile_definitions(pipelineDemo PRIVATE
   "TOMVIZ_PYTHON_DIR=\"${PROJECT_SOURCE_DIR}/tomviz/python\"")
 target_link_libraries(pipelineDemo tomvizlib)

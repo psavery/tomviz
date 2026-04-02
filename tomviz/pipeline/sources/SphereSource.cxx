@@ -37,7 +37,7 @@ void SphereSource::setRadiusFraction(double fraction)
 
 bool SphereSource::execute()
 {
-  emit executionStarted();
+  setExecState(NodeExecState::Running);
 
   int nx = m_dimensions[0];
   int ny = m_dimensions[1];
@@ -77,7 +77,7 @@ bool SphereSource::execute()
   setOutputData("volume",
                 PortData(std::any(volume), PortType::ImageData));
 
-  emit executionFinished(true);
+  setExecState(NodeExecState::Idle);
   return true;
 }
 

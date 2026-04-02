@@ -48,14 +48,14 @@ DataReader* ReaderSourceNode::reader() const
 
 bool ReaderSourceNode::execute()
 {
-  emit executionStarted();
+  setExecState(NodeExecState::Running);
 
   if (!m_reader) {
     qWarning("ReaderSourceNode: no reader available for '%s'",
              m_fileNames.isEmpty()
                ? ""
                : qPrintable(m_fileNames.first()));
-    emit executionFinished(false);
+    setExecState(NodeExecState::Failed);
     return false;
   }
 
@@ -63,7 +63,7 @@ bool ReaderSourceNode::execute()
   if (!imageData) {
     qWarning("ReaderSourceNode: reader returned null for '%s'",
              qPrintable(m_fileNames.first()));
-    emit executionFinished(false);
+    setExecState(NodeExecState::Failed);
     return false;
   }
 
@@ -77,7 +77,7 @@ bool ReaderSourceNode::execute()
   outputPort("volume")->setDeclaredType(dataType);
   setOutputData("volume", PortData(std::any(volume), dataType));
 
-  emit executionFinished(true);
+  setExecState(NodeExecState::Idle);
   return true;
 }
 

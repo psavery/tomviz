@@ -43,6 +43,7 @@ TransformEditDialog::~TransformEditDialog()
   // mode).
   if (m_transform && m_pipeline &&
       m_pipeline->nodes().contains(m_transform)) {
+    m_transform->setEditing(false);
     connect(m_transform, &TransformNode::parametersApplied, m_pipeline,
             [pip = m_pipeline]() { pip->execute(); });
   }
@@ -55,6 +56,8 @@ TransformNode* TransformEditDialog::transform() const
 
 void TransformEditDialog::init()
 {
+  m_transform->setEditing(true);
+
   // Suppress the auto-execute wiring so the dialog controls execution.
   QObject::disconnect(m_transform, &TransformNode::parametersApplied,
                       m_pipeline, nullptr);

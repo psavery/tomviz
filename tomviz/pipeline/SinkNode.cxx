@@ -17,7 +17,7 @@ InputPort* SinkNode::addInput(const QString& name, PortTypes acceptedTypes)
 
 bool SinkNode::execute()
 {
-  emit executionStarted();
+  setExecState(NodeExecState::Running);
 
   QMap<QString, PortData> inputs;
   for (auto* port : inputPorts()) {
@@ -28,9 +28,11 @@ bool SinkNode::execute()
 
   if (success) {
     markCurrent();
+    setExecState(NodeExecState::Idle);
+  } else {
+    setExecState(NodeExecState::Failed);
   }
 
-  emit executionFinished(success);
   return success;
 }
 
