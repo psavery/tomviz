@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineReaderSourceNode_h
 #define tomvizPipelineReaderSourceNode_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "DataReader.h"
 #include "SourceNode.h"
 
@@ -17,7 +15,7 @@ namespace tomviz {
 namespace pipeline {
 
 /// A source node that reads files and produces VolumeData on its output port.
-class TOMVIZ_PIPELINE_EXPORT ReaderSourceNode : public SourceNode
+class ReaderSourceNode : public SourceNode
 {
   Q_OBJECT
 

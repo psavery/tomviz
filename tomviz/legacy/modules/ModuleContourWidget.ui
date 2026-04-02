@@ -145,7 +145,7 @@
   <customwidget>
    <class>tomviz::ScalarsComboBox</class>
    <extends>QComboBox</extends>
-   <header>ScalarsComboBox.h</header>
+   <header>legacy/modules/ScalarsComboBox.h</header>
   </customwidget>
  </customwidgets>
  <tabstops>

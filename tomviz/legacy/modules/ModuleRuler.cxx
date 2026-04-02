@@ -4,7 +4,7 @@
 #include "ModuleRuler.h"
 
 #include "ActiveObjects.h"
-#include "DataSource.h"
+#include "../DataSource.h"
 #include "Utilities.h"
 
 #include <pqLinePropertyWidget.h>

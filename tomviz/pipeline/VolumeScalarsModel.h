@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineVolumeScalarsModel_h
 #define tomvizPipelineVolumeScalarsModel_h
 
-#include "tomviz_pipeline_export.h"
-
 #include <QAbstractTableModel>
 #include <QList>
 #include <QString>
@@ -14,7 +12,7 @@ namespace tomviz {
 namespace pipeline {
 
 /// Basic scalar array metadata container
-struct TOMVIZ_PIPELINE_EXPORT ScalarArrayInfo
+struct ScalarArrayInfo
 {
   ScalarArrayInfo(QString name, QString range, QString dataType,
                   bool active = false);
@@ -26,7 +24,7 @@ struct TOMVIZ_PIPELINE_EXPORT ScalarArrayInfo
 
 /// Table model displaying scalar array info from vtkPointData.
 /// Columns: Active (checkbox), Name (editable), Data Range, Data Type.
-class TOMVIZ_PIPELINE_EXPORT VolumeScalarsModel : public QAbstractTableModel
+class VolumeScalarsModel : public QAbstractTableModel
 {
   Q_OBJECT
 

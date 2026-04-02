@@ -3,7 +3,7 @@
 
 #include "ResetReaction.h"
 
-#include "ModuleManager.h"
+#include "legacy/modules/ModuleManager.h"
 #include "Utilities.h"
 
 #include <QMessageBox>

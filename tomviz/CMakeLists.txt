@@ -6,7 +6,6 @@ include_directories(SYSTEM
   ${PROJECT_SOURCE_DIR}/thirdparty/pybind11/include)
 
 add_subdirectory(core)
-add_subdirectory(pipeline)
 add_subdirectory(pvextensions)
 
 set(SOURCES
@@ -246,6 +245,121 @@ set(SOURCES
   pipeline/transforms/ReconstructionTransform.cxx
   pipeline/transforms/TranslateAlignTransform.h
   pipeline/transforms/TranslateAlignTransform.cxx
+  pipeline/PortData.cxx
+  pipeline/PortData.h
+  pipeline/PortType.h
+  pipeline/NodeState.h
+  pipeline/Port.cxx
+  pipeline/Port.h
+  pipeline/InputPort.cxx
+  pipeline/InputPort.h
+  pipeline/OutputPort.cxx
+  pipeline/OutputPort.h
+  pipeline/Link.cxx
+  pipeline/Link.h
+  pipeline/Node.cxx
+  pipeline/Node.h
+  pipeline/SourceNode.cxx
+  pipeline/SourceNode.h
+  pipeline/TransformNode.cxx
+  pipeline/TransformNode.h
+  pipeline/SinkNode.cxx
+  pipeline/SinkNode.h
+  pipeline/Pipeline.cxx
+  pipeline/Pipeline.h
+  pipeline/PipelineExecutor.cxx
+  pipeline/PipelineExecutor.h
+  pipeline/DefaultExecutor.cxx
+  pipeline/DefaultExecutor.h
+  pipeline/ExecutionFuture.cxx
+  pipeline/ExecutionFuture.h
+  pipeline/ThreadedExecutor.cxx
+  pipeline/ThreadedExecutor.h
+  pipeline/data/VolumeData.cxx
+  pipeline/data/VolumeData.h
+  pipeline/sources/SphereSource.cxx
+  pipeline/sources/SphereSource.h
+  pipeline/sources/DataReader.cxx
+  pipeline/sources/DataReader.h
+  pipeline/sources/ReaderSourceNode.cxx
+  pipeline/sources/ReaderSourceNode.h
+  pipeline/transforms/ThresholdTransform.cxx
+  pipeline/transforms/ThresholdTransform.h
+  pipeline/transforms/SetTiltAnglesTransform.cxx
+  pipeline/transforms/SetTiltAnglesTransform.h
+  pipeline/transforms/LegacyPythonTransform.cxx
+  pipeline/transforms/LegacyPythonTransform.h
+  pipeline/transforms/ConvertToFloatTransform.cxx
+  pipeline/transforms/ConvertToFloatTransform.h
+  pipeline/transforms/ConvertToVolumeTransform.cxx
+  pipeline/transforms/ConvertToVolumeTransform.h
+  pipeline/transforms/ArrayWranglerTransform.cxx
+  pipeline/transforms/ArrayWranglerTransform.h
+  pipeline/transforms/TransposeDataTransform.cxx
+  pipeline/transforms/TransposeDataTransform.h
+  pipeline/transforms/SnapshotTransform.cxx
+  pipeline/transforms/SnapshotTransform.h
+  pipeline/PortUtils.h
+  pipeline/pybind11/PybindVTKTypeCaster.h
+  pipeline/DeferredLinkInfo.h
+  pipeline/sinks/VolumeStatsSink.cxx
+  pipeline/sinks/VolumeStatsSink.h
+  pipeline/sinks/LegacyModuleSink.cxx
+  pipeline/sinks/LegacyModuleSink.h
+  pipeline/sinks/VolumeSink.cxx
+  pipeline/sinks/VolumeSink.h
+  pipeline/sinks/SliceSink.cxx
+  pipeline/sinks/SliceSink.h
+  pipeline/sinks/ContourSink.cxx
+  pipeline/sinks/ContourSink.h
+  pipeline/sinks/ThresholdSink.cxx
+  pipeline/sinks/ThresholdSink.h
+  pipeline/sinks/SegmentSink.cxx
+  pipeline/sinks/SegmentSink.h
+  pipeline/sinks/OutlineSink.cxx
+  pipeline/sinks/OutlineSink.h
+  pipeline/sinks/ClipSink.cxx
+  pipeline/sinks/ClipSink.h
+  pipeline/sinks/RulerSink.cxx
+  pipeline/sinks/RulerSink.h
+  pipeline/sinks/ScaleCubeSink.cxx
+  pipeline/sinks/ScaleCubeSink.h
+  pipeline/sinks/PlotSink.cxx
+  pipeline/sinks/PlotSink.h
+  pipeline/sinks/MoleculeSink.cxx
+  pipeline/sinks/MoleculeSink.h
+  pipeline/sinks/VolumeSinkWidget.cxx
+  pipeline/sinks/VolumeSinkWidget.h
+  pipeline/sinks/ContourSinkWidget.cxx
+  pipeline/sinks/ContourSinkWidget.h
+  pipeline/sinks/ThresholdSinkWidget.cxx
+  pipeline/sinks/ThresholdSinkWidget.h
+  pipeline/sinks/SegmentSinkWidget.cxx
+  pipeline/sinks/SegmentSinkWidget.h
+  pipeline/ParameterInterfaceBuilder.cxx
+  pipeline/ParameterInterfaceBuilder.h
+  pipeline/CustomPythonTransformWidget.cxx
+  pipeline/CustomPythonTransformWidget.h
+  pipeline/EditTransformWidget.cxx
+  pipeline/EditTransformWidget.h
+  pipeline/TransformPropertiesWidget.cxx
+  pipeline/TransformPropertiesWidget.h
+  pipeline/PythonTransformEditorWidget.cxx
+  pipeline/PythonTransformEditorWidget.h
+  pipeline/TransformPropertiesPanel.cxx
+  pipeline/TransformPropertiesPanel.h
+  pipeline/TransformEditDialog.cxx
+  pipeline/TransformEditDialog.h
+  pipeline/PipelineUtils.cxx
+  pipeline/PipelineUtils.h
+  pipeline/PipelineStripWidget.cxx
+  pipeline/PipelineStripWidget.h
+  pipeline/VolumeScalarsModel.cxx
+  pipeline/VolumeScalarsModel.h
+  pipeline/VolumePropertiesWidget.cxx
+  pipeline/VolumePropertiesWidget.h
+  pipeline/vtkNonOrthoImagePlaneWidget.cxx
+  pipeline/vtkNonOrthoImagePlaneWidget.h
   Tvh5Format.cxx
   Tvh5Format.h
   Utilities.cxx
@@ -329,10 +443,8 @@ list(APPEND SOURCES
   legacy/modules/VolumeManager.cxx
   legacy/modules/VolumeManager.h
 )
-include_directories(
-  ${CMAKE_CURRENT_SOURCE_DIR}/legacy
-  ${CMAKE_CURRENT_SOURCE_DIR}/legacy/modules
-  ${CMAKE_CURRENT_SOURCE_DIR}/legacy/core)
+# legacy/ subdirectories are NOT on the include path — use explicit
+# prefixed includes (e.g. "legacy/DataSource.h", "legacy/modules/Module.h").
 
 # acquisition/
 list(APPEND SOURCES
@@ -391,7 +503,7 @@ list(APPEND SOURCES
   PipelineModuleMenu.cxx
   PipelineModuleMenu.h
 )
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/legacy/operators)
+# legacy/operators/ is NOT on the include path — use "legacy/operators/Operator.h" etc.
 
 # animations/
 list(APPEND SOURCES
@@ -743,16 +855,19 @@ include_directories(
   ${CMAKE_CURRENT_BINARY_DIR}/core
   ${CMAKE_CURRENT_BINARY_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}
-  ${CMAKE_CURRENT_SOURCE_DIR}/core)
+  ${CMAKE_CURRENT_SOURCE_DIR}/core
+  ${CMAKE_CURRENT_SOURCE_DIR}/pipeline)
 
 configure_file(tomvizConfig.h.in tomvizConfig.h @ONLY)
 configure_file(tomvizPythonConfig.h.in tomvizPythonConfig.h @ONLY)
 
-add_library(tomvizlib STATIC ${SOURCES} ${accel_srcs})
+qt_add_resources(PIPELINE_RESOURCES pipeline/pipeline_icons.qrc)
+
+add_library(tomvizlib STATIC ${SOURCES} ${PIPELINE_RESOURCES} ${accel_srcs})
 if(NOT WIN32)
   set_target_properties(tomvizlib PROPERTIES OUTPUT_NAME tomviz)
   set_target_properties(tomvizlib PROPERTIES AUTOUIC_SEARCH_PATHS
-      "${CMAKE_CURRENT_SOURCE_DIR}/legacy;${CMAKE_CURRENT_SOURCE_DIR}/legacy/modules;${CMAKE_CURRENT_SOURCE_DIR}/legacy/operators")
+      "${CMAKE_CURRENT_SOURCE_DIR}/legacy;${CMAKE_CURRENT_SOURCE_DIR}/legacy/modules;${CMAKE_CURRENT_SOURCE_DIR}/legacy/operators;${CMAKE_CURRENT_SOURCE_DIR}/pipeline")
 endif()
 
 # Need to set this property so that in stack traces, tomviz symbols
@@ -776,7 +891,6 @@ set_target_properties(tomviz PROPERTIES ENABLE_EXPORTS TRUE)
 target_link_libraries(tomvizlib
   PUBLIC
     tomvizcore
-    tomviz_pipeline
     ParaView::pqApplicationComponents
     ParaView::pqPython
     ParaView::RemotingExport
@@ -785,6 +899,8 @@ target_link_libraries(tomvizlib
     VTK::pugixml
     VTK::tiff
     VTK::CommonColor
+    VTK::CommonCore
+    VTK::CommonDataModel
     VTK::DomainsChemistry
     VTK::IOChemistry
     VTK::hdf5
@@ -792,9 +908,25 @@ target_link_libraries(tomvizlib
     VTK::RenderingVolume
     VTK::RenderingVolumeOpenGL2
     Qt6::Network
+    Qt6::Widgets
   PRIVATE
     Qt6::Core5Compat
-    Python3::Python)
+    Python3::Python
+    pybind11::embed
+    VTK::WrappingPythonCore
+    VTK::IOImage
+    VTK::IOXML
+    VTK::IOLegacy
+    VTK::RenderingCore
+    VTK::FiltersCore
+    VTK::FiltersSources
+    VTK::FiltersGeneral
+    VTK::FiltersModeling
+    VTK::InteractionWidgets
+    VTK::ImagingCore
+    VTK::RenderingGridAxes
+    VTK::ChartsCore
+    VTK::ViewsContext2D)
 
 if(APPLE)
   set_target_properties(tomviz

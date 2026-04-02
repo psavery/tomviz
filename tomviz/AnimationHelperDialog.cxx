@@ -6,8 +6,8 @@
 
 #include "ActiveObjects.h"
 #include "ContourAnimation.h"
-#include "DataSource.h"
-#include "ModuleManager.h"
+#include "legacy/DataSource.h"
+#include "legacy/modules/ModuleManager.h"
 #include "SliceAnimation.h"
 #include "Utilities.h"
 

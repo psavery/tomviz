@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineTranslateAlignTransform_h
 #define tomvizPipelineTranslateAlignTransform_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "TransformNode.h"
 
 #include <vtkVector.h>
@@ -17,7 +15,7 @@ namespace pipeline {
 
 /// Transform that applies per-slice 2D translation offsets to align a
 /// tilt series or image stack.
-class TOMVIZ_PIPELINE_EXPORT TranslateAlignTransform : public TransformNode
+class TranslateAlignTransform : public TransformNode
 {
   Q_OBJECT
 

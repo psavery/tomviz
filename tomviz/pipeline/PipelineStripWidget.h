@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineStripWidget_h
 #define tomvizPipelineStripWidget_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "PortType.h"
 
 #include <QIcon>
@@ -52,7 +50,7 @@ struct LinkGeometry
   bool valid = true;
 };
 
-class TOMVIZ_PIPELINE_EXPORT PipelineStripWidget : public QWidget
+class PipelineStripWidget : public QWidget
 {
   Q_OBJECT
 

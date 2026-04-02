@@ -10,7 +10,7 @@
 #include "vtkSmartPointer.h"
 
 #include "ConformVolumeDialog.h"
-#include "DataSource.h"
+#include "legacy/DataSource.h"
 #include "LoadDataReaction.h"
 
 #include "pipeline/PortData.h"

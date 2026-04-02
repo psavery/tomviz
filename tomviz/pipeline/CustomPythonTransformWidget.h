@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineCustomPythonTransformWidget_h
 #define tomvizPipelineCustomPythonTransformWidget_h
 
-#include "tomviz_pipeline_export.h"
-
 #include <QMap>
 #include <QString>
 #include <QVariant>
@@ -17,7 +15,7 @@ namespace pipeline {
 /// Base class for custom parameter widgets that replace the auto-generated
 /// parameter UI for specific Python transforms (e.g. RotationAlign,
 /// ShiftRotationCenter).
-class TOMVIZ_PIPELINE_EXPORT CustomPythonTransformWidget : public QWidget
+class CustomPythonTransformWidget : public QWidget
 {
   Q_OBJECT
 

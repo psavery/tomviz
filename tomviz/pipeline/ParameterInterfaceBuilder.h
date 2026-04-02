@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineParameterInterfaceBuilder_h
 #define tomvizPipelineParameterInterfaceBuilder_h
 
-#include "tomviz_pipeline_export.h"
-
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QMap>
@@ -20,7 +18,7 @@ namespace pipeline {
 /// Builds a Qt widget from a JSON parameter description.
 /// This is a standalone version of tomviz::InterfaceBuilder that does not
 /// depend on DataSource, ActiveObjects, or ModuleManager.
-class TOMVIZ_PIPELINE_EXPORT ParameterInterfaceBuilder : public QObject
+class ParameterInterfaceBuilder : public QObject
 {
   Q_OBJECT
 

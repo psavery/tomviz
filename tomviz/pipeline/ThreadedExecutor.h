@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineThreadedExecutor_h
 #define tomvizPipelineThreadedExecutor_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "PipelineExecutor.h"
 
 #include <atomic>
@@ -17,7 +15,7 @@ namespace pipeline {
 
 class ExecutionWorker;
 
-class TOMVIZ_PIPELINE_EXPORT ThreadedExecutor : public PipelineExecutor
+class ThreadedExecutor : public PipelineExecutor
 {
   Q_OBJECT
 

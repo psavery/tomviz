@@ -8,10 +8,10 @@
 #include "ActiveObjects.h"
 #include "DataSource.h"
 #include "LoadDataReaction.h"
-#include "ModuleFactory.h"
-#include "ModuleManager.h"
-#include "OperatorFactory.h"
-#include "OperatorPython.h"
+#include "modules/ModuleFactory.h"
+#include "modules/ModuleManager.h"
+#include "operators/OperatorFactory.h"
+#include "operators/OperatorPython.h"
 #include "PipelineManager.h"
 
 #include <vtkSMSaveScreenshotProxy.h>

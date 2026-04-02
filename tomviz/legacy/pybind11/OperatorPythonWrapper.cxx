@@ -3,8 +3,8 @@
 
 #include "OperatorPythonWrapper.h"
 
-#include "core/OperatorProxyBase.h"
-#include "core/PythonFactory.h"
+#include "../core/OperatorProxyBase.h"
+#include "../core/PythonFactory.h"
 
 using namespace tomviz;
 

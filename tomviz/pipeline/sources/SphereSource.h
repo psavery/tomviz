@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineSphereSource_h
 #define tomvizPipelineSphereSource_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "SourceNode.h"
 
 namespace tomviz {
@@ -15,7 +13,7 @@ namespace pipeline {
 /// Voxel values represent the signed distance from the sphere surface
 /// (negative inside, positive outside), making it suitable for
 /// contouring or thresholding.
-class TOMVIZ_PIPELINE_EXPORT SphereSource : public SourceNode
+class SphereSource : public SourceNode
 {
   Q_OBJECT
 

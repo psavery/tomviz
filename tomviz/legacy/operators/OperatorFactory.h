@@ -6,7 +6,7 @@
 
 #include <QObject>
 
-#include "DataSource.h"
+#include "../DataSource.h"
 
 namespace tomviz {
 class Operator;

@@ -1,6 +1,6 @@
 #include "ScalarsComboBox.h"
 
-#include "DataSource.h"
+#include "../DataSource.h"
 #include "Module.h"
 
 namespace tomviz {

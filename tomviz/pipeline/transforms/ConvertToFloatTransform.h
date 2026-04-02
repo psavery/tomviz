@@ -4,15 +4,13 @@
 #ifndef tomvizPipelineConvertToFloatTransform_h
 #define tomvizPipelineConvertToFloatTransform_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "TransformNode.h"
 
 namespace tomviz {
 namespace pipeline {
 
 /// Transform that converts image scalars to float type.
-class TOMVIZ_PIPELINE_EXPORT ConvertToFloatTransform : public TransformNode
+class ConvertToFloatTransform : public TransformNode
 {
   Q_OBJECT
 

@@ -4,8 +4,6 @@
 #ifndef tomvizPipelinePythonTransformEditorWidget_h
 #define tomvizPipelinePythonTransformEditorWidget_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "EditTransformWidget.h"
 
 #include <QMap>
@@ -28,7 +26,7 @@ class CustomPythonTransformWidget;
 ///
 /// applyChangesToOperator() commits the label, script text, and parameter
 /// values back to the transform.
-class TOMVIZ_PIPELINE_EXPORT PythonTransformEditorWidget
+class PythonTransformEditorWidget
   : public EditTransformWidget
 {
   Q_OBJECT

@@ -4,15 +4,13 @@
 #ifndef tomvizPipelineTransposeDataTransform_h
 #define tomvizPipelineTransposeDataTransform_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "TransformNode.h"
 
 namespace tomviz {
 namespace pipeline {
 
 /// Transform that transposes array axes between C and Fortran ordering.
-class TOMVIZ_PIPELINE_EXPORT TransposeDataTransform : public TransformNode
+class TransposeDataTransform : public TransformNode
 {
   Q_OBJECT
 

@@ -3,11 +3,11 @@
 
 #include "ProgressDialogManager.h"
 
-#include "DataSource.h"
-#include "ModuleManager.h"
-#include "Operator.h"
-#include "Pipeline.h"
-#include "PipelineManager.h"
+#include "legacy/DataSource.h"
+#include "legacy/modules/ModuleManager.h"
+#include "legacy/operators/Operator.h"
+#include "legacy/Pipeline.h"
+#include "legacy/PipelineManager.h"
 
 #include <QCoreApplication>
 #include <QDialog>

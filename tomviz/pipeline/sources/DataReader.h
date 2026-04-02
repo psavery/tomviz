@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineDataReader_h
 #define tomvizPipelineDataReader_h
 
-#include "tomviz_pipeline_export.h"
-
 #include <QStringList>
 
 #include <vtkSmartPointer.h>
@@ -18,7 +16,7 @@ namespace tomviz {
 namespace pipeline {
 
 /// Abstract reader: takes file paths, produces vtkImageData.
-class TOMVIZ_PIPELINE_EXPORT DataReader
+class DataReader
 {
 public:
   virtual ~DataReader() = default;
@@ -27,7 +25,7 @@ public:
 
 /// VTK-based reader for common image formats (TIFF, PNG, JPEG, VTI, MRC).
 /// Selects the correct vtkImageReader2 subclass based on file extension.
-class TOMVIZ_PIPELINE_EXPORT VTKReader : public DataReader
+class VTKReader : public DataReader
 {
 public:
   vtkSmartPointer<vtkImageData> read(const QStringList& fileNames) override;
@@ -35,7 +33,7 @@ public:
 
 /// Python-based reader. Wraps a tomviz.io.Reader subclass and calls
 /// reader.read(path) via pybind11.
-class TOMVIZ_PIPELINE_EXPORT PythonDataReader : public DataReader
+class PythonDataReader : public DataReader
 {
 public:
   explicit PythonDataReader(const QString& readerClassName);
@@ -49,7 +47,7 @@ private:
 /// - Checks extension against known VTK-readable formats first
 /// - Falls back to checking registered Python readers
 /// - Returns nullptr if no reader matches
-TOMVIZ_PIPELINE_EXPORT std::unique_ptr<DataReader> createReader(
+std::unique_ptr<DataReader> createReader(
   const QStringList& fileNames);
 
 } // namespace pipeline

@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineLink_h
 #define tomvizPipelineLink_h
 
-#include "tomviz_pipeline_export.h"
-
 #include <QObject>
 
 namespace tomviz {
@@ -14,7 +12,7 @@ namespace pipeline {
 class InputPort;
 class OutputPort;
 
-class TOMVIZ_PIPELINE_EXPORT Link : public QObject
+class Link : public QObject
 {
   Q_OBJECT
 

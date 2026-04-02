@@ -4,8 +4,6 @@
 #ifndef tomvizPipelinePipeline_h
 #define tomvizPipelinePipeline_h
 
-#include "tomviz_pipeline_export.h"
-
 #include <QList>
 #include <QObject>
 
@@ -28,7 +26,7 @@ enum class SortOrder
   DepthFirst  // DFS reverse post-order (keeps chains together)
 };
 
-class TOMVIZ_PIPELINE_EXPORT Pipeline : public QObject
+class Pipeline : public QObject
 {
   Q_OBJECT
 

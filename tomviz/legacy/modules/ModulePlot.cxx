@@ -3,7 +3,7 @@
 
 #include "ModulePlot.h"
 
-#include "OperatorResult.h"
+#include "../operators/OperatorResult.h"
 #include "Utilities.h"
 
 #include <vtkAxis.h>

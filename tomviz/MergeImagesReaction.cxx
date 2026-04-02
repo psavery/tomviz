@@ -4,7 +4,7 @@
 #include "MergeImagesReaction.h"
 
 #include "ActiveObjects.h"
-#include "DataSource.h"
+#include "legacy/DataSource.h"
 #include "LoadDataReaction.h"
 #include "MergeImagesDialog.h"
 

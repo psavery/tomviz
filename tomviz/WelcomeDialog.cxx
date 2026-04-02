@@ -6,7 +6,7 @@
 
 #include "ActiveObjects.h"
 #include "MainWindow.h"
-#include "ModuleManager.h"
+#include "legacy/modules/ModuleManager.h"
 
 #include <QCheckBox>
 #include <QPushButton>

@@ -4,15 +4,13 @@
 #ifndef tomvizPipelineConvertToVolumeTransform_h
 #define tomvizPipelineConvertToVolumeTransform_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "TransformNode.h"
 
 namespace tomviz {
 namespace pipeline {
 
 /// Pass-through transform that re-types input data as a Volume.
-class TOMVIZ_PIPELINE_EXPORT ConvertToVolumeTransform : public TransformNode
+class ConvertToVolumeTransform : public TransformNode
 {
   Q_OBJECT
 

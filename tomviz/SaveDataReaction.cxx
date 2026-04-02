@@ -8,9 +8,9 @@
 #include "Utilities.h"
 
 #include "ActiveObjects.h"
-#include "DataSource.h"
+#include "legacy/DataSource.h"
 #include "FileFormatManager.h"
-#include "ModuleManager.h"
+#include "legacy/modules/ModuleManager.h"
 #include "PythonWriter.h"
 
 #include <pqActiveObjects.h>

@@ -3,7 +3,7 @@
 
 #include "ModuleFactory.h"
 
-#include "DataSource.h"
+#include "../DataSource.h"
 #include "ModuleClip.h"
 #include "ModuleContour.h"
 #include "ModuleMolecule.h"
@@ -15,7 +15,7 @@
 #include "ModuleSlice.h"
 #include "ModuleThreshold.h"
 #include "ModuleVolume.h"
-#include "OperatorResult.h"
+#include "../operators/OperatorResult.h"
 #include "Utilities.h"
 
 #include <pqView.h>

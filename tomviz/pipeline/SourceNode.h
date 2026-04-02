@@ -4,15 +4,13 @@
 #ifndef tomvizPipelineSourceNode_h
 #define tomvizPipelineSourceNode_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "Node.h"
 #include "PortData.h"
 
 namespace tomviz {
 namespace pipeline {
 
-class TOMVIZ_PIPELINE_EXPORT SourceNode : public Node
+class SourceNode : public Node
 {
   Q_OBJECT
 

@@ -3,8 +3,8 @@
 
 #include "PipelineStateManager.h"
 
-#include "core/PipelineProxyBase.h"
-#include "core/PythonFactory.h"
+#include "../core/PipelineProxyBase.h"
+#include "../core/PythonFactory.h"
 
 using namespace tomviz;
 

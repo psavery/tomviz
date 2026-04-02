@@ -3,7 +3,7 @@
 
 #include "SaveLoadStateReaction.h"
 
-#include "ModuleManager.h"
+#include "legacy/modules/ModuleManager.h"
 #include "RecentFilesMenu.h"
 #include "Tvh5Format.h"
 #include "Utilities.h"

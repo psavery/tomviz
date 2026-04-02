@@ -7,7 +7,7 @@
 #include <vtkFloatArray.h>
 #include "DataExchangeFormat.h"
 #include "EmdFormat.h"
-#include "Module.h"
+#include "legacy/modules/Module.h"
 #include "Utilities.h"
 
 #include <pqActiveObjects.h>

@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineDefaultExecutor_h
 #define tomvizPipelineDefaultExecutor_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "PipelineExecutor.h"
 
 #include <atomic>
@@ -13,7 +11,7 @@
 namespace tomviz {
 namespace pipeline {
 
-class TOMVIZ_PIPELINE_EXPORT DefaultExecutor : public PipelineExecutor
+class DefaultExecutor : public PipelineExecutor
 {
   Q_OBJECT
 

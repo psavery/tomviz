@@ -4,7 +4,7 @@
 #include "ModuleScaleCube.h"
 #include "ModuleScaleCubeWidget.h"
 
-#include "DataSource.h"
+#include "../DataSource.h"
 #include "Utilities.h"
 
 #include <vtkHandleWidget.h>

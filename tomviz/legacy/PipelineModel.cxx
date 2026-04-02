@@ -5,11 +5,11 @@
 
 #include "ActiveObjects.h"
 #include "DataSource.h"
-#include "Module.h"
-#include "ModuleManager.h"
+#include "modules/Module.h"
+#include "modules/ModuleManager.h"
 #include "MoleculeSource.h"
-#include "Operator.h"
-#include "OperatorResult.h"
+#include "operators/Operator.h"
+#include "operators/OperatorResult.h"
 #include "Pipeline.h"
 
 #include <QFileInfo>

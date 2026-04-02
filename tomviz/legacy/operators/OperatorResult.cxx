@@ -4,9 +4,9 @@
 #include "OperatorResult.h"
 
 #include "ActiveObjects.h"
-#include "ModuleFactory.h"
-#include "ModuleManager.h"
-#include "ModuleMolecule.h"
+#include "../modules/ModuleFactory.h"
+#include "../modules/ModuleManager.h"
+#include "../modules/ModuleMolecule.h"
 
 #include <vtkDataObject.h>
 #include <vtkMolecule.h>

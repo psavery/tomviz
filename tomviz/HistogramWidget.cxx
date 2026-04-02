@@ -7,7 +7,7 @@
 #include "BrightnessContrastWidget.h"
 #include "ColorMap.h"
 #include "ColorMapSettingsWidget.h"
-#include "DataSource.h"
+#include "legacy/DataSource.h"
 #include "DoubleSliderWidget.h"
 #include "PresetDialog.h"
 #include "QVTKGLWidget.h"

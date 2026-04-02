@@ -4,8 +4,6 @@
 #ifndef tomvizPipelinePipelineExecutor_h
 #define tomvizPipelinePipelineExecutor_h
 
-#include "tomviz_pipeline_export.h"
-
 #include <QList>
 #include <QObject>
 
@@ -15,7 +13,7 @@ namespace pipeline {
 class Node;
 class Pipeline;
 
-class TOMVIZ_PIPELINE_EXPORT PipelineExecutor : public QObject
+class PipelineExecutor : public QObject
 {
   Q_OBJECT
 

@@ -3,11 +3,11 @@
 
 #include "Operator.h"
 
-#include "DataSource.h"
-#include "ModuleManager.h"
+#include "../DataSource.h"
+#include "../modules/ModuleManager.h"
 #include "OperatorFactory.h"
 #include "OperatorResult.h"
-#include "Pipeline.h"
+#include "../Pipeline.h"
 
 #include "vtkImageData.h"
 #include "vtkSMSourceProxy.h"

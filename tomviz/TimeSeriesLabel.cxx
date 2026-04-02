@@ -4,7 +4,7 @@
 #include "TimeSeriesLabel.h"
 
 #include "ActiveObjects.h"
-#include "DataSource.h"
+#include "legacy/DataSource.h"
 #include "TimeSeriesStep.h"
 #include "Utilities.h"
 

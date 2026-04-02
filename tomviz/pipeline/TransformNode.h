@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineTransformNode_h
 #define tomvizPipelineTransformNode_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "Node.h"
 #include "PortData.h"
 
@@ -19,7 +17,7 @@ namespace pipeline {
 
 class EditTransformWidget;
 
-class TOMVIZ_PIPELINE_EXPORT TransformNode : public Node
+class TransformNode : public Node
 {
   Q_OBJECT
 

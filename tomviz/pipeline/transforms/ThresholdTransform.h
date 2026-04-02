@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineThresholdTransform_h
 #define tomvizPipelineThresholdTransform_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "TransformNode.h"
 
 namespace tomviz {
@@ -13,7 +11,7 @@ namespace pipeline {
 
 /// Transform that produces a binary mask volume: voxels with values in
 /// [minValue, maxValue] are set to 1.0, all others to 0.0.
-class TOMVIZ_PIPELINE_EXPORT ThresholdTransform : public TransformNode
+class ThresholdTransform : public TransformNode
 {
   Q_OBJECT
 

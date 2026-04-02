@@ -4,12 +4,12 @@
 #include "Tvh5Format.h"
 
 #include "ActiveObjects.h"
-#include "DataSource.h"
+#include "legacy/DataSource.h"
 #include "EmdFormat.h"
 #include "LoadDataReaction.h"
-#include "ModuleManager.h"
-#include "Operator.h"
-#include "Pipeline.h"
+#include "legacy/modules/ModuleManager.h"
+#include "legacy/operators/Operator.h"
+#include "legacy/Pipeline.h"
 
 #include "pipeline/PortData.h"
 #include "pipeline/PortType.h"

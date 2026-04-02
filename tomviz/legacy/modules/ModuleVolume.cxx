@@ -4,7 +4,7 @@
 #include "ModuleVolume.h"
 #include "ModuleVolumeWidget.h"
 
-#include "DataSource.h"
+#include "../DataSource.h"
 #include "HistogramManager.h"
 #include "ScalarsComboBox.h"
 #include "VolumeManager.h"

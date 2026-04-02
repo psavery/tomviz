@@ -4,7 +4,7 @@
 #include "ModuleContour.h"
 #include "ModuleContourWidget.h"
 
-#include "DataSource.h"
+#include "../DataSource.h"
 
 #include "vtkActiveScalarsProducer.h"
 #include "vtkActor.h"

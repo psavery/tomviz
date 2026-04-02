@@ -5,7 +5,7 @@
 
 #include "ActiveObjects.h"
 #include "ColorMap.h"
-#include "DataSource.h"
+#include "legacy/DataSource.h"
 #include "LoadDataReaction.h"
 #include "PresetDialog.h"
 #include "QVTKGLWidget.h"

@@ -4,7 +4,7 @@
 #include "Utilities.h"
 
 #include "ActiveObjects.h"
-#include "DataSource.h"
+#include "legacy/DataSource.h"
 #include "tomvizConfig.h"
 
 #include <pqAnimationCue.h>

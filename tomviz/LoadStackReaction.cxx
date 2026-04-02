@@ -4,7 +4,7 @@
 #include "LoadStackReaction.h"
 
 #include "ActiveObjects.h"
-#include "DataSource.h"
+#include "legacy/DataSource.h"
 #include "ImageStackDialog.h"
 #include "LoadDataReaction.h"
 #include "Utilities.h"

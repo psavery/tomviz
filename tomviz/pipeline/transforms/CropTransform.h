@@ -4,15 +4,13 @@
 #ifndef tomvizPipelineCropTransform_h
 #define tomvizPipelineCropTransform_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "TransformNode.h"
 
 namespace tomviz {
 namespace pipeline {
 
 /// Transform that crops a volume to a sub-region specified by bounds.
-class TOMVIZ_PIPELINE_EXPORT CropTransform : public TransformNode
+class CropTransform : public TransformNode
 {
   Q_OBJECT
 

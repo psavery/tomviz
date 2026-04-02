@@ -8,11 +8,11 @@
 #include "vtkPython.h" // must be first
 #pragma pop_macro("slots")
 
-#include "core/DataSourceBase.h"
+#include "legacy/core/DataSourceBase.h"
 
-#include "DataSource.h"
+#include "legacy/DataSource.h"
 #include "Logger.h"
-#include "OperatorFactory.h"
+#include "legacy/operators/OperatorFactory.h"
 
 #include <vtkPythonInterpreter.h>
 #include <vtkPythonUtil.h>

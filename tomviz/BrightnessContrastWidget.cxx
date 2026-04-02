@@ -16,7 +16,7 @@
 #include <vtkPiecewiseFunction.h>
 #include <vtkSmartPointer.h>
 
-#include "DataSource.h"
+#include "legacy/DataSource.h"
 #include "Utilities.h"
 
 static const double PI = vtkMath::Pi();

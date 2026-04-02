@@ -20,12 +20,12 @@
 #include <h5cpp/h5readwrite.h>
 
 #include "ActiveObjects.h"
-#include "DataSource.h"
+#include "legacy/DataSource.h"
 #include "EmdFormat.h"
-#include "Pipeline.h"
-#include "PipelineManager.h"
+#include "legacy/Pipeline.h"
+#include "legacy/PipelineManager.h"
 #include "Tvh5Format.h"
-#include "modules/ModuleManager.h"
+#include "legacy/modules/ModuleManager.h"
 
 using namespace tomviz;
 

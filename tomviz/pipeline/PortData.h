@@ -4,8 +4,6 @@
 #ifndef tomvizPipelinePortData_h
 #define tomvizPipelinePortData_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "PortType.h"
 
 #include <any>
@@ -13,7 +11,7 @@
 namespace tomviz {
 namespace pipeline {
 
-class TOMVIZ_PIPELINE_EXPORT PortData
+class PortData
 {
 public:
   PortData();

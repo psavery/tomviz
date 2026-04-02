@@ -15,7 +15,7 @@
 #include <vtkSmartPointer.h>
 #include <vtk_pugixml.h>
 
-#include "DataSource.h"
+#include "../DataSource.h"
 
 
 class vtkImageData;

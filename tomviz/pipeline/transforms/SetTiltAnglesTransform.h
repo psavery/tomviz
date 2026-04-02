@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineSetTiltAnglesTransform_h
 #define tomvizPipelineSetTiltAnglesTransform_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "TransformNode.h"
 
 #include <QMap>
@@ -15,7 +13,7 @@ namespace tomviz {
 namespace pipeline {
 
 /// Transform that sets tilt angles on a VolumeData.
-class TOMVIZ_PIPELINE_EXPORT SetTiltAnglesTransform : public TransformNode
+class SetTiltAnglesTransform : public TransformNode
 {
   Q_OBJECT
 

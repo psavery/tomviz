@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineExecutionFuture_h
 #define tomvizPipelineExecutionFuture_h
 
-#include "tomviz_pipeline_export.h"
-
 #include <QObject>
 
 namespace tomviz {
@@ -13,7 +11,7 @@ namespace pipeline {
 
 class Pipeline;
 
-class TOMVIZ_PIPELINE_EXPORT ExecutionFuture : public QObject
+class ExecutionFuture : public QObject
 {
   Q_OBJECT
 

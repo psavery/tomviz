@@ -3,7 +3,7 @@
 
 #include "ModuleClip.h"
 
-#include "DataSource.h"
+#include "../DataSource.h"
 #include "DoubleSliderWidget.h"
 #include "IntSliderWidget.h"
 #include "ModuleManager.h"

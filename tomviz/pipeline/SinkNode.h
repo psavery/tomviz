@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineSinkNode_h
 #define tomvizPipelineSinkNode_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "Node.h"
 #include "PortData.h"
 
@@ -15,7 +13,7 @@
 namespace tomviz {
 namespace pipeline {
 
-class TOMVIZ_PIPELINE_EXPORT SinkNode : public Node
+class SinkNode : public Node
 {
   Q_OBJECT
 

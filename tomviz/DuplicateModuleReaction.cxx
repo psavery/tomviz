@@ -4,9 +4,9 @@
 #include "DuplicateModuleReaction.h"
 
 #include "ActiveObjects.h"
-#include "Module.h"
-#include "ModuleFactory.h"
-#include "ModuleManager.h"
+#include "legacy/modules/Module.h"
+#include "legacy/modules/ModuleFactory.h"
+#include "legacy/modules/ModuleManager.h"
 
 #include <QJsonObject>
 

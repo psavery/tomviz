@@ -3,7 +3,7 @@
 
 #include "PythonReader.h"
 
-#include "DataSource.h"
+#include "legacy/DataSource.h"
 
 #include <vtkImageData.h>
 

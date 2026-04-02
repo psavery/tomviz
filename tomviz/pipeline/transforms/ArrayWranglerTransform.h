@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineArrayWranglerTransform_h
 #define tomvizPipelineArrayWranglerTransform_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "TransformNode.h"
 
 namespace tomviz {
@@ -13,7 +11,7 @@ namespace pipeline {
 
 /// Transform that converts array data to UInt8 or UInt16, optionally
 /// extracting a single component from multi-component arrays.
-class TOMVIZ_PIPELINE_EXPORT ArrayWranglerTransform : public TransformNode
+class ArrayWranglerTransform : public TransformNode
 {
   Q_OBJECT
 

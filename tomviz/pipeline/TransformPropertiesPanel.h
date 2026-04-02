@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineTransformPropertiesPanel_h
 #define tomvizPipelineTransformPropertiesPanel_h
 
-#include "tomviz_pipeline_export.h"
-
 #include <QWidget>
 
 namespace tomviz {
@@ -21,7 +19,7 @@ class TransformNode;
 ///
 /// Suppresses the parametersApplied → execute() auto-wiring while alive
 /// to avoid double execution / deadlock with ThreadedExecutor.
-class TOMVIZ_PIPELINE_EXPORT TransformPropertiesPanel : public QWidget
+class TransformPropertiesPanel : public QWidget
 {
   Q_OBJECT
 

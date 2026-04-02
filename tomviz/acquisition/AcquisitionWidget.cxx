@@ -7,7 +7,7 @@
 
 #include "AcquisitionClient.h"
 #include "ActiveObjects.h"
-#include "DataSource.h"
+#include "legacy/DataSource.h"
 #include "Utilities.h"
 
 #include <pqApplicationCore.h>

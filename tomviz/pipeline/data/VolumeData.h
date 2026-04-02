@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineVolumeData_h
 #define tomvizPipelineVolumeData_h
 
-#include "tomviz_pipeline_export.h"
-
 #include <QString>
 
 #include <vtkNew.h>
@@ -29,7 +27,7 @@ namespace pipeline {
 /// Lightweight wrapper around vtkImageData providing essential metadata
 /// accessors for pipeline port data. This is a value-semantic type
 /// (shared via shared_ptr) with no QObject overhead.
-class TOMVIZ_PIPELINE_EXPORT VolumeData
+class VolumeData
 {
 public:
   VolumeData();

@@ -4,7 +4,7 @@
 #ifndef tomvizOperatorProxy_h
 #define tomvizOperatorProxy_h
 
-#include "core/OperatorProxyBase.h"
+#include "../core/OperatorProxyBase.h"
 
 namespace tomviz {
 

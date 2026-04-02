@@ -3,7 +3,7 @@
 
 #include "PythonWriter.h"
 
-#include "DataSource.h"
+#include "legacy/DataSource.h"
 
 #include <vtkImageData.h>
 #include <vtkTrivialProducer.h>

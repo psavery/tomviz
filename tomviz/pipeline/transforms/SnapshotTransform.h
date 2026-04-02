@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineSnapshotTransform_h
 #define tomvizPipelineSnapshotTransform_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "TransformNode.h"
 #include "data/VolumeData.h"
 
@@ -15,7 +13,7 @@ namespace pipeline {
 /// Transform that captures a deep copy of the input on first execution.
 /// Subsequent executions return the cached copy unchanged.
 /// Output is persistent (not transient).
-class TOMVIZ_PIPELINE_EXPORT SnapshotTransform : public TransformNode
+class SnapshotTransform : public TransformNode
 {
   Q_OBJECT
 

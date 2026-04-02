@@ -9,8 +9,8 @@
 #include "DockerUtilities.h"
 #include "EmdFormat.h"
 #include "ExternalPythonExecutor.h"
-#include "ModuleManager.h"
-#include "Operator.h"
+#include "modules/ModuleManager.h"
+#include "operators/Operator.h"
 #include "ThreadedExecutor.h"
 #include "Utilities.h"
 

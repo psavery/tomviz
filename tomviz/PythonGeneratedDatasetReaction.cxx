@@ -4,9 +4,9 @@
 #include "PythonGeneratedDatasetReaction.h"
 
 #include "ActiveObjects.h"
-#include "DataSource.h"
+#include "legacy/DataSource.h"
 #include "LoadDataReaction.h"
-#include "ModuleManager.h"
+#include "legacy/modules/ModuleManager.h"
 
 #include "pipeline/PortData.h"
 #include "pipeline/PortType.h"

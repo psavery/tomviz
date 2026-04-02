@@ -6,7 +6,7 @@
 
 #include "ModuleAnimation.h"
 
-#include "ModuleSlice.h"
+#include "legacy/modules/ModuleSlice.h"
 
 namespace tomviz {
 

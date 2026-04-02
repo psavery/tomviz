@@ -3,7 +3,7 @@
 
 #include "ModuleSegment.h"
 
-#include "DataSource.h"
+#include "../DataSource.h"
 #include "Utilities.h"
 #include "pqCoreUtilities.h"
 #include "pqProxiesWidget.h"

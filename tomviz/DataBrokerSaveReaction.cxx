@@ -4,7 +4,7 @@
 #include "DataBrokerSaveReaction.h"
 #include "DataBrokerSaveDialog.h"
 
-#include "DataSource.h"
+#include "legacy/DataSource.h"
 #include "GenericHDF5Format.h"
 #include "LoadDataReaction.h"
 #include "Utilities.h"

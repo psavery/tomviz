@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineLegacyPythonTransform_h
 #define tomvizPipelineLegacyPythonTransform_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "TransformNode.h"
 
 #include <QMap>
@@ -27,7 +25,7 @@ class CustomPythonTransformWidget;
 
 /// Registration info for a custom widget that replaces the auto-generated
 /// parameter UI for specific Python operators (e.g. RotationAlign).
-struct TOMVIZ_PIPELINE_EXPORT CustomWidgetInfo
+struct CustomWidgetInfo
 {
   /// Whether the widget needs input data (vtkImageData) to display.
   bool needsData = false;
@@ -45,7 +43,7 @@ struct TOMVIZ_PIPELINE_EXPORT CustomWidgetInfo
 /// This enables the ~59 existing Python operators (e.g. AddConstant.py/.json)
 /// to run unchanged within the new pipeline framework. Python execution uses
 /// direct pybind11/CPython — no dependency on the old tomvizlib.
-class TOMVIZ_PIPELINE_EXPORT LegacyPythonTransform : public TransformNode
+class LegacyPythonTransform : public TransformNode
 {
   Q_OBJECT
 

@@ -5,7 +5,7 @@
 
 #include "ui_ReconstructionWidget.h"
 
-#include "DataSource.h"
+#include "legacy/DataSource.h"
 #include "LoadDataReaction.h"
 #include "TomographyReconstruction.h"
 #include "TomographyTiltSeries.h"

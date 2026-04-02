@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineReconstructionTransform_h
 #define tomvizPipelineReconstructionTransform_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "TransformNode.h"
 
 namespace tomviz {
@@ -14,7 +12,7 @@ namespace pipeline {
 /// Transform that performs tomographic reconstruction via unweighted
 /// back projection on a tilt series input.
 /// Output port is persistent (not transient).
-class TOMVIZ_PIPELINE_EXPORT ReconstructionTransform : public TransformNode
+class ReconstructionTransform : public TransformNode
 {
   Q_OBJECT
 

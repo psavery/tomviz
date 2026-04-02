@@ -2,7 +2,7 @@
    It is released under the 3-Clause BSD License, see "LICENSE". */
 
 #include "PipelineWorker.h"
-#include "Operator.h"
+#include "operators/Operator.h"
 
 #include <QObject>
 #include <QQueue>

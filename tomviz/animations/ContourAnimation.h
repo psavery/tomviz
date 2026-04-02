@@ -6,7 +6,7 @@
 
 #include "ModuleAnimation.h"
 
-#include "ModuleContour.h"
+#include "legacy/modules/ModuleContour.h"
 
 namespace tomviz {
 

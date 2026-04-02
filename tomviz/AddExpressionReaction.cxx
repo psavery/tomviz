@@ -3,9 +3,9 @@
 
 #include "AddExpressionReaction.h"
 
-#include "DataSource.h"
-#include "OperatorPython.h"
-#include "PipelineManager.h"
+#include "legacy/DataSource.h"
+#include "legacy/operators/OperatorPython.h"
+#include "legacy/PipelineManager.h"
 #include "Utilities.h"
 
 namespace tomviz {

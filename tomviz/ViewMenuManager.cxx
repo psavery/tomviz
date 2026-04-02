@@ -33,9 +33,9 @@
 
 #include "ActiveObjects.h"
 #include "CameraReaction.h"
-#include "DataSource.h"
-#include "ModuleManager.h"
-#include "ModuleSlice.h"
+#include "legacy/DataSource.h"
+#include "legacy/modules/ModuleManager.h"
+#include "legacy/modules/ModuleSlice.h"
 #include "SliceViewDialog.h"
 #include "Utilities.h"
 

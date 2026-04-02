@@ -5,8 +5,8 @@
 #define tomvizModuleAnimation_h
 
 #include "ActiveObjects.h"
-#include "Module.h"
-#include "ModuleManager.h"
+#include "legacy/modules/Module.h"
+#include "legacy/modules/ModuleManager.h"
 
 #include <pqTimeKeeper.h>
 

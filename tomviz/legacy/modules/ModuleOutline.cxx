@@ -3,7 +3,7 @@
 
 #include "ModuleOutline.h"
 
-#include "DataSource.h"
+#include "../DataSource.h"
 #include "Utilities.h"
 #include "pqProxiesWidget.h"
 #include "vtkNew.h"

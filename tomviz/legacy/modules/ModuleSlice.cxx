@@ -4,7 +4,7 @@
 #include "ModuleSlice.h"
 
 #include "ActiveObjects.h"
-#include "DataSource.h"
+#include "../DataSource.h"
 #include "DoubleSliderWidget.h"
 #include "IntSliderWidget.h"
 #include "ScalarsComboBox.h"

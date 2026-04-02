@@ -4,7 +4,7 @@
 #include "GenericHDF5Format.h"
 
 #include <DataExchangeFormat.h>
-#include <DataSource.h>
+#include "legacy/DataSource.h"
 #include <Hdf5SubsampleWidget.h>
 #include <Utilities.h>
 

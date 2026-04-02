@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineEditTransformWidget_h
 #define tomvizPipelineEditTransformWidget_h
 
-#include "tomviz_pipeline_export.h"
-
 #include <QWidget>
 
 namespace tomviz {
@@ -17,7 +15,7 @@ namespace pipeline {
 /// state to the transform's parameters.  The wrapper (TransformPropertiesPanel
 /// or TransformEditDialog) owns the Apply/OK/Cancel buttons and calls this
 /// slot when the user clicks them.
-class TOMVIZ_PIPELINE_EXPORT EditTransformWidget : public QWidget
+class EditTransformWidget : public QWidget
 {
   Q_OBJECT
 

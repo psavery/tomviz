@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineTransformEditDialog_h
 #define tomvizPipelineTransformEditDialog_h
 
-#include "tomviz_pipeline_export.h"
-
 #include "DeferredLinkInfo.h"
 
 #include <QDialog>
@@ -27,7 +25,7 @@ class TransformNode;
 ///     the pipeline. Cancel removes the transform and its input links.
 ///   - **Edit mode**: The transform already exists. Apply/OK re-applies
 ///     parameters and executes. Cancel just closes the dialog.
-class TOMVIZ_PIPELINE_EXPORT TransformEditDialog : public QDialog
+class TransformEditDialog : public QDialog
 {
   Q_OBJECT
 

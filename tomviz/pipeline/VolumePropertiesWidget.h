@@ -4,8 +4,6 @@
 #ifndef tomvizPipelineVolumePropertiesWidget_h
 #define tomvizPipelineVolumePropertiesWidget_h
 
-#include "tomviz_pipeline_export.h"
-
 #include <QWidget>
 
 class QCheckBox;
@@ -24,7 +22,7 @@ class OutputPort;
 class VolumeData;
 class VolumeScalarsModel;
 
-class TOMVIZ_PIPELINE_EXPORT VolumePropertiesWidget : public QWidget
+class VolumePropertiesWidget : public QWidget
 {
   Q_OBJECT
 

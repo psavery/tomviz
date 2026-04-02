@@ -4,8 +4,6 @@
 #ifndef tomvizPipelinePipelineUtils_h
 #define tomvizPipelinePipelineUtils_h
 
-#include "tomviz_pipeline_export.h"
-
 namespace tomviz {
 namespace pipeline {
 
@@ -17,11 +15,11 @@ class Pipeline;
 /// Walks downstream from the node through TransformNodes to find the end
 /// of that specific branch. If the node is a SinkNode, walks upstream first
 /// to find the feeding source/transform, then walks downstream from there.
-TOMVIZ_PIPELINE_EXPORT OutputPort* findBranchTip(Node* node);
+OutputPort* findBranchTip(Node* node);
 
 /// Find the tip output port using contextNode to select the right branch.
 /// If contextNode is null, falls back to the first source in the pipeline.
-TOMVIZ_PIPELINE_EXPORT OutputPort* findTipOutputPort(
+OutputPort* findTipOutputPort(
   Pipeline* pipeline, Node* contextNode);
 
 } // namespace pipeline

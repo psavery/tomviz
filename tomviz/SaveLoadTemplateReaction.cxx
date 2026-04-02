@@ -4,8 +4,8 @@
 #include "SaveLoadTemplateReaction.h"
 
 #include "ActiveObjects.h"
-#include "DataSource.h"
-#include "ModuleManager.h"
+#include "legacy/DataSource.h"
+#include "legacy/modules/ModuleManager.h"
 #include "RecentFilesMenu.h"
 #include "Utilities.h"
 

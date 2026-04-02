@@ -4,12 +4,12 @@
 #include "ModuleManager.h"
 
 #include "ActiveObjects.h"
-#include "DataSource.h"
-#include "operators/Operator.h"
+#include "../DataSource.h"
+#include "../operators/Operator.h"
 #include "LoadDataReaction.h"
 #include "ModuleFactory.h"
 #include "MoleculeSource.h"
-#include "Pipeline.h"
+#include "../Pipeline.h"
 #include "PythonGeneratedDatasetReaction.h"
 
 #include "pipeline/PortData.h"

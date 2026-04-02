@@ -9,10 +9,7 @@ include_directories(SYSTEM
   ${PARAVIEW_INCLUDE_DIRS}
   ${GTEST_INCLUDE_DIRS})
 include_directories(${PROJECT_SOURCE_DIR}/tomviz)
-include_directories(${PROJECT_SOURCE_DIR}/tomviz/legacy)
-include_directories(${PROJECT_SOURCE_DIR}/tomviz/legacy/modules)
-include_directories(${PROJECT_SOURCE_DIR}/tomviz/legacy/operators)
-include_directories(${PROJECT_SOURCE_DIR}/tomviz/legacy/core)
+include_directories(${PROJECT_SOURCE_DIR}/tomviz/pipeline)
 include_directories(${PROJECT_SOURCE_DIR}/tomviz/animations)
 include_directories(${PROJECT_SOURCE_DIR}/tomviz/loguru)
 include_directories(${PROJECT_SOURCE_DIR}/tomviz/acquisition)
@@ -77,18 +74,13 @@ create_test_executable(tomvizTests)
 
 target_link_libraries(tomvizTests Qt6::Test)
 
-# Pipeline library tests (standalone, no tomvizlib dependency)
-# Use BEFORE to ensure pipeline headers are found before tomviz/ headers
-# (which contain a different Pipeline.h).
+# Pipeline library tests
 set(_pipeline_pythonpath
   "${PROJECT_SOURCE_DIR}/tomviz/python${_separator}${_pythonpath}")
 add_executable(pipelineLibTests PipelineLibTest.cxx)
-target_include_directories(pipelineLibTests BEFORE PRIVATE
-  ${PROJECT_SOURCE_DIR}/tomviz/pipeline
-  ${PROJECT_BINARY_DIR}/tomviz/pipeline)
 target_link_libraries(pipelineLibTests
-  tomviz_pipeline pybind11::embed GTest::gtest
-  Qt6::Widgets Qt6::Test VTK::IOXML ${EXTRA_LINK_LIB})
+  tomvizlib pybind11::embed GTest::gtest
+  Qt6::Test ${EXTRA_LINK_LIB})
 target_compile_definitions(pipelineLibTests PRIVATE
   "TOMVIZ_PYTHON_DIR=\"${PROJECT_SOURCE_DIR}/tomviz/python\"")
 add_test(NAME "PipelineLib" COMMAND pipelineLibTests)
@@ -97,30 +89,14 @@ set_tests_properties("PipelineLib" PROPERTIES
 
 # Manual demo app for visually testing PipelineStripWidget
 add_executable(pipelineStripDemo PipelineStripWidgetDemo.cxx)
-target_include_directories(pipelineStripDemo BEFORE PRIVATE
-  ${PROJECT_SOURCE_DIR}/tomviz/pipeline
-  ${PROJECT_BINARY_DIR}/tomviz/pipeline)
-target_link_libraries(pipelineStripDemo tomviz_pipeline Qt6::Widgets)
+target_link_libraries(pipelineStripDemo tomvizlib)
 
 # Manual demo app for visually testing pipeline Sinks with ParaView views
 add_executable(pipelineSinkDemo PipelineSinkDemo.cxx)
-target_include_directories(pipelineSinkDemo BEFORE PRIVATE
-  ${PROJECT_SOURCE_DIR}/tomviz/pipeline
-  ${PROJECT_BINARY_DIR}/tomviz/pipeline)
-target_link_libraries(pipelineSinkDemo
-  tomviz_pipeline
-  ParaView::pqApplicationComponents
-  Qt6::Widgets)
+target_link_libraries(pipelineSinkDemo tomvizlib)
 
 # Manual demo app with full pipeline: source -> transform -> 3 sinks + properties
 add_executable(pipelineDemo PipelineDemo.cxx)
-target_include_directories(pipelineDemo BEFORE PRIVATE
-  ${PROJECT_SOURCE_DIR}/tomviz/pipeline
-  ${PROJECT_BINARY_DIR}/tomviz/pipeline)
 target_compile_definitions(pipelineDemo PRIVATE
   "TOMVIZ_PYTHON_DIR=\"${PROJECT_SOURCE_DIR}/tomviz/python\"")
-target_link_libraries(pipelineDemo
-  tomviz_pipeline
-  pybind11::embed
-  ParaView::pqApplicationComponents
-  Qt6::Widgets)
+target_link_libraries(pipelineDemo tomvizlib)

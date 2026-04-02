@@ -4,10 +4,10 @@
 #include "Module.h"
 
 #include "ActiveObjects.h"
-#include "DataSource.h"
+#include "../DataSource.h"
 #include "ModuleFactory.h"
 #include "MoleculeSource.h"
-#include "OperatorResult.h"
+#include "../operators/OperatorResult.h"
 #include "Utilities.h"
 
 #include <pqAnimationCue.h>

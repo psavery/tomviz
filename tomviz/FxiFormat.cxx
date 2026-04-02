@@ -3,7 +3,7 @@
 
 #include "FxiFormat.h"
 
-#include "DataSource.h"
+#include "legacy/DataSource.h"
 #include "GenericHDF5Format.h"
 #include "Utilities.h"
 

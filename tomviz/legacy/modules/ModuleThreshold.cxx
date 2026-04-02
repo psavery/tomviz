@@ -3,7 +3,7 @@
 
 #include "ModuleThreshold.h"
 
-#include "DataSource.h"
+#include "../DataSource.h"
 #include "DoubleSliderWidget.h"
 #include "Utilities.h"
 #include "pqProxiesWidget.h"
