@@ -255,6 +255,8 @@ set(SOURCES
   pipeline/InputPort.h
   pipeline/OutputPort.cxx
   pipeline/OutputPort.h
+  pipeline/VolumeOutputPort.cxx
+  pipeline/VolumeOutputPort.h
   pipeline/Link.cxx
   pipeline/Link.h
   pipeline/Node.cxx

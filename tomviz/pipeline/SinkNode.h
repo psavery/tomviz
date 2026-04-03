@@ -27,6 +27,12 @@ public:
 
 protected:
   virtual bool consume(const QMap<QString, PortData>& inputs) = 0;
+
+private slots:
+  void onIntermediateData();
+
+private:
+  void connectUpstreamIntermediate(InputPort* port);
 };
 
 } // namespace pipeline

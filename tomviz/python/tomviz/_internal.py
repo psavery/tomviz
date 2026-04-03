@@ -406,7 +406,7 @@ def convert_to_dataset(data):
 def convert_to_vtk_data_object(data):
     # This method will extract/convert certain data types to a vtkDataObject
 
-    from tomviz.internal_dataset import Dataset
+    from tomviz.dataset import Dataset
 
     if isinstance(data, vtkDataObject):
         # It is already a vtkDataObject

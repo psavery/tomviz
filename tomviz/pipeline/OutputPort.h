@@ -46,6 +46,13 @@ public:
   void clearData();
   bool hasData() const;
 
+  /// Push intermediate data during execution. Thread-safe: can be called
+  /// from a worker thread. The update is applied on the main thread
+  /// (blocking the caller until complete). Emits intermediateDataApplied()
+  /// after the data is applied. Subclasses override to handle specific
+  /// data types; the default implementation is a no-op.
+  virtual void setIntermediateData(const PortData& data);
+
   bool isStale() const;
   void setStale(bool stale);
 
@@ -55,6 +62,7 @@ signals:
   void dataChanged();
   void staleChanged(bool stale);
   void effectiveTypeChanged(PortType newType);
+  void intermediateDataApplied();
 
   /// Emitted when lightweight metadata (units, label, spacing, origin)
   /// changes on the data held by this port, without the image data itself

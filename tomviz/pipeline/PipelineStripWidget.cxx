@@ -1368,6 +1368,8 @@ QIcon PipelineStripWidget::stateIcon(Node* node) const
       return QIcon(QStringLiteral(":/pipeline/spinner.png"));
     case NodeExecState::Failed:
       return QIcon(QStringLiteral(":/pipeline/error.png"));
+    case NodeExecState::Canceled:
+      return QIcon(QStringLiteral(":/pipeline/canceled.png"));
     case NodeExecState::Idle:
       break;
   }

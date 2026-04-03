@@ -38,13 +38,18 @@ public slots:
         continue;
       }
 
+      // Skip nodes whose inputs are stale due to upstream failure/cancellation
+      if (node->anyInputStale()) {
+        continue;
+      }
+
       emit nodeStarted(node);
       bool success = node->execute();
       emit nodeFinished(node, success);
 
       if (!success) {
-        emit executionDone(false);
-        return;
+        // Mark downstream nodes stale so they are skipped.
+        node->markStale();
       }
     }
 

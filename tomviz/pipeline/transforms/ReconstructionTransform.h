@@ -21,6 +21,7 @@ public:
   ~ReconstructionTransform() override = default;
 
   QIcon icon() const override;
+  QWidget* getCustomProgressWidget(QWidget* parent) const override;
 
 signals:
   /// Emitted after each slice is reconstructed.

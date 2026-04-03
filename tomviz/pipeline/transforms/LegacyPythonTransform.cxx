@@ -6,6 +6,7 @@
 #include "CustomPythonTransformWidget.h"
 #include "InputPort.h"
 #include "OutputPort.h"
+#include "VolumeOutputPort.h"
 #include "PythonTransformEditorWidget.h"
 #include "TransformPropertiesWidget.h"
 #include "data/VolumeData.h"
@@ -64,9 +65,10 @@ QString LegacyPythonTransform::customWidgetID() const
 LegacyPythonTransform::LegacyPythonTransform(QObject* parent)
   : TransformNode(parent)
 {
-  // Always have volume in/out
+  // Always have volume in/out.  Use VolumeOutputPort so that
+  // setIntermediateData() can deep-copy live updates from Python.
   addInput("volume", PortType::ImageData);
-  addOutput("volume", PortType::ImageData);
+  addOutputPort(new VolumeOutputPort("volume", PortType::ImageData));
 }
 
 void LegacyPythonTransform::setJSONDescription(const QString& json)
@@ -83,6 +85,18 @@ QString LegacyPythonTransform::jsonDescription() const
 void LegacyPythonTransform::setScript(const QString& script)
 {
   m_script = script;
+
+  // Detect cancel/completion support from operator base class usage.
+  if (script.contains("CompletableOperator")) {
+    setSupportsCancel(true);
+    setSupportsCompletion(true);
+  } else if (script.contains("CancelableOperator")) {
+    setSupportsCancel(true);
+    setSupportsCompletion(false);
+  } else {
+    setSupportsCancel(false);
+    setSupportsCompletion(false);
+  }
 }
 
 QString LegacyPythonTransform::scriptSource() const
@@ -303,6 +317,24 @@ void LegacyPythonTransform::parseJSON()
     }
   }
 
+  // If the operator declares a child dataset, remap the primary output port
+  // to use the child's name and mark it as persistent.
+  if (obj.contains("children")) {
+    QJsonArray children = obj.value("children").toArray();
+    if (!children.isEmpty()) {
+      QJsonObject child = children.first().toObject();
+      m_childName = child.value("name").toString();
+      QString childLabel = child.value("label").toString();
+
+      auto* out = outputPort(m_primaryOutputName);
+      if (out && !m_childName.isEmpty()) {
+        out->setName(m_childName);
+        m_primaryOutputName = m_childName;
+        out->setTransient(false);
+      }
+    }
+  }
+
   // Override the primary volume port types if specified
   if (obj.contains("inputType")) {
     PortType pt = portTypeFromString(obj.value("inputType").toString());
@@ -313,7 +345,7 @@ void LegacyPythonTransform::parseJSON()
   if (obj.contains("outputType")) {
     PortType pt = portTypeFromString(obj.value("outputType").toString());
     if (pt != PortType::None) {
-      outputPort("volume")->setDeclaredType(pt);
+      outputPort(m_primaryOutputName)->setDeclaredType(pt);
     }
   }
 }
@@ -378,20 +410,79 @@ QMap<QString, PortData> LegacyPythonTransform::transform(
       py::object opClass = findOpClass(scriptModule);
 
       if (!opClass.is_none()) {
-        // Create a stub _operator_wrapper so that Progress properties work.
-        // SimpleNamespace supports arbitrary get/set attributes.
-        py::object stubWrapper = types.attr("SimpleNamespace")(
-          py::arg("progress_maximum") = 0,
-          py::arg("progress_value") = 0,
-          py::arg("progress_message") = py::str(""),
-          py::arg("progress_data") = py::none(),
-          py::arg("canceled") = false,
-          py::arg("completed") = false);
+        // Create a wrapper object that bridges Python progress/cancel
+        // property accesses back to the C++ Node API.
+        auto* node = this;
+        py::object builtins = py::module_::import("builtins");
+        py::object propertyFn = builtins.attr("property");
+        py::object typeFn = builtins.attr("type");
+
+        py::dict attrs;
+        attrs["progress_maximum"] = propertyFn(
+          py::cpp_function(
+            [node](py::object) -> int {
+              return node->totalProgressSteps();
+            }),
+          py::cpp_function(
+            [node](py::object, int v) {
+              node->setTotalProgressSteps(v);
+            }));
+        attrs["progress_value"] = propertyFn(
+          py::cpp_function(
+            [node](py::object) -> int { return node->progressStep(); }),
+          py::cpp_function(
+            [node](py::object, int v) { node->setProgressStep(v); }));
+        attrs["progress_message"] = propertyFn(
+          py::cpp_function(
+            [node](py::object) -> std::string {
+              return node->progressMessage().toStdString();
+            }),
+          py::cpp_function(
+            [node](py::object, const std::string& msg) {
+              node->setProgressMessage(QString::fromStdString(msg));
+            }));
+        auto* outPort = node->outputPort(node->m_primaryOutputName);
+        attrs["progress_data"] = propertyFn(
+          py::cpp_function([](py::object) -> py::object {
+            return py::none();
+          }),
+          py::cpp_function(
+            [outPort](py::object, py::object pyChild) {
+              if (pyChild.is_none() || !outPort) {
+                return;
+              }
+              // The value may be a PipelineDataset (wrapping a
+              // vtkImageData in _data_object) or a raw vtkDataObject
+              // (after convert_to_vtk_data_object in operators.py).
+              py::object dataObj = pyChild;
+              if (py::hasattr(pyChild, "_data_object")) {
+                dataObj = pyChild.attr("_data_object");
+              }
+              auto* childImage = vtkImageData::SafeDownCast(
+                vtkPythonUtil::GetPointerFromObject(
+                  dataObj.ptr(), "vtkObjectBase"));
+              if (!childImage) {
+                return;
+              }
+              auto vol = std::make_shared<VolumeData>(childImage);
+              PortData pd(std::any(vol), outPort->type());
+              // Release GIL before blocking on the main thread.
+              py::gil_scoped_release release;
+              outPort->setIntermediateData(pd);
+            }));
+        attrs["canceled"] = propertyFn(py::cpp_function(
+          [node](py::object) -> bool { return node->isCanceled(); }));
+        attrs["completed"] = propertyFn(py::cpp_function(
+          [node](py::object) -> bool { return node->isCompleted(); }));
+
+        py::object wrapperCls =
+          typeFn(py::str("_NodeWrapper"), py::make_tuple(), attrs);
+        py::object wrapper = wrapperCls();
 
         // Instantiate following the same pattern as find_transform_function:
         // cls.__new__(cls) → set _operator_wrapper → cls.__init__(o)
         py::object instance = opClass.attr("__new__")(opClass);
-        instance.attr("_operator_wrapper") = stubWrapper;
+        instance.attr("_operator_wrapper") = wrapper;
         opClass.attr("__init__")(instance);
 
         // Check which transform method was actually implemented
@@ -480,16 +571,38 @@ QMap<QString, PortData> LegacyPythonTransform::transform(
     // Call the transform function
     py::object pyResult = transformFunc(dataset, **kwargs);
 
-    // If return is None: the vtkImageData was modified in-place
-    // Wrap in new VolumeData and output
-    auto volume = std::make_shared<VolumeData>(outputImage.Get());
+    // Determine the output vtkImageData.
+    // Default: outputImage (deep copy of input, modified in-place by Python).
+    vtkSmartPointer<vtkImageData> outputData = outputImage.Get();
+
+    // If a child dataset was declared and returned in the dict, use its
+    // vtkImageData as the primary output instead.
+    if (!m_childName.isEmpty() && !pyResult.is_none() &&
+        py::isinstance<py::dict>(pyResult)) {
+      py::dict outputDict = pyResult.cast<py::dict>();
+      std::string childKey = m_childName.toStdString();
+      if (outputDict.contains(childKey)) {
+        py::object childObj = outputDict[py::str(childKey)];
+        if (py::hasattr(childObj, "_data_object")) {
+          py::object dataObj = childObj.attr("_data_object");
+          auto* childImage = vtkImageData::SafeDownCast(
+            vtkPythonUtil::GetPointerFromObject(
+              dataObj.ptr(), "vtkObjectBase"));
+          if (childImage) {
+            outputData = childImage;
+          }
+        }
+      }
+    }
+
+    auto volume = std::make_shared<VolumeData>(outputData);
     volume->setLabel(inputVolume->label());
     volume->setUnits(inputVolume->units());
 
-    auto* outPort = outputPort("volume");
+    auto* outPort = outputPort(m_primaryOutputName);
     PortType outType =
       outPort ? outPort->declaredType() : PortType::ImageData;
-    result["volume"] = PortData(std::any(volume), outType);
+    result[m_primaryOutputName] = PortData(std::any(volume), outType);
 
     // Extract result outputs (tables, molecules) from Python return dict
     if (!pyResult.is_none() && py::isinstance<py::dict>(pyResult)) {

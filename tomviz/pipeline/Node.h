@@ -16,6 +16,10 @@
 #include <QVariant>
 #include <QVariantMap>
 
+#include <atomic>
+
+class QWidget;
+
 namespace tomviz {
 namespace pipeline {
 
@@ -73,6 +77,44 @@ public:
 
   virtual bool execute();
 
+  /// Return the total number of progress steps. Zero means indeterminate.
+  int totalProgressSteps() const;
+  void setTotalProgressSteps(int steps);
+
+  /// Current progress step (0 to totalProgressSteps).
+  int progressStep() const;
+  void setProgressStep(int step);
+
+  /// Optional progress message shown in the progress dialog title.
+  QString progressMessage() const;
+  void setProgressMessage(const QString& message);
+
+  /// Reset progress state (steps, step, message) to defaults.
+  void resetProgress();
+
+  /// If the node has custom progress UI, return it parented to the given
+  /// widget. Otherwise return nullptr and a default QProgressBar will be used.
+  virtual QWidget* getCustomProgressWidget(QWidget*) const { return nullptr; }
+
+  /// Whether the node supports canceling mid-execution via cancelExecution().
+  bool supportsCancelingMidExecution() const;
+
+  /// Whether the node supports early completion via completeExecution().
+  bool supportsCompletionMidExecution() const;
+
+  /// True if cancellation has been requested (thread-safe).
+  bool isCanceled() const;
+
+  /// True if early completion has been requested (thread-safe).
+  bool isCompleted() const;
+
+public slots:
+  /// Request cancellation of an in-progress execution.
+  virtual void cancelExecution();
+
+  /// Request early completion of an in-progress execution.
+  virtual void completeExecution();
+
   /// Declare that the effective type of an output port follows the effective
   /// type of an input port.  Only meaningful when the output port is declared
   /// as ImageData.  If no explicit mapping is set for an ImageData output,
@@ -94,11 +136,21 @@ signals:
   void editingChanged(bool editing);
   void labelChanged();
   void breakpointChanged();
+  void progressStepChanged(int step);
+  void totalProgressStepsChanged(int steps);
+  void progressMessageChanged(const QString& message);
+  void executionCanceled();
+  void executionCompleted();
 
 protected:
+  void setSupportsCancel(bool b);
+  void setSupportsCompletion(bool b);
+  void resetExecutionFlags();
+
   void setExecState(NodeExecState state);
   InputPort* addInputPort(const QString& name, PortTypes acceptedTypes);
   OutputPort* addOutputPort(const QString& name, PortType type);
+  void addOutputPort(OutputPort* port);
 
 private:
   QString m_label;
@@ -110,6 +162,13 @@ private:
   QList<OutputPort*> m_outputPorts;
   QVariantMap m_properties;
   QMap<QString, QString> m_typeInferenceSources;
+  int m_totalProgressSteps = 0;
+  int m_progressStep = 0;
+  QString m_progressMessage;
+  bool m_supportsCancel = false;
+  bool m_supportsCompletion = false;
+  std::atomic<bool> m_canceled{false};
+  std::atomic<bool> m_completed{false};
 };
 
 } // namespace pipeline

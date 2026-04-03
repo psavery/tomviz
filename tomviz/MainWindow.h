@@ -27,6 +27,7 @@ class Module;
 class Operator;
 struct OperatorDescription;
 class OperatorResult;
+class ProgressDialogManager;
 
 namespace pipeline {
 class Link;
@@ -116,6 +117,7 @@ private:
   // New pipeline infrastructure
   pipeline::PipelineStripWidget* m_pipelineStrip = nullptr;
   pipeline::Pipeline* m_pipeline = nullptr;
+  ProgressDialogManager* m_progressDialogManager = nullptr;
   QMetaObject::Connection m_tipDataChangedConn;
   QMetaObject::Connection m_sinkColorMapChangedConn;
   QPointer<QWidget> m_dynamicPropertiesWidget;

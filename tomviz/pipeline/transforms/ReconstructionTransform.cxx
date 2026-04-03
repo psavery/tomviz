@@ -4,6 +4,8 @@
 #include "ReconstructionTransform.h"
 
 #include "data/VolumeData.h"
+#include "InputPort.h"
+#include "ReconstructionWidget.h"
 #include "TomographyReconstruction.h"
 #include "TomographyTiltSeries.h"
 
@@ -26,11 +28,40 @@ ReconstructionTransform::ReconstructionTransform(QObject* parent)
   addInput("tiltSeries", PortType::TiltSeries);
   addOutput("reconstruction", PortType::Volume);
   setLabel("Reconstruction");
+  setSupportsCancel(true);
 }
 
 QIcon ReconstructionTransform::icon() const
 {
   return QIcon(":/pqWidgets/Icons/pqExtractGrid.svg");
+}
+
+QWidget* ReconstructionTransform::getCustomProgressWidget(
+  QWidget* parent) const
+{
+  vtkImageData* inputImage = nullptr;
+  vtkSMProxy* colorMap = nullptr;
+
+  auto* input = inputPort("tiltSeries");
+  if (input && input->hasData()) {
+    auto vol = input->data().value<VolumeDataPtr>();
+    if (vol && vol->isValid()) {
+      inputImage = vol->imageData();
+      vol->initColorMap();
+      colorMap = vol->colorMap();
+    }
+  }
+
+  if (!inputImage) {
+    return nullptr;
+  }
+
+  auto* widget = new ReconstructionWidget(inputImage, colorMap, parent);
+  connect(this, &ReconstructionTransform::intermediateResults, widget,
+          &ReconstructionWidget::updateIntermediateResults);
+  connect(this, &Node::progressStepChanged, widget,
+          &ReconstructionWidget::updateProgress);
+  return widget;
 }
 
 QMap<QString, PortData> ReconstructionTransform::transform(
@@ -83,8 +114,9 @@ QMap<QString, PortData> ReconstructionTransform::transform(
   vtkDataArray* darray = reconstructionImage->GetPointData()->GetScalars();
   darray->SetName("scalars");
 
+  setTotalProgressSteps(numXSlices);
   float* reconstruction = static_cast<float*>(darray->GetVoidPointer(0));
-  for (int i = 0; i < numXSlices; ++i) {
+  for (int i = 0; i < numXSlices && !isCanceled(); ++i) {
     TomographyTiltSeries::getSinogram(imageData, i, &sinogramPtr[0]);
     TomographyReconstruction::unweightedBackProjection2(
       &sinogramPtr[0], tiltAngles.data(), &reconstructionPtr[0], numZSlices,
@@ -95,7 +127,12 @@ QMap<QString, PortData> ReconstructionTransform::transform(
           reconstructionPtr[k * numYSlices + j];
       }
     }
+    setProgressStep(i);
     emit intermediateResults(reconstructionPtr);
+  }
+
+  if (isCanceled()) {
+    return result;
   }
 
   auto volume = std::make_shared<VolumeData>(reconstructionImage.Get());

@@ -50,6 +50,8 @@ EditTransformWidget* TransformNode::createPropertiesWidget(
 
 bool TransformNode::execute()
 {
+  resetExecutionFlags();
+  resetProgress();
   setExecState(NodeExecState::Running);
 
   // Check that all input ports are connected and have data.
@@ -68,8 +70,14 @@ bool TransformNode::execute()
 
   auto outputs = transform(inputs);
 
+  // If cancellation was requested during transform, discard the result.
+  if (isCanceled()) {
+    setExecState(NodeExecState::Canceled);
+    return false;
+  }
+
   // An empty output map when the node declares output ports means the
-  // transform failed (e.g. a Python exception was caught).
+  // transform failed.
   if (outputs.isEmpty() && !outputPorts().isEmpty()) {
     setExecState(NodeExecState::Failed);
     return false;

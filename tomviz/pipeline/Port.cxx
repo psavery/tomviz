@@ -17,6 +17,11 @@ QString Port::name() const
   return m_name;
 }
 
+void Port::setName(const QString& name)
+{
+  m_name = name;
+}
+
 Node* Port::node() const
 {
   return qobject_cast<Node*>(parent());

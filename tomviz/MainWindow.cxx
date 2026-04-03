@@ -660,8 +660,6 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   AxesReaction::addAllActionsToToolBar(m_ui->utilitiesToolbar);
 
   ResetReaction::reset();
-  // Initialize worker manager
-  new ProgressDialogManager(this);
 
   // Add the acquisition client experimentally.
   m_ui->actionAcquisition->setEnabled(false);
@@ -1271,6 +1269,8 @@ void MainWindow::initPipeline()
   m_pipeline = p;
   m_pipelineStrip->setPipeline(p);
   ActiveObjects::instance().setPipeline(p);
+  m_progressDialogManager = new ProgressDialogManager(this);
+  m_progressDialogManager->setPipeline(p);
 
   // Wire renderNeeded() → pqView::render() for all sink nodes.
   // pqView::render() coalesces multiple calls via an internal timer
@@ -1287,6 +1287,15 @@ void MainWindow::initPipeline()
     }
   };
   connect(p, &pipeline::Pipeline::nodeAdded, this, connectSinkRender);
+
+  // Render all views when a port pushes intermediate data (live updates).
+  connect(p, &pipeline::Pipeline::nodeAdded, this,
+          [](pipeline::Node* node) {
+            for (auto* port : node->outputPorts()) {
+              connect(port, &pipeline::OutputPort::intermediateDataApplied,
+                      []() { pqApplicationCore::instance()->render(); });
+            }
+          });
 
   // Select newly added nodes so the tip output port updates
   connect(p, &pipeline::Pipeline::nodeAdded, this,

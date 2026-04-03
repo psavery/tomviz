@@ -11,7 +11,8 @@ enum class NodeExecState
 {
   Idle,
   Running,
-  Failed
+  Failed,
+  Canceled
 };
 
 } // namespace pipeline

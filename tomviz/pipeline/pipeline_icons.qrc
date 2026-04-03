@@ -12,5 +12,7 @@
     <file alias="breakpoint@2x.png">../icons/breakpoint@2x.png</file>
     <file alias="error.png">../icons/error_notification.png</file>
     <file alias="error@2x.png">../icons/error_notification@2x.png</file>
+    <file alias="canceled.png">../icons/red_cross.png</file>
+    <file alias="canceled@2x.png">../icons/red_cross@2x.png</file>
   </qresource>
 </RCC>

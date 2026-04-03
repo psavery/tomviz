@@ -93,6 +93,8 @@ private:
   QStringList m_resultNames;
   QStringList m_resultTypes;
   QStringList m_datasetInputNames;
+  QString m_primaryOutputName = QStringLiteral("volume");
+  QString m_childName;  // Non-empty when JSON declares a "children" entry
 
   static QMap<QString, CustomWidgetInfo> s_customWidgetMap;
 };

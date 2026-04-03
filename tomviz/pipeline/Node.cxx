@@ -37,9 +37,6 @@ void Node::markStale()
   }
   m_state = NodeState::Stale;
   emit stateChanged(m_state);
-  if (m_execState == NodeExecState::Failed) {
-    setExecState(NodeExecState::Idle);
-  }
 
   for (auto* output : m_outputPorts) {
     output->setStale(true);
@@ -58,9 +55,6 @@ void Node::markCurrent()
 {
   m_state = NodeState::Current;
   emit stateChanged(m_state);
-  if (m_execState == NodeExecState::Failed) {
-    setExecState(NodeExecState::Idle);
-  }
 }
 
 NodeExecState Node::execState() const
@@ -219,6 +213,94 @@ bool Node::execute()
   return true;
 }
 
+int Node::totalProgressSteps() const
+{
+  return m_totalProgressSteps;
+}
+
+void Node::setTotalProgressSteps(int steps)
+{
+  m_totalProgressSteps = steps;
+  emit totalProgressStepsChanged(steps);
+}
+
+int Node::progressStep() const
+{
+  return m_progressStep;
+}
+
+void Node::setProgressStep(int step)
+{
+  m_progressStep = step;
+  emit progressStepChanged(step);
+}
+
+QString Node::progressMessage() const
+{
+  return m_progressMessage;
+}
+
+void Node::setProgressMessage(const QString& message)
+{
+  m_progressMessage = message;
+  emit progressMessageChanged(message);
+}
+
+void Node::resetProgress()
+{
+  m_totalProgressSteps = 0;
+  m_progressStep = 0;
+  m_progressMessage.clear();
+}
+
+bool Node::supportsCancelingMidExecution() const
+{
+  return m_supportsCancel;
+}
+
+bool Node::supportsCompletionMidExecution() const
+{
+  return m_supportsCompletion;
+}
+
+bool Node::isCanceled() const
+{
+  return m_canceled.load();
+}
+
+bool Node::isCompleted() const
+{
+  return m_completed.load();
+}
+
+void Node::cancelExecution()
+{
+  m_canceled = true;
+  emit executionCanceled();
+}
+
+void Node::completeExecution()
+{
+  m_completed = true;
+  emit executionCompleted();
+}
+
+void Node::resetExecutionFlags()
+{
+  m_canceled = false;
+  m_completed = false;
+}
+
+void Node::setSupportsCancel(bool b)
+{
+  m_supportsCancel = b;
+}
+
+void Node::setSupportsCompletion(bool b)
+{
+  m_supportsCompletion = b;
+}
+
 void Node::setTypeInferenceSource(const QString& outputPortName,
                                   const QString& inputPortName)
 {
@@ -282,6 +364,12 @@ OutputPort* Node::addOutputPort(const QString& name, PortType type)
   auto* port = new OutputPort(name, type, this);
   m_outputPorts.append(port);
   return port;
+}
+
+void Node::addOutputPort(OutputPort* port)
+{
+  port->setParent(this);
+  m_outputPorts.append(port);
 }
 
 } // namespace pipeline

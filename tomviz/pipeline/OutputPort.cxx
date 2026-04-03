@@ -69,6 +69,8 @@ bool OutputPort::hasData() const
   return m_data.isValid();
 }
 
+void OutputPort::setIntermediateData(const PortData& /*data*/) {}
+
 bool OutputPort::isStale() const
 {
   return m_stale;

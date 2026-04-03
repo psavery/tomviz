@@ -44,14 +44,18 @@ void DefaultExecutor::execute(const QList<Node*>& nodes, Pipeline* pipeline)
       continue;
     }
 
+    // Skip nodes whose inputs are stale due to upstream failure/cancellation
+    if (node->anyInputStale()) {
+      continue;
+    }
+
     emit nodeExecutionStarted(node);
     bool success = node->execute();
     emit nodeExecutionFinished(node, success);
 
     if (!success) {
-      m_running = false;
-      emit executionComplete(false);
-      return;
+      // Mark downstream nodes stale so they are skipped.
+      node->markStale();
     }
   }
 
