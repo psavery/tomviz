@@ -6,6 +6,7 @@
 
 #include "PortType.h"
 
+#include <QHash>
 #include <QIcon>
 #include <QList>
 #include <QPainterPath>
@@ -99,6 +100,18 @@ public:
   using LinkValidator = std::function<bool(OutputPort*, InputPort*)>;
   void setLinkValidator(LinkValidator validator);
 
+  /// Dimming: blend element colors toward the background.
+  /// dimLevel 0 = normal, 1 = fully faded to background.
+  void setDimLevel(qreal level);
+  qreal dimLevel() const;
+  void setNodeDimmed(Node* node, bool dimmed);
+  void setPortDimmed(OutputPort* port, bool dimmed);
+  void setLinkDimmed(Link* link, bool dimmed);
+  bool isNodeDimmed(Node* node) const;
+  bool isPortDimmed(OutputPort* port) const;
+  bool isLinkDimmed(Link* link) const;
+  void clearDimming();
+
   QSize minimumSizeHint() const override;
   QSize sizeHint() const override;
 
@@ -157,11 +170,14 @@ private:
   QColor badgeColor(Node* node) const;
   QColor portTypeColor(OutputPort* port) const;
   QColor portTypeColor(PortType type) const;
+  QColor dimmed(const QColor& color) const; // blend toward background
+  void updateDimming(); // recompute dimming based on current selection
   QPainterPath buildLinkPath(OutputPort* fromPort, InputPort* toPort,
                              int gutterX) const;
   QIcon stateIcon(Node* node) const;
   QIcon portTypeIcon(OutputPort* port) const;
   QRect breakpointRect(const QRect& cardRect) const;
+  QRect menuButtonRect(const QRect& cardRect) const;
   QRect actionButtonRect(const QRect& cardRect) const;
 
   Pipeline* m_pipeline = nullptr;
@@ -190,25 +206,43 @@ private:
   QPoint m_dragCurrentPos;
   bool m_draggingLink = false;
   int m_gutterLaneCount = 0;
+  QHash<OutputPort*, int> m_outputGutterLanes;
+  QHash<InputPort*, int> m_inputGutterLanes;
+
+  // Dimming state
+  qreal m_dimLevel = 0.75;
+  QSet<Node*> m_dimmedNodes;
+  QSet<OutputPort*> m_dimmedPorts;
+  QSet<Link*> m_dimmedLinks;
 
   // Layout constants
   static constexpr int GutterWidth = 24;
-  static constexpr int NodeCardHeight = 28;
-  static constexpr int PortCardHeight = 22;
+  static constexpr int NodeCardHeight = 32;
   static constexpr int CardSpacing = 4;
-  static constexpr int ConnectionSpacing = 8;
-  static constexpr int DirectConnectionSpacing = 14;
-  static constexpr int PortIndent = 8;
+  static constexpr int DirectConnectionSpacing = 3; // per-side spacing for straight lines
+  static constexpr int OutputSquareOverlap = 4; // pixels of output square inside node
+  static constexpr int PortIndent = 16;
   static constexpr int CardRadius = 4;
   static constexpr int BadgeSize = 16;
   static constexpr int DotRadius = 5;
   static constexpr int DotSpacing = 12; // center-to-center between adjacent dots
   static constexpr int DotMargin = 6;      // left margin for dots on node cards
+  static constexpr int OutputSquareEdge = 20;
+  static constexpr int OutputSquareRadius = 4;
+  static constexpr int OutputSquareSpacing = 27; // center-to-center
+  static constexpr int OutputSquareIconSize = 16;
+  static constexpr int PortCardHeight = OutputSquareEdge; // match collapsed port square
+  static constexpr int PortCardSpacing = CardSpacing + 2; // vertical gap between port cards
   static constexpr int HeaderIconSize = 14; // icon size in node card header
   static constexpr int HeaderRightPad = 4;  // right padding in node card header
   static constexpr int HeaderExpandWidth = 16; // expand toggle width
+  static constexpr int HeaderButtonGap = 8; // gap between button groups (with separator)
+  static constexpr int HeaderButtonSpacing = 2; // gap between adjacent buttons
   static constexpr int LaneSpacing = 6;              // spacing between parallel lines
-  static constexpr int DotClearance = DotRadius * 2; // initial offset from dot before first lane
+  static constexpr int PortClearance = 5;
+  static constexpr int DotClearance = DotRadius + PortClearance;
+  static constexpr int SquareClearance = OutputSquareEdge / 2 + PortClearance;
+  static constexpr int LinkCornerRadius = 4;
   static constexpr int IndentWidth = 8;
   static constexpr int Padding = 4;
 };

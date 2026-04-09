@@ -37,5 +37,9 @@
         <file>icons/breakpoint@2x.png</file>
         <file>icons/play.png</file>
         <file>icons/play@2x.png</file>
+        <file>icons/port_tiltseries.svg</file>
+        <file>icons/port_imagedata.svg</file>
+        <file>icons/port_table.svg</file>
+        <file>icons/port_molecule.svg</file>
     </qresource>
 </RCC>

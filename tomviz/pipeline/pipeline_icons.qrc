@@ -14,5 +14,9 @@
     <file alias="error@2x.png">../icons/error_notification@2x.png</file>
     <file alias="canceled.png">../icons/red_cross.png</file>
     <file alias="canceled@2x.png">../icons/red_cross@2x.png</file>
+    <file alias="port_tiltseries.svg">../icons/port_tiltseries.svg</file>
+    <file alias="port_imagedata.svg">../icons/port_imagedata.svg</file>
+    <file alias="port_table.svg">../icons/port_table.svg</file>
+    <file alias="port_molecule.svg">../icons/port_molecule.svg</file>
   </qresource>
 </RCC>
