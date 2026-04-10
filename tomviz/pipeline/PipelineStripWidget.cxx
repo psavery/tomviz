@@ -10,6 +10,7 @@
 #include "OutputPort.h"
 #include "Pipeline.h"
 #include "PortType.h"
+#include "SinkGroupNode.h"
 #include "SinkNode.h"
 #include "SourceNode.h"
 #include "TransformNode.h"
@@ -81,6 +82,10 @@ PipelineStripWidget::PipelineStripWidget(QWidget* parent) : QWidget(parent)
   setFocusPolicy(Qt::StrongFocus);
   setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
   setMouseTracking(true);
+  setAutoFillBackground(true);
+  QPalette pal = palette();
+  pal.setColor(QPalette::Window, Qt::white);
+  setPalette(pal);
 
   m_spinnerTimer.setInterval(50);
   connect(&m_spinnerTimer, &QTimer::timeout, this, [this]() {
@@ -139,9 +144,9 @@ qreal PipelineStripWidget::dimLevel() const
 void PipelineStripWidget::setNodeDimmed(Node* node, bool dim)
 {
   if (dim) {
-    m_dimmedNodes.insert(node);
+    m_brightNodes.remove(node);
   } else {
-    m_dimmedNodes.remove(node);
+    m_brightNodes.insert(node);
   }
   update();
 }
@@ -149,9 +154,9 @@ void PipelineStripWidget::setNodeDimmed(Node* node, bool dim)
 void PipelineStripWidget::setPortDimmed(OutputPort* port, bool dim)
 {
   if (dim) {
-    m_dimmedPorts.insert(port);
+    m_brightPorts.remove(port);
   } else {
-    m_dimmedPorts.remove(port);
+    m_brightPorts.insert(port);
   }
   update();
 }
@@ -159,33 +164,34 @@ void PipelineStripWidget::setPortDimmed(OutputPort* port, bool dim)
 void PipelineStripWidget::setLinkDimmed(Link* link, bool dim)
 {
   if (dim) {
-    m_dimmedLinks.insert(link);
+    m_brightLinks.remove(link);
   } else {
-    m_dimmedLinks.remove(link);
+    m_brightLinks.insert(link);
   }
   update();
 }
 
 bool PipelineStripWidget::isNodeDimmed(Node* node) const
 {
-  return m_dimmedNodes.contains(node);
+  return m_hasBrightSelection && !m_brightNodes.contains(node);
 }
 
 bool PipelineStripWidget::isPortDimmed(OutputPort* port) const
 {
-  return m_dimmedPorts.contains(port);
+  return m_hasBrightSelection && !m_brightPorts.contains(port);
 }
 
 bool PipelineStripWidget::isLinkDimmed(Link* link) const
 {
-  return m_dimmedLinks.contains(link);
+  return m_hasBrightSelection && !m_brightLinks.contains(link);
 }
 
 void PipelineStripWidget::clearDimming()
 {
-  m_dimmedNodes.clear();
-  m_dimmedPorts.clear();
-  m_dimmedLinks.clear();
+  m_hasBrightSelection = false;
+  m_brightNodes.clear();
+  m_brightPorts.clear();
+  m_brightLinks.clear();
   update();
 }
 
@@ -196,39 +202,10 @@ void PipelineStripWidget::updateDimming()
     return;
   }
 
-  // Collect all nodes, output ports, and links in the pipeline
-  QSet<Node*> allNodes;
-  QSet<OutputPort*> allPorts;
-  for (auto& item : m_layout) {
-    if (item.type == LayoutItem::NodeCard) {
-      allNodes.insert(item.node);
-      for (auto* port : item.node->outputPorts()) {
-        allPorts.insert(port);
-      }
-    }
-  }
-  QSet<Link*> allLinks;
-  for (auto* link : m_pipeline->links()) {
-    allLinks.insert(link);
-  }
-
-  // Determine which elements should NOT be dimmed
-  QSet<Node*> brightNodes;
-  QSet<OutputPort*> brightPorts;
-  QSet<Link*> brightLinks;
-
-  // Helper: mark a link and both endpoints as bright
-  auto brightenLink = [&](Link* link) {
-    brightLinks.insert(link);
-    auto* outPort = link->from();
-    brightPorts.insert(outPort);
-    brightNodes.insert(outPort->node());
-    brightNodes.insert(link->to()->node());
-  };
-
+  // --- Determine the seed for the hop-based brightening ---
+  Node* seedNode = nullptr;
   bool hasSelection = false;
 
-  // Output port selected (collapsed dot or expanded port card)
   OutputPort* selPort = m_selectedPort;
   if (!selPort && m_selectedIndex >= 0 && m_selectedIndex < m_layout.size() &&
       m_layout[m_selectedIndex].type == LayoutItem::PortCard) {
@@ -237,33 +214,19 @@ void PipelineStripWidget::updateDimming()
 
   if (selPort) {
     hasSelection = true;
-    brightPorts.insert(selPort);
-    brightNodes.insert(selPort->node());
-    for (auto* link : selPort->links()) {
-      brightenLink(link);
-    }
+    seedNode = selPort->node();
   } else if (m_selectedLink) {
     hasSelection = true;
-    brightenLink(m_selectedLink);
-  } else if (m_selectedIndex >= 0 && m_selectedIndex < m_layout.size() &&
-             m_layout[m_selectedIndex].type == LayoutItem::NodeCard) {
-    // Node selected
+    // A link connects two nodes; treat the source node as seed
+    seedNode = m_selectedLink->from()->node();
+  } else if (m_selectedMember) {
     hasSelection = true;
-    auto* node = m_layout[m_selectedIndex].node;
-    brightNodes.insert(node);
-    // All output ports of this node
-    for (auto* port : node->outputPorts()) {
-      brightPorts.insert(port);
-      for (auto* link : port->links()) {
-        brightenLink(link);
-      }
-    }
-    // All input ports of this node
-    for (auto* inPort : node->inputPorts()) {
-      if (inPort->link()) {
-        brightenLink(inPort->link());
-      }
-    }
+    seedNode = m_selectedMember;
+  } else if (m_selectedIndex >= 0 && m_selectedIndex < m_layout.size() &&
+             (m_layout[m_selectedIndex].type == LayoutItem::NodeCard ||
+              m_layout[m_selectedIndex].type == LayoutItem::GroupMemberCard)) {
+    hasSelection = true;
+    seedNode = m_layout[m_selectedIndex].node;
   }
 
   if (!hasSelection) {
@@ -271,26 +234,125 @@ void PipelineStripWidget::updateDimming()
     return;
   }
 
-  // Dim everything that isn't bright
-  m_dimmedNodes.clear();
-  m_dimmedPorts.clear();
-  m_dimmedLinks.clear();
+  // --- BFS brightening with hop counting ---
+  //
+  // Hop rules:
+  //   node  → port it owns    : 1 hop   (unless the node is a SinkGroupNode → 0)
+  //   port  → node it belongs : 1 hop   (unless the node is a SinkGroupNode → 0)
+  //   port  → linked port     : 0 hops  (following a link is free)
+  //
+  // When the starting point is a node, the hop budget is maxHops + 1 to
+  // account for the initial node → port step that hasn't happened yet.
+  constexpr int maxHops = 1;
 
-  for (auto* node : allNodes) {
-    if (!brightNodes.contains(node)) {
-      m_dimmedNodes.insert(node);
+  m_brightNodes.clear();
+  m_brightPorts.clear();
+  m_brightLinks.clear();
+
+  // Cost to enter a node from one of its ports.
+  auto entryCost = [](Node* n) -> int {
+    return qobject_cast<SinkGroupNode*>(n) ? 0 : 1;
+  };
+
+  // Cost to go from a node to its output ports.
+  // If the seed is a member of a SinkGroupNode, exiting that group to its
+  // output ports costs 1 — this prevents lateral shortcuts between siblings.
+  auto outputExitCost = [seedNode](Node* n) -> int {
+    if (auto* sg = qobject_cast<SinkGroupNode*>(n)) {
+      for (auto* sink : sg->sinks()) {
+        if (static_cast<Node*>(sink) == seedNode) {
+          return 1;
+        }
+      }
+      return 0;
+    }
+    return 1;
+  };
+
+  // Cost to go from a node to its input ports.
+  auto inputExitCost = [](Node* n) -> int {
+    return qobject_cast<SinkGroupNode*>(n) ? 0 : 1;
+  };
+
+  // Helper: try to add a node to the BFS queue if within hop budget.
+  QList<QPair<Node*, int>> queue;
+  int budget = maxHops;
+  auto enqueueNode = [&](Node* n, int hops) {
+    if (hops <= budget && !m_brightNodes.contains(n)) {
+      m_brightNodes.insert(n);
+      queue.append({ n, hops });
+    }
+  };
+
+  // --- Phase 1: Seed from the selected element ---
+  if (selPort) {
+    // Port selected: seed from the port at 0 hops.
+    m_brightPorts.insert(selPort);
+    enqueueNode(selPort->node(), entryCost(selPort->node()));
+    for (auto* link : selPort->links()) {
+      m_brightLinks.insert(link);
+      enqueueNode(link->to()->node(), entryCost(link->to()->node()));
+    }
+  } else if (m_selectedLink) {
+    // Link selected: seed from both endpoint ports.
+    m_brightLinks.insert(m_selectedLink);
+    m_brightPorts.insert(m_selectedLink->from());
+    enqueueNode(m_selectedLink->from()->node(),
+                entryCost(m_selectedLink->from()->node()));
+    enqueueNode(m_selectedLink->to()->node(),
+                entryCost(m_selectedLink->to()->node()));
+  } else {
+    // Node or member selected: extra hop budget for the initial node→port step.
+    budget = maxHops + 1;
+    enqueueNode(seedNode, 0);
+  }
+
+  // --- Phase 2: BFS from seeded nodes ---
+  while (!queue.isEmpty()) {
+    auto [node, hops] = queue.takeFirst();
+
+    // Downstream: node →(outputExitCost) port →(free) link →(free) port →(entryCost) node
+    int outPortHops = hops + outputExitCost(node);
+    if (outPortHops <= budget) {
+      for (auto* port : node->outputPorts()) {
+        m_brightPorts.insert(port);
+        for (auto* link : port->links()) {
+          auto* dst = link->to()->node();
+          int dstHops = outPortHops + entryCost(dst);
+          if (dstHops <= budget) {
+            m_brightLinks.insert(link);
+            if (!m_brightNodes.contains(dst)) {
+              m_brightNodes.insert(dst);
+              queue.append({ dst, dstHops });
+            }
+          }
+        }
+      }
+    }
+
+    // Upstream: node →(inputExitCost) port →(free) link →(free) port →(entryCost) node
+    int inPortHops = hops + inputExitCost(node);
+    if (inPortHops <= budget) {
+      for (auto* inPort : node->inputPorts()) {
+        if (!inPort->link()) {
+          continue;
+        }
+        auto* link = inPort->link();
+        auto* src = link->from()->node();
+        int srcHops = inPortHops + entryCost(src);
+        if (srcHops <= budget) {
+          m_brightLinks.insert(link);
+          m_brightPorts.insert(link->from());
+          if (!m_brightNodes.contains(src)) {
+            m_brightNodes.insert(src);
+            queue.append({ src, srcHops });
+          }
+        }
+      }
     }
   }
-  for (auto* port : allPorts) {
-    if (!brightPorts.contains(port)) {
-      m_dimmedPorts.insert(port);
-    }
-  }
-  for (auto* link : allLinks) {
-    if (!brightLinks.contains(link)) {
-      m_dimmedLinks.insert(link);
-    }
-  }
+
+  m_hasBrightSelection = true;
 }
 
 Node* PipelineStripWidget::selectedNode() const
@@ -408,6 +470,18 @@ void PipelineStripWidget::setSelectedLink(Link* link)
 
 void PipelineStripWidget::setTipOutputPort(OutputPort* port)
 {
+  // If the tip targets a SinkGroupNode passthrough port, redirect to the
+  // upstream port that the group's corresponding input is connected to.
+  if (port && qobject_cast<SinkGroupNode*>(port->node())) {
+    auto* groupNode = static_cast<SinkGroupNode*>(port->node());
+    int idx = groupNode->outputPorts().indexOf(port);
+    if (idx >= 0 && idx < groupNode->inputPorts().size()) {
+      auto* inp = groupNode->inputPorts()[idx];
+      if (inp->link() && inp->link()->from()) {
+        port = inp->link()->from();
+      }
+    }
+  }
   if (m_tipOutputPort != port) {
     m_tipOutputPort = port;
     update();
@@ -475,9 +549,14 @@ void PipelineStripWidget::rebuildLayout()
   // Remember what was selected so we can restore after rebuilding
   Node* selectedNode = nullptr;
   OutputPort* selectedPort = nullptr;
+  Node* selectedMember = m_selectedMember;
   if (m_selectedIndex >= 0 && m_selectedIndex < m_layout.size()) {
     auto& sel = m_layout[m_selectedIndex];
-    selectedNode = sel.node;
+    if (sel.type == LayoutItem::GroupMemberCard) {
+      selectedMember = sel.node; // preserve as member selection
+    } else {
+      selectedNode = sel.node;
+    }
     selectedPort = sel.port; // non-null only for PortCard
   }
   // Also consider a selected output dot
@@ -499,6 +578,17 @@ void PipelineStripWidget::rebuildLayout()
   int y = Padding;
   int cardWidth = qMax(width() - GutterWidth - Padding * 2, 80);
 
+  // Collect sinks that are members of a SinkGroupNode — they are rendered
+  // inside their group card and should be excluded from the main layout.
+  QSet<Node*> groupedSinks;
+  for (auto* node : sorted) {
+    if (auto* sg = qobject_cast<SinkGroupNode*>(node)) {
+      for (auto* sink : sg->sinks()) {
+        groupedSinks.insert(sink);
+      }
+    }
+  }
+
   bool anyExecuting = false;
 
   Node* prevNode = nullptr;
@@ -507,6 +597,11 @@ void PipelineStripWidget::rebuildLayout()
   for (int ni = 0; ni < sorted.size(); ++ni) {
     auto* node = sorted[ni];
     auto* nextNode = (ni + 1 < sorted.size()) ? sorted[ni + 1] : nullptr;
+
+    // Skip sinks that are rendered inside a SinkGroupNode card.
+    if (groupedSinks.contains(node)) {
+      continue;
+    }
 
     // --- Input side clearance ---
     auto inputs = node->inputPorts();
@@ -543,8 +638,15 @@ void PipelineStripWidget::rebuildLayout()
 
     // Port sub-cards (shown only when node is expanded)
     auto outputs = node->outputPorts();
+    auto* sinkGroup = qobject_cast<SinkGroupNode*>(node);
+    QList<SinkNode*> groupMembers;
+    if (sinkGroup) {
+      groupMembers = sinkGroup->sinks();
+    }
     bool showPorts =
-      !outputs.isEmpty() && m_expandedNodes.contains(node);
+      !outputs.isEmpty() && m_expandedNodes.contains(node) && !sinkGroup;
+    bool showMembers = sinkGroup && m_expandedNodes.contains(node) &&
+                       !groupMembers.isEmpty();
 
     // Compute node card height: base height + port cards inside when expanded
     int nodeHeight = NodeCardHeight;
@@ -552,6 +654,11 @@ void PipelineStripWidget::rebuildLayout()
       nodeHeight += PortCardSpacing; // top padding below header
       nodeHeight += outputs.size() * PortCardHeight;
       nodeHeight += (outputs.size() - 1) * PortCardSpacing;
+      nodeHeight += PortIndent; // bottom padding
+    } else if (showMembers) {
+      nodeHeight += PortCardSpacing; // top padding below header
+      nodeHeight += groupMembers.size() * PortCardHeight;
+      nodeHeight += (groupMembers.size() - 1) * PortCardSpacing;
       nodeHeight += PortIndent; // bottom padding
     }
 
@@ -570,7 +677,8 @@ void PipelineStripWidget::rebuildLayout()
       }
     }
     if (hasConnectedInput && !qobject_cast<SourceNode*>(node)) {
-      if (qobject_cast<SinkNode*>(node)) {
+      if (qobject_cast<SinkNode*>(node) || sinkGroup) {
+        // SinkNode and SinkGroupNode follow the same indentation rules
         bool connectedToTransform = false;
         for (auto* inp : inputs) {
           if (inp->link() &&
@@ -608,12 +716,30 @@ void PipelineStripWidget::rebuildLayout()
         m_layout.append(portItem);
         portY += PortCardHeight + PortCardSpacing;
       }
+    } else if (showMembers) {
+      int portY = y + NodeCardHeight + PortCardSpacing;
+      for (auto* member : groupMembers) {
+        LayoutItem memberItem;
+        memberItem.type = LayoutItem::GroupMemberCard;
+        memberItem.node = member; // the member sink (for selection)
+        memberItem.rect =
+          QRect(GutterWidth + Padding + indent + PortIndent, portY,
+                cardWidth - indent - 2 * PortIndent, PortCardHeight);
+        m_layout.append(memberItem);
+        portY += PortCardHeight + PortCardSpacing;
+      }
     }
     y += nodeHeight;
 
     // --- Output side clearance ---
-    if (!showPorts && !outputs.isEmpty()) {
-      // Physical overflow of output squares below the node rect
+    bool hasBottomDots = !showPorts && !outputs.isEmpty();
+    // SinkGroupNode also shows member circles in collapsed mode
+    if (!hasBottomDots && sinkGroup && !showMembers &&
+        !groupMembers.isEmpty()) {
+      hasBottomDots = true;
+    }
+    if (hasBottomDots) {
+      // Physical overflow of output shapes below the node rect
       y += OutputSquareEdge - OutputSquareOverlap;
 
       // Link routing space
@@ -674,9 +800,25 @@ void PipelineStripWidget::rebuildLayout()
     if (!found) {
       m_selectedPort = selectedPort;
     }
+  } else if (selectedMember) {
+    // A collapsed group member was selected — try to find it as an
+    // expanded GroupMemberCard, otherwise keep it as m_selectedMember.
+    bool found = false;
+    for (int i = 0; i < m_layout.size(); ++i) {
+      if (m_layout[i].type == LayoutItem::GroupMemberCard &&
+          m_layout[i].node == selectedMember) {
+        m_selectedIndex = i;
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      m_selectedMember = selectedMember;
+    }
   } else if (selectedNode) {
     for (int i = 0; i < m_layout.size(); ++i) {
-      if (m_layout[i].type == LayoutItem::NodeCard &&
+      if ((m_layout[i].type == LayoutItem::NodeCard ||
+           m_layout[i].type == LayoutItem::GroupMemberCard) &&
           m_layout[i].node == selectedNode) {
         m_selectedIndex = i;
         break;
@@ -789,11 +931,13 @@ void PipelineStripWidget::disconnectPipeline()
 
 void PipelineStripWidget::selectItem(int index)
 {
-  if (index == m_selectedIndex && !m_selectedPort && !m_selectedLink) {
+  if (index == m_selectedIndex && !m_selectedPort && !m_selectedLink &&
+      !m_selectedMember) {
     return;
   }
   m_selectedIndex = index;
   m_selectedPort = nullptr;
+  m_selectedMember = nullptr;
   m_selectedLink = nullptr;
   updateDimming();
   update();
@@ -829,11 +973,13 @@ int PipelineStripWidget::selectedIndex() const
 
 void PipelineStripWidget::selectLink(Link* link)
 {
-  if (link == m_selectedLink && m_selectedIndex < 0 && !m_selectedPort) {
+  if (link == m_selectedLink && m_selectedIndex < 0 && !m_selectedPort &&
+      !m_selectedMember) {
     return;
   }
   m_selectedIndex = -1;
   m_selectedPort = nullptr;
+  m_selectedMember = nullptr;
   m_selectedLink = link;
   updateDimming();
   update();
@@ -870,6 +1016,8 @@ void PipelineStripWidget::paintEvent(QPaintEvent* event)
 
     if (item.type == LayoutItem::NodeCard) {
       paintNodeCard(painter, item, selected, hovered);
+    } else if (item.type == LayoutItem::GroupMemberCard) {
+      paintGroupMemberCard(painter, item, selected, hovered);
     } else {
       paintPortCard(painter, item, selected, hovered);
     }
@@ -899,7 +1047,7 @@ void PipelineStripWidget::paintNodeCard(QPainter& painter,
   auto* node = item.node;
 
   // Node-type colored border; fill only when selected
-  bool isDim = m_dimmedNodes.contains(node);
+  bool isDim = isNodeDimmed(node);
   QColor fg = selected ? palette().highlightedText().color()
                        : palette().buttonText().color();
   QColor borderColor = badgeColor(node);
@@ -1103,7 +1251,7 @@ void PipelineStripWidget::paintPortCard(QPainter& painter,
 
   QColor color = portTypeColor(port);
   bool isTip = (m_tipOutputPort == port);
-  bool isDim = m_dimmedPorts.contains(port);
+  bool isDim = isPortDimmed(port);
   if (isDim) {
     color = dimmed(color);
   }
@@ -1153,6 +1301,9 @@ void PipelineStripWidget::paintPortCard(QPainter& painter,
 
   // Port name
   QColor fg = selected ? Qt::white : palette().text().color();
+  if (isDim) {
+    fg = dimmed(fg);
+  }
   QFont portFont = font();
   portFont.setPixelSize(11);
   painter.setFont(portFont);
@@ -1166,6 +1317,9 @@ void PipelineStripWidget::paintPortCard(QPainter& painter,
   int menuCY = r.top() + r.height() / 2;
 
   QColor dotColor = selected ? Qt::white : palette().buttonText().color();
+  if (isDim) {
+    dotColor = dimmed(dotColor);
+  }
   qreal dotR = 1.5;
   int dotGap = 4;
   painter.setBrush(dotColor);
@@ -1176,6 +1330,119 @@ void PipelineStripWidget::paintPortCard(QPainter& painter,
 
   int labelWidth = r.right() - menuPad - menuAreaWidth - x;
   QString name = fm.elidedText(port->name(), Qt::ElideRight, labelWidth);
+  painter.setPen(fg);
+  painter.drawText(QRect(x, r.top(), labelWidth, r.height()),
+                   Qt::AlignVCenter | Qt::AlignLeft, name);
+}
+
+void PipelineStripWidget::paintGroupMemberCard(QPainter& painter,
+                                                const LayoutItem& item,
+                                                bool selected, bool hovered)
+{
+  Q_UNUSED(hovered);
+  auto r = item.rect;
+  auto* memberNode = item.node;
+
+  QColor color = badgeColor(memberNode);
+  bool isDim = isNodeDimmed(memberNode);
+  if (isDim) {
+    color = dimmed(color);
+  }
+
+  // Card background and border
+  QPainterPath cardPath;
+  cardPath.addRoundedRect(QRectF(r), CardRadius - 1, CardRadius - 1);
+  painter.setBrush(selected ? color : palette().window());
+  painter.setPen(QPen(color, 1.5));
+  painter.drawPath(cardPath);
+
+  // Sink icon on the left — keep original colors, only tint white when selected
+  int iconSize = r.height() - 4;
+  int iconX = r.left() + 2;
+  int iconY = r.top() + (r.height() - iconSize) / 2;
+  QRect iconRect(iconX, iconY, iconSize, iconSize);
+  QIcon sinkIcon = memberNode->icon();
+  if (selected) {
+    paintTintedIcon(painter, sinkIcon, iconRect, Qt::white);
+  } else if (isDim) {
+    painter.setOpacity(1.0 - m_dimLevel);
+    sinkIcon.paint(&painter, iconRect);
+    painter.setOpacity(1.0);
+  } else {
+    sinkIcon.paint(&painter, iconRect);
+  }
+
+  int x = r.left() + r.height() + 4;
+
+  QColor fg = selected ? Qt::white : palette().text().color();
+  if (isDim) {
+    fg = dimmed(fg);
+  }
+
+  // Right side layout follows node header pattern (right to left):
+  //   visibility toggle | separator | dot menu | leave-group icon
+  // Positions mirror the header: toggle → sep → menu → buttons
+  int btnY = r.top() + (r.height() - HeaderIconSize) / 2;
+  int cy = r.top() + r.height() / 2;
+  int toggleX = r.right() - HeaderExpandWidth - HeaderRightPad;
+  int sepX = toggleX - HeaderButtonGap / 2;
+  int menuX = toggleX - HeaderButtonGap - HeaderIconSize;
+  int leaveX = menuX - HeaderButtonSpacing - HeaderIconSize;
+
+  // 1. Visibility toggle (rightmost, same position as expand toggle)
+  QIcon actIcon = memberNode->actionIcon();
+  if (!actIcon.isNull()) {
+    QRect actRect(toggleX, btnY, HeaderIconSize, HeaderIconSize);
+    if (selected) {
+      paintTintedIcon(painter, actIcon, actRect, fg);
+    } else if (isDim) {
+      painter.setOpacity(1.0 - m_dimLevel);
+      actIcon.paint(&painter, actRect);
+      painter.setOpacity(1.0);
+    } else {
+      actIcon.paint(&painter, actRect);
+    }
+  }
+
+  // 2. Separator — same style as node header
+  QColor sepColor = selected ? fg : color;
+  sepColor.setAlphaF(isDim ? sepColor.alphaF() * 0.5 : 0.5);
+  painter.setPen(QPen(sepColor, 1.0));
+  int sepTop = r.top() + 4;
+  int sepBot = r.bottom() - 4;
+  painter.drawLine(sepX, sepTop, sepX, sepBot);
+
+  // 3. Dot menu
+  QColor dotColor = fg;
+  qreal dotR = 1.5;
+  int dotGap = 4;
+  int dotCX = menuX + HeaderIconSize / 2;
+  painter.setBrush(dotColor);
+  painter.setPen(Qt::NoPen);
+  painter.drawEllipse(QPointF(dotCX, cy - dotGap), dotR, dotR);
+  painter.drawEllipse(QPointF(dotCX, cy), dotR, dotR);
+  painter.drawEllipse(QPointF(dotCX, cy + dotGap), dotR, dotR);
+
+  // 4. Leave-group icon
+  QRect leaveRect(leaveX, btnY, HeaderIconSize, HeaderIconSize);
+  QIcon leaveIcon(QStringLiteral(":/pipeline/icon_leave.svg"));
+  if (selected) {
+    paintTintedIcon(painter, leaveIcon, leaveRect, fg);
+  } else if (isDim) {
+    painter.setOpacity(1.0 - m_dimLevel);
+    leaveIcon.paint(&painter, leaveRect);
+    painter.setOpacity(1.0);
+  } else {
+    leaveIcon.paint(&painter, leaveRect);
+  }
+
+  // Label
+  QFont labelFont = font();
+  labelFont.setPixelSize(11);
+  painter.setFont(labelFont);
+  QFontMetrics fm(labelFont);
+  int labelWidth = leaveX - HeaderButtonSpacing - x;
+  QString name = fm.elidedText(memberNode->label(), Qt::ElideRight, labelWidth);
   painter.setPen(fg);
   painter.drawText(QRect(x, r.top(), labelWidth, r.height()),
                    Qt::AlignVCenter | Qt::AlignLeft, name);
@@ -1194,8 +1461,20 @@ QPoint PipelineStripWidget::outputDotPos(Node* node, int portIndex,
                                          const QRect& nodeRect) const
 {
   int startX = nodeRect.left() + PortIndent;
-  int x = (node->outputPorts().size() <= 1) ? startX
-                                            : startX + portIndex * OutputSquareSpacing;
+  int nOutputs = node->outputPorts().size();
+
+  // For SinkGroupNode, output port dots come after member circles
+  // in collapsed mode, or alone when expanded.
+  int offset = 0;
+  if (auto* sg = qobject_cast<SinkGroupNode*>(node)) {
+    if (!m_expandedNodes.contains(node)) {
+      offset = sg->sinks().size();
+    }
+  }
+  int totalItems = offset + nOutputs;
+  int idx = offset + portIndex;
+
+  int x = (totalItems <= 1) ? startX : startX + idx * OutputSquareSpacing;
   int y = nodeRect.bottom() + (OutputSquareEdge / 2 - OutputSquareOverlap);
   return QPoint(x, y);
 }
@@ -1248,7 +1527,7 @@ void PipelineStripWidget::paintInputDots(QPainter& painter,
     return;
   }
 
-  bool nodeDim = m_dimmedNodes.contains(node);
+  bool nodeDim = isNodeDimmed(node);
   for (int i = 0; i < inputs.size(); ++i) {
     auto* inPort = inputs[i];
     QColor color;
@@ -1269,7 +1548,11 @@ void PipelineStripWidget::paintInputDots(QPainter& painter,
       }
       color = portTypeColor(primaryType);
     }
-    if (nodeDim) {
+    // An input port is dimmed when its incoming link is dimmed, or when
+    // it has no link and its node is dimmed.
+    bool inputDim = inPort->link() ? isLinkDimmed(inPort->link())
+                                   : nodeDim;
+    if (inputDim) {
       color = dimmed(color);
     }
     QPoint pos = inputDotPos(node, i, item.rect);
@@ -1296,65 +1579,144 @@ void PipelineStripWidget::paintOutputDots(QPainter& painter,
 {
   auto* node = item.node;
   auto outputs = node->outputPorts();
+  auto* sinkGroup = qobject_cast<SinkGroupNode*>(node);
+
+  // For non-group nodes, skip entirely if expanded (ports shown as cards)
+  if (!sinkGroup && m_expandedNodes.contains(node)) {
+    return;
+  }
+
+  bool expanded = m_expandedNodes.contains(node);
+  int half = OutputSquareEdge / 2;
+
+  // --- SinkGroupNode: draw member circles in collapsed mode ---
+  if (sinkGroup && !expanded) {
+    auto members = sinkGroup->sinks();
+    int startX = item.rect.left() + PortIndent;
+    int totalItems = members.size() + outputs.size();
+    int dotY = item.rect.bottom() + (OutputSquareEdge / 2 - OutputSquareOverlap);
+
+    for (int i = 0; i < members.size(); ++i) {
+      auto* member = members[i];
+      int x = (totalItems <= 1) ? startX : startX + i * OutputSquareSpacing;
+      QPoint pos(x, dotY);
+      QColor color = badgeColor(member);
+      if (isNodeDimmed(member)) {
+        color = dimmed(color);
+      }
+      bool isSelected = (m_selectedMember == member);
+
+      if (isSelected) {
+        // Selection outline
+        painter.setBrush(palette().window());
+        painter.setPen(QPen(palette().highlight().color(), 1.5));
+        painter.drawEllipse(pos, half + 3, half + 3);
+        // Filled circle
+        painter.setBrush(color);
+        painter.setPen(QPen(color, 1.5));
+        painter.drawEllipse(pos, half, half);
+      } else {
+        painter.setBrush(palette().window());
+        painter.setPen(QPen(color, 1.5));
+        painter.drawEllipse(pos, half, half);
+      }
+
+      // Member sink icon inside the circle — original colors, white when selected
+      QIcon sinkIcon = member->icon();
+      QRect iconRect(pos.x() - OutputSquareIconSize / 2,
+                     pos.y() - OutputSquareIconSize / 2,
+                     OutputSquareIconSize, OutputSquareIconSize);
+      if (isSelected) {
+        paintTintedIcon(painter, sinkIcon, iconRect, Qt::white);
+      } else if (isNodeDimmed(member)) {
+        painter.setOpacity(1.0 - m_dimLevel);
+        sinkIcon.paint(&painter, iconRect);
+        painter.setOpacity(1.0);
+      } else {
+        sinkIcon.paint(&painter, iconRect);
+      }
+    }
+  }
+
+  // --- Draw output port dots ("+" circles for SinkGroupNode) ---
   if (outputs.isEmpty()) {
     return;
   }
 
-  // Don't draw output dots on the node if ports are shown as cards
-  if (m_expandedNodes.contains(node)) {
-    return;
-  }
-
-  int half = OutputSquareEdge / 2;
   for (int i = 0; i < outputs.size(); ++i) {
     QColor color = portTypeColor(outputs[i]);
-    if (m_dimmedPorts.contains(outputs[i])) {
+    if (isPortDimmed(outputs[i])) {
       color = dimmed(color);
     }
     bool isSelected = (m_selectedPort == outputs[i]);
     bool isTip = (m_tipOutputPort == outputs[i]);
     QPoint pos = outputDotPos(node, i, item.rect);
 
-    // Outlined rounded square centered on pos
-    QRect sqRect(pos.x() - half, pos.y() - half,
-                 OutputSquareEdge, OutputSquareEdge);
+    if (sinkGroup) {
+      // Draw a circle with "+" for sink group passthrough ports
+      int r = half;
+      if (isSelected) {
+        painter.setBrush(palette().window());
+        painter.setPen(QPen(palette().highlight().color(), 1.5));
+        painter.drawEllipse(pos, r + 3, r + 3);
+        painter.setBrush(color);
+        painter.setPen(QPen(color, 1.5));
+        painter.drawEllipse(pos, r, r);
+      } else if (isTip) {
+        painter.setBrush(palette().window());
+        painter.setPen(QPen(Qt::red, 1.5));
+        painter.drawEllipse(pos, r + 3, r + 3);
+        painter.setBrush(palette().window());
+        painter.setPen(QPen(color, 1.5));
+        painter.drawEllipse(pos, r, r);
+      } else {
+        painter.setBrush(palette().window());
+        painter.setPen(QPen(color, 1.5));
+        painter.drawEllipse(pos, r, r);
+      }
 
-    if (isSelected) {
-      // Selection outline (drawn first, behind the port square)
-      painter.setBrush(palette().window());
-      painter.setPen(QPen(palette().highlight().color(), 1.5));
-      QRect selRect = sqRect.adjusted(-3, -3, 3, 3);
-      painter.drawRoundedRect(selRect, OutputSquareRadius + 2,
-                              OutputSquareRadius + 2);
-      // Selected: filled with port color
-      painter.setBrush(color);
-      painter.setPen(QPen(color, 1.5));
-      painter.drawRoundedRect(sqRect, OutputSquareRadius, OutputSquareRadius);
-    } else if (isTip) {
-      // Tip outline (drawn first, behind the port square)
-      painter.setBrush(palette().window());
-      painter.setPen(QPen(Qt::red, 1.5));
-      QRect tipRect = sqRect.adjusted(-3, -3, 3, 3);
-      painter.drawRoundedRect(tipRect, OutputSquareRadius + 2,
-                              OutputSquareRadius + 2);
-      // Normal: outlined with port color, window background
-      painter.setBrush(palette().window());
-      painter.setPen(QPen(color, 1.5));
-      painter.drawRoundedRect(sqRect, OutputSquareRadius, OutputSquareRadius);
+      // Draw "+" inside the circle
+      QColor plusColor = isSelected ? Qt::white : color;
+      painter.setPen(QPen(plusColor, 1.5));
+      int arm = 4;
+      painter.drawLine(pos.x() - arm, pos.y(), pos.x() + arm, pos.y());
+      painter.drawLine(pos.x(), pos.y() - arm, pos.x(), pos.y() + arm);
     } else {
-      // Normal: outlined with port color, window background
-      painter.setBrush(palette().window());
-      painter.setPen(QPen(color, 1.5));
-      painter.drawRoundedRect(sqRect, OutputSquareRadius, OutputSquareRadius);
-    }
+      // Outlined rounded square centered on pos
+      QRect sqRect(pos.x() - half, pos.y() - half,
+                   OutputSquareEdge, OutputSquareEdge);
 
-    // Port icon inside the square
-    QIcon icon = portTypeIcon(outputs[i]);
-    QRect iconRect(pos.x() - OutputSquareIconSize / 2,
-                   pos.y() - OutputSquareIconSize / 2,
-                   OutputSquareIconSize, OutputSquareIconSize);
-    QColor iconColor = isSelected ? Qt::white : color;
-    paintTintedIcon(painter, icon, iconRect, iconColor);
+      if (isSelected) {
+        painter.setBrush(palette().window());
+        painter.setPen(QPen(palette().highlight().color(), 1.5));
+        QRect selRect = sqRect.adjusted(-3, -3, 3, 3);
+        painter.drawRoundedRect(selRect, OutputSquareRadius + 2,
+                                OutputSquareRadius + 2);
+        painter.setBrush(color);
+        painter.setPen(QPen(color, 1.5));
+        painter.drawRoundedRect(sqRect, OutputSquareRadius, OutputSquareRadius);
+      } else if (isTip) {
+        painter.setBrush(palette().window());
+        painter.setPen(QPen(Qt::red, 1.5));
+        QRect tipRect = sqRect.adjusted(-3, -3, 3, 3);
+        painter.drawRoundedRect(tipRect, OutputSquareRadius + 2,
+                                OutputSquareRadius + 2);
+        painter.setBrush(palette().window());
+        painter.setPen(QPen(color, 1.5));
+        painter.drawRoundedRect(sqRect, OutputSquareRadius, OutputSquareRadius);
+      } else {
+        painter.setBrush(palette().window());
+        painter.setPen(QPen(color, 1.5));
+        painter.drawRoundedRect(sqRect, OutputSquareRadius, OutputSquareRadius);
+      }
+
+      QIcon icon = portTypeIcon(outputs[i]);
+      QRect iconRect(pos.x() - OutputSquareIconSize / 2,
+                     pos.y() - OutputSquareIconSize / 2,
+                     OutputSquareIconSize, OutputSquareIconSize);
+      QColor iconColor = isSelected ? Qt::white : color;
+      paintTintedIcon(painter, icon, iconRect, iconColor);
+    }
   }
   painter.setBrush(Qt::NoBrush);
 }
@@ -1610,7 +1972,7 @@ void PipelineStripWidget::paintConnections(QPainter& painter)
   for (auto& lg : m_linkGeometries) {
     bool hovered = (lg.link == m_hoveredLink);
     bool selected = (lg.link == m_selectedLink);
-    bool isDim = m_dimmedLinks.contains(lg.link);
+    bool isDim = isLinkDimmed(lg.link);
     qreal baseWidth = 3.0;
 
     QColor linkColor = isDim ? dimmed(lg.color) : lg.color;
@@ -1643,16 +2005,33 @@ OutputPort* PipelineStripWidget::outputPortHitTest(const QPoint& pos) const
   int half = OutputSquareEdge / 2;
   int margin = 2; // extra hit margin
   for (auto& item : m_layout) {
-    if (item.type == LayoutItem::NodeCard &&
-        !m_expandedNodes.contains(item.node)) {
+    if (item.type == LayoutItem::NodeCard) {
+      bool isSinkGroup = qobject_cast<SinkGroupNode*>(item.node) != nullptr;
+      bool isExpanded = m_expandedNodes.contains(item.node);
+
+      // For non-group nodes, skip output dots when expanded (shown as cards)
+      if (isExpanded && !isSinkGroup) {
+        continue;
+      }
+      // For non-group collapsed nodes, or SinkGroupNode (any state): hit test
       auto outs = item.node->outputPorts();
       for (int i = 0; i < outs.size(); ++i) {
         QPoint center = outputDotPos(item.node, i, item.rect);
-        QRect hitRect(center.x() - half - margin, center.y() - half - margin,
-                      OutputSquareEdge + 2 * margin,
-                      OutputSquareEdge + 2 * margin);
-        if (hitRect.contains(pos)) {
-          return outs[i];
+        if (isSinkGroup) {
+          // Circular hit test for the "+" circle
+          int r = half + margin;
+          int dx = pos.x() - center.x();
+          int dy = pos.y() - center.y();
+          if (dx * dx + dy * dy <= r * r) {
+            return outs[i];
+          }
+        } else {
+          QRect hitRect(center.x() - half - margin, center.y() - half - margin,
+                        OutputSquareEdge + 2 * margin,
+                        OutputSquareEdge + 2 * margin);
+          if (hitRect.contains(pos)) {
+            return outs[i];
+          }
         }
       }
     } else if (item.type == LayoutItem::PortCard) {
@@ -1742,6 +2121,9 @@ QColor PipelineStripWidget::badgeColor(Node* node) const
   if (qobject_cast<SourceNode*>(node)) {
     return QColor(76, 175, 80); // green
   }
+  if (qobject_cast<SinkGroupNode*>(node)) {
+    return QColor(255, 100, 30); // orange-red (slightly warmer than sinks)
+  }
   if (qobject_cast<TransformNode*>(node)) {
     return QColor(33, 150, 243); // blue
   }
@@ -1754,7 +2136,7 @@ QColor PipelineStripWidget::badgeColor(Node* node) const
 QIcon PipelineStripWidget::portTypeIcon(OutputPort* port) const
 {
   if (!port) {
-    return QIcon(QStringLiteral(":/icons/pqInspect.png"));
+    return QIcon(QStringLiteral(":/pipeline/pqInspect.png"));
   }
   switch (port->type()) {
     case PortType::TiltSeries:
@@ -1767,7 +2149,7 @@ QIcon PipelineStripWidget::portTypeIcon(OutputPort* port) const
     case PortType::Molecule:
       return QIcon(QStringLiteral(":/pipeline/port_molecule.svg"));
     default:
-      return QIcon(QStringLiteral(":/icons/pqInspect.png"));
+      return QIcon(QStringLiteral(":/pipeline/pqInspect.png"));
   }
 }
 
@@ -1886,6 +2268,43 @@ void PipelineStripWidget::mousePressEvent(QMouseEvent* event)
       return;
     }
 
+    // Check for collapsed group member circle click
+    {
+      int half = OutputSquareEdge / 2;
+      int margin = 2;
+      for (auto& li : m_layout) {
+        if (li.type != LayoutItem::NodeCard) {
+          continue;
+        }
+        auto* sg = qobject_cast<SinkGroupNode*>(li.node);
+        if (!sg || m_expandedNodes.contains(sg)) {
+          continue;
+        }
+        auto members = sg->sinks();
+        int startX = li.rect.left() + PortIndent;
+        int totalItems = members.size() + sg->outputPorts().size();
+        int dotY =
+          li.rect.bottom() + (OutputSquareEdge / 2 - OutputSquareOverlap);
+        for (int i = 0; i < members.size(); ++i) {
+          int x = (totalItems <= 1) ? startX
+                                    : startX + i * OutputSquareSpacing;
+          int dx = event->pos().x() - x;
+          int dy = event->pos().y() - dotY;
+          int r = half + margin;
+          if (dx * dx + dy * dy <= r * r) {
+            m_selectedIndex = -1;
+            m_selectedPort = nullptr;
+            m_selectedLink = nullptr;
+            m_selectedMember = members[i];
+            updateDimming();
+            update();
+            emit nodeSelected(members[i]);
+            return;
+          }
+        }
+      }
+    }
+
     int idx = hitTest(event->pos());
 
     // Check clicks on node card action areas
@@ -1901,13 +2320,18 @@ void PipelineStripWidget::mousePressEvent(QMouseEvent* event)
         return;
       }
 
-      // Menu button (three dots) — open context menu
+      // Menu button (three dots) — open context menu without changing selection
       QRect menuRect = menuButtonRect(cardRect);
       if (menuRect.contains(event->pos())) {
-        selectItem(idx);
-        QPoint globalPos = mapToGlobal(
-          QPoint(menuRect.right(), menuRect.bottom()));
-        showContextMenu(globalPos);
+        QMenu menu(this);
+        if (m_nodeMenuProvider) {
+          m_nodeMenuProvider(node, menu);
+        }
+        if (!menu.isEmpty()) {
+          QPoint globalPos = mapToGlobal(
+            QPoint(menuRect.right(), menuRect.bottom()));
+          menu.exec(globalPos);
+        }
         return;
       }
 
@@ -1927,6 +2351,61 @@ void PipelineStripWidget::mousePressEvent(QMouseEvent* event)
           update();
           return;
         }
+      }
+    }
+
+    // Check clicks on group member card action areas.
+    // Layout mirrors node header: toggle → sep → menu → leave-group
+    if (idx >= 0 && m_layout[idx].type == LayoutItem::GroupMemberCard) {
+      auto* memberNode = m_layout[idx].node;
+      auto& cr = m_layout[idx].rect;
+      int btnY = cr.top() + (cr.height() - HeaderIconSize) / 2;
+      int toggleX = cr.right() - HeaderExpandWidth - HeaderRightPad;
+      int menuX = toggleX - HeaderButtonGap - HeaderIconSize;
+      int leaveX = menuX - HeaderButtonSpacing - HeaderIconSize;
+
+      // Visibility toggle
+      if (!memberNode->actionIcon().isNull()) {
+        QRect actRect(toggleX, btnY, HeaderIconSize, HeaderIconSize);
+        if (actRect.contains(event->pos())) {
+          memberNode->triggerAction();
+          update();
+          return;
+        }
+      }
+
+      // Menu dots — open context menu without changing selection
+      QRect menuRect(menuX, btnY, HeaderIconSize, HeaderIconSize);
+      if (menuRect.contains(event->pos()) && m_nodeMenuProvider) {
+        QMenu menu(this);
+        m_nodeMenuProvider(memberNode, menu);
+        if (!menu.isEmpty()) {
+          QPoint globalPos = mapToGlobal(
+            QPoint(menuRect.right(), menuRect.bottom()));
+          menu.exec(globalPos);
+        }
+        return;
+      }
+
+      // Leave-group icon
+      QRect leaveRect(leaveX, btnY, HeaderIconSize, HeaderIconSize);
+      if (leaveRect.contains(event->pos())) {
+        // Find the SinkGroupNode this member belongs to.
+        for (auto* inPort : memberNode->inputPorts()) {
+          if (!inPort->link()) {
+            continue;
+          }
+          auto* group = qobject_cast<SinkGroupNode*>(
+            inPort->link()->from()->node());
+          if (group) {
+            if (m_selectedMember == memberNode) {
+              m_selectedMember = nullptr;
+            }
+            emit leaveGroupRequested(memberNode, group);
+            break;
+          }
+        }
+        return;
       }
     }
 
@@ -1954,12 +2433,16 @@ void PipelineStripWidget::mouseReleaseEvent(QMouseEvent* event)
         emit linkRequested(m_dragFromPort, m_dragToPort);
       }
     } else {
-      // Was a click on output dot (no drag) — select it
-      m_selectedIndex = -1;
-      m_selectedPort = m_dragFromPort;
-      m_selectedLink = nullptr;
-      updateDimming();
-      emit portSelected(m_dragFromPort);
+      // Was a click on output dot (no drag) — select it.
+      // SinkGroupNode passthrough ports are not individually selectable.
+      if (!qobject_cast<SinkGroupNode*>(m_dragFromPort->node())) {
+        m_selectedIndex = -1;
+        m_selectedPort = m_dragFromPort;
+        m_selectedMember = nullptr;
+        m_selectedLink = nullptr;
+        updateDimming();
+        emit portSelected(m_dragFromPort);
+      }
     }
     m_dragFromPort = nullptr;
     m_dragToPort = nullptr;
@@ -2031,7 +2514,9 @@ void PipelineStripWidget::contextMenuEvent(QContextMenuEvent* event)
       }
       return;
     }
-    if (item.type == LayoutItem::NodeCard && m_nodeMenuProvider) {
+    if ((item.type == LayoutItem::NodeCard ||
+         item.type == LayoutItem::GroupMemberCard) &&
+        m_nodeMenuProvider) {
       selectItem(idx);
       QMenu menu(this);
       m_nodeMenuProvider(item.node, menu);
@@ -2076,7 +2561,9 @@ void PipelineStripWidget::showContextMenu(const QPoint& globalPos)
       }
       return;
     }
-    if (item.type == LayoutItem::NodeCard && m_nodeMenuProvider) {
+    if ((item.type == LayoutItem::NodeCard ||
+         item.type == LayoutItem::GroupMemberCard) &&
+        m_nodeMenuProvider) {
       QMenu menu(this);
       m_nodeMenuProvider(item.node, menu);
       if (!menu.isEmpty()) {

@@ -28,6 +28,7 @@
 #include "pipeline/PortData.h"
 #include "pipeline/PortType.h"
 #include "pipeline/PortUtils.h"
+#include "pipeline/SinkGroupNode.h"
 #include "pipeline/SourceNode.h"
 #include "pipeline/data/VolumeData.h"
 #include "pipeline/sinks/OutlineSink.h"
@@ -610,18 +611,23 @@ void LoadDataReaction::sourceNodeAdded(pipeline::SourceNode* source,
   }
 
   if (defaultModules && view) {
-    // Add default sinks (Outline + Volume)
+    // Create a sink group connected to the source, then add default sinks
+    auto* group = new pipeline::SinkGroupNode();
+    group->addPassthrough("volume", pipeline::PortType::ImageData);
+    pip->addNode(group);
+    pip->createLink(source->outputPorts()[0], group->inputPorts()[0]);
+
     auto* outline = new pipeline::OutlineSink();
     outline->setLabel("Outline");
     outline->initialize(view);
     pip->addNode(outline);
-    pip->createLink(source->outputPorts()[0], outline->inputPorts()[0]);
+    pip->createLink(group->outputPorts()[0], outline->inputPorts()[0]);
 
     auto* volume = new pipeline::VolumeSink();
     volume->setLabel("Volume");
     volume->initialize(view);
     pip->addNode(volume);
-    pip->createLink(source->outputPorts()[0], volume->inputPorts()[0]);
+    pip->createLink(group->outputPorts()[0], volume->inputPorts()[0]);
   }
 
   // Execute the pipeline (renders the data)

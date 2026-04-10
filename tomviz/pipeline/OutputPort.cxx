@@ -101,5 +101,10 @@ void OutputPort::removeLink(Link* link)
   emit connectionChanged();
 }
 
+bool OutputPort::canAcceptLink(InputPort* /*to*/) const
+{
+  return true;
+}
+
 } // namespace pipeline
 } // namespace tomviz

@@ -267,6 +267,10 @@ set(SOURCES
   pipeline/TransformNode.h
   pipeline/SinkNode.cxx
   pipeline/SinkNode.h
+  pipeline/SinkGroupNode.cxx
+  pipeline/SinkGroupNode.h
+  pipeline/PassthroughOutputPort.cxx
+  pipeline/PassthroughOutputPort.h
   pipeline/Pipeline.cxx
   pipeline/Pipeline.h
   pipeline/PipelineExecutor.cxx

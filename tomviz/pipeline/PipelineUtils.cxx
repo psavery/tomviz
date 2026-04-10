@@ -6,6 +6,7 @@
 #include "Node.h"
 #include "OutputPort.h"
 #include "Pipeline.h"
+#include "SinkGroupNode.h"
 #include "SinkNode.h"
 #include "SourceNode.h"
 #include "TransformNode.h"
@@ -19,9 +20,10 @@ OutputPort* findBranchTip(Node* node)
     return nullptr;
   }
 
-  // If it's a sink, step upstream to the node feeding it
+  // If it's a sink or sink group, step upstream to the node feeding it
   Node* start = node;
-  while (dynamic_cast<SinkNode*>(start)) {
+  while (dynamic_cast<SinkNode*>(start) ||
+         dynamic_cast<SinkGroupNode*>(start)) {
     auto upstream = start->upstreamNodes();
     if (upstream.isEmpty()) {
       return nullptr;
@@ -35,11 +37,15 @@ OutputPort* findBranchTip(Node* node)
 
   OutputPort* tip = start->outputPorts()[0];
 
-  // Walk downstream through transforms to the end of this branch
+  // Walk downstream through transforms to the end of this branch.
+  // SinkGroupNode is treated as terminal (not followed).
   Node* current = start;
   while (true) {
     TransformNode* nextTransform = nullptr;
     for (auto* downstream : current->downstreamNodes()) {
+      if (dynamic_cast<SinkGroupNode*>(downstream)) {
+        continue; // skip sink groups
+      }
       if (auto* xf = dynamic_cast<TransformNode*>(downstream)) {
         nextTransform = xf;
         break;

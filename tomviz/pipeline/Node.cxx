@@ -198,7 +198,7 @@ QVariantMap Node::properties() const
 
 QIcon Node::icon() const
 {
-  return QIcon(QStringLiteral(":/icons/pqInspect.png"));
+  return QIcon(QStringLiteral(":/pipeline/pqInspect.png"));
 }
 
 QIcon Node::actionIcon() const

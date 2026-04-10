@@ -13,6 +13,7 @@
 namespace tomviz {
 namespace pipeline {
 
+class InputPort;
 class Link;
 
 class OutputPort : public Port
@@ -41,10 +42,10 @@ public:
   bool isTransient() const;
   void setTransient(bool transient);
 
-  PortData data() const;
+  virtual PortData data() const;
   void setData(const PortData& data);
   void clearData();
-  bool hasData() const;
+  virtual bool hasData() const;
 
   /// Push intermediate data during execution. Thread-safe: can be called
   /// from a worker thread. The update is applied on the main thread
@@ -53,8 +54,12 @@ public:
   /// data types; the default implementation is a no-op.
   virtual void setIntermediateData(const PortData& data);
 
-  bool isStale() const;
+  virtual bool isStale() const;
   void setStale(bool stale);
+
+  /// Whether this port accepts a link to the given input port.
+  /// Default returns true.  Subclasses can restrict (e.g. sinks only).
+  virtual bool canAcceptLink(InputPort* to) const;
 
   QList<Link*> links() const;
 

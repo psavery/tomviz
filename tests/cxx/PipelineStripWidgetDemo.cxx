@@ -8,6 +8,7 @@
 #include "PipelineStripWidget.h"
 #include "PortData.h"
 #include "PortType.h"
+#include "SinkGroupNode.h"
 #include "SinkNode.h"
 #include "SourceNode.h"
 #include "TransformNode.h"
@@ -89,8 +90,9 @@ class DemoSink : public SinkNode
 public:
   DemoSink(const QString& label,
            const QList<QPair<QString, PortType>>& inputs = {{"in",
-                                                             PortType::ImageData}})
-    : SinkNode()
+                                                             PortType::ImageData}},
+           const QString& iconPath = ":/pipeline/pqVolumeData.png")
+    : SinkNode(), m_iconPath(iconPath)
   {
     setLabel(label);
     for (auto& [name, type] : inputs) {
@@ -98,8 +100,30 @@ public:
     }
   }
 
+  QIcon icon() const override
+  {
+    return QIcon(m_iconPath);
+  }
+
+  QIcon actionIcon() const override
+  {
+    // Use check/error as stand-in for eyeball open/closed
+    return m_visible
+             ? QIcon(QStringLiteral(":/pipeline/check.png"))
+             : QIcon(QStringLiteral(":/pipeline/canceled.png"));
+  }
+
+  void triggerAction() override
+  {
+    m_visible = !m_visible;
+  }
+
 protected:
   bool consume(const QMap<QString, PortData>&) override { return true; }
+
+private:
+  QString m_iconPath;
+  bool m_visible = true;
 };
 
 // ---------------------------------------------------------------------------
@@ -360,6 +384,66 @@ static Pipeline* buildTomographyPipeline()
   return p;
 }
 
+// Left branch:  Source -> Gaussian -> SinkGroup -> Outline, Slice, Volume
+// Right branch: Source -> Median  -> Outline2, Slice2, Volume2 (no group)
+static Pipeline* buildSinkGroupPipeline()
+{
+  auto* p = new Pipeline();
+
+  // --- Branch A: Source -> Transform -> SinkGroup -> 3 sinks ---
+  auto* srcA = new SourceNode();
+  srcA->setLabel("sample_A.vti");
+  srcA->addOutput("volume", PortType::ImageData);
+  srcA->setOutputData("volume", PortData(std::any(1), PortType::ImageData));
+  p->addNode(srcA);
+
+  auto* gauss = new DemoTransform("Gaussian Filter");
+  p->addNode(gauss);
+  p->createLink(srcA->outputPort("volume"), gauss->inputPort("in"));
+
+  auto* group = new SinkGroupNode();
+  group->addPassthrough("volume", PortType::ImageData);
+  p->addNode(group);
+  p->createLink(gauss->outputPort("out"), group->inputPort("volume"));
+
+  auto* outline = new DemoSink("Outline");
+  p->addNode(outline);
+  p->createLink(group->outputPort("volume"), outline->inputPort("in"));
+
+  auto* slice = new DemoSink("Slice");
+  p->addNode(slice);
+  p->createLink(group->outputPort("volume"), slice->inputPort("in"));
+
+  auto* volume = new DemoSink("Volume");
+  p->addNode(volume);
+  p->createLink(group->outputPort("volume"), volume->inputPort("in"));
+
+  // --- Branch B: Source -> Transform -> 3 sinks (no group) ---
+  auto* srcB = new SourceNode();
+  srcB->setLabel("sample_B.vti");
+  srcB->addOutput("volume", PortType::ImageData);
+  srcB->setOutputData("volume", PortData(std::any(1), PortType::ImageData));
+  p->addNode(srcB);
+
+  auto* median = new DemoTransform("Median Filter");
+  p->addNode(median);
+  p->createLink(srcB->outputPort("volume"), median->inputPort("in"));
+
+  auto* outline2 = new DemoSink("Outline 2");
+  p->addNode(outline2);
+  p->createLink(median->outputPort("out"), outline2->inputPort("in"));
+
+  auto* slice2 = new DemoSink("Slice 2");
+  p->addNode(slice2);
+  p->createLink(median->outputPort("out"), slice2->inputPort("in"));
+
+  auto* volume2 = new DemoSink("Volume 2");
+  p->addNode(volume2);
+  p->createLink(median->outputPort("out"), volume2->inputPort("in"));
+
+  return p;
+}
+
 int main(int argc, char** argv)
 {
   QApplication app(argc, argv);
@@ -380,6 +464,7 @@ int main(int argc, char** argv)
   combo->addItem("Fan-Out");
   combo->addItem("Complex");
   combo->addItem("Tomography");
+  combo->addItem("Sink Group");
   combo->addItem("Empty");
   centralLayout->addWidget(combo);
 
@@ -541,10 +626,10 @@ int main(int argc, char** argv)
   window.addDockWidget(Qt::LeftDockWidgetArea, dock);
 
   // Pipeline instances
-  Pipeline* pipelines[7] = {  buildLinearPipeline(), buildMultiOutputPipeline(),
+  Pipeline* pipelines[8] = {  buildLinearPipeline(), buildMultiOutputPipeline(),
                               buildFanInPipeline(), buildFanOutPipeline(),
                               buildComplexPipeline(), buildTomographyPipeline(),
-                              new Pipeline(),
+                              buildSinkGroupPipeline(), new Pipeline(),
                             };
 
   strip->setPipeline(pipelines[0]);
@@ -594,7 +679,22 @@ int main(int argc, char** argv)
     if (!isPortTypeCompatible(from->type(), to->acceptedTypes())) {
       return false;
     }
+    if (!from->canAcceptLink(to)) {
+      return false;
+    }
     if (to->link()) {
+      // Allow dragging from a SinkGroupNode "+" to a sink that shares
+      // the same upstream port as the group.
+      auto* sg = qobject_cast<SinkGroupNode*>(from->node());
+      if (sg) {
+        int idx = sg->outputPorts().indexOf(from);
+        if (idx >= 0 && idx < sg->inputPorts().size()) {
+          auto* gi = sg->inputPorts()[idx];
+          if (gi->link() && gi->link()->from() == to->link()->from()) {
+            return true;
+          }
+        }
+      }
       return false;
     }
     return true;
@@ -605,6 +705,10 @@ int main(int argc, char** argv)
   QObject::connect(strip, &PipelineStripWidget::linkRequested,
                    [&](OutputPort* from, InputPort* to) {
                      if (auto* p = strip->pipeline()) {
+                       // Remove existing link if stealing a sink into a group.
+                       if (to->link()) {
+                         p->removeLink(to->link());
+                       }
                        p->createLink(from, to);
                        qDebug("Created link: %s.%s -> %s.%s",
                               qPrintable(from->node()->label()),
@@ -613,6 +717,99 @@ int main(int argc, char** argv)
                               qPrintable(to->name()));
                      }
                    });
+
+  // Leave-group: relink the member to the group's upstream port
+  QObject::connect(strip, &PipelineStripWidget::leaveGroupRequested,
+                   [](Node* member, SinkGroupNode* group) {
+                     auto* p = qobject_cast<Pipeline*>(group->parent());
+                     if (!p) return;
+                     for (auto* inPort : member->inputPorts()) {
+                       if (!inPort->link()) continue;
+                       auto* groupPort = inPort->link()->from();
+                       if (groupPort->node() != group) continue;
+                       int idx = group->outputPorts().indexOf(groupPort);
+                       OutputPort* upstream = nullptr;
+                       if (idx >= 0 && idx < group->inputPorts().size()) {
+                         auto* gi = group->inputPorts()[idx];
+                         if (gi->link()) upstream = gi->link()->from();
+                       }
+                       p->removeLink(inPort->link());
+                       if (upstream) p->createLink(upstream, inPort);
+                       break;
+                     }
+                     qDebug("Left group: %s", qPrintable(member->label()));
+                   });
+
+  // Context menu on nodes
+  strip->setNodeMenuProvider([](Node* node, QMenu& menu) {
+    auto* p = qobject_cast<Pipeline*>(node->parent());
+    if (!p) return;
+
+    // SinkNode not in a group: "Create Group"
+    auto* sink = qobject_cast<SinkNode*>(node);
+    bool inGroup = false;
+    if (sink) {
+      for (auto* inPort : sink->inputPorts()) {
+        if (inPort->link() &&
+            qobject_cast<SinkGroupNode*>(inPort->link()->from()->node())) {
+          inGroup = true;
+          break;
+        }
+      }
+    }
+    if (sink && !inGroup) {
+      menu.addAction("Create Group", [p, sink]() {
+        auto* group = new SinkGroupNode();
+        for (auto* inPort : sink->inputPorts()) {
+          PortType pt = PortType::ImageData;
+          for (auto t : { PortType::ImageData, PortType::TiltSeries,
+                          PortType::Volume, PortType::Image,
+                          PortType::Table, PortType::Molecule }) {
+            if (inPort->acceptedTypes().testFlag(t)) { pt = t; break; }
+          }
+          group->addPassthrough(inPort->name(), pt);
+        }
+        p->addNode(group);
+        for (int i = 0; i < sink->inputPorts().size(); ++i) {
+          auto* sinkInput = sink->inputPorts()[i];
+          if (sinkInput->link() && i < group->inputPorts().size()) {
+            auto* upstream = sinkInput->link()->from();
+            p->removeLink(sinkInput->link());
+            p->createLink(upstream, group->inputPorts()[i]);
+          }
+          if (i < group->outputPorts().size())
+            p->createLink(group->outputPorts()[i], sinkInput);
+        }
+      });
+    }
+
+    // Node inside a group: "Leave Group"
+    for (auto* inPort : node->inputPorts()) {
+      if (!inPort->link()) continue;
+      auto* group = qobject_cast<SinkGroupNode*>(
+        inPort->link()->from()->node());
+      if (!group) continue;
+      menu.addAction("Leave Group", [p, node, group]() {
+        for (auto* inp : node->inputPorts()) {
+          if (!inp->link()) continue;
+          auto* groupPort = inp->link()->from();
+          if (groupPort->node() != group) continue;
+          int idx = group->outputPorts().indexOf(groupPort);
+          OutputPort* upstream = nullptr;
+          if (idx >= 0 && idx < group->inputPorts().size()) {
+            auto* gi = group->inputPorts()[idx];
+            if (gi->link()) upstream = gi->link()->from();
+          }
+          p->removeLink(inp->link());
+          if (upstream) p->createLink(upstream, inp);
+          break;
+        }
+      });
+      break;
+    }
+
+    menu.addAction("Delete", [p, node]() { p->removeNode(node); });
+  });
 
   // Context menu on links: delete action
   strip->setLinkMenuProvider([](Link* link, QMenu& menu) {

@@ -53,6 +53,7 @@
 #include "pipeline/InputPort.h"
 #include "pipeline/Link.h"
 #include "pipeline/PortData.h"
+#include "pipeline/SinkGroupNode.h"
 #include "pipeline/sinks/LegacyModuleSink.h"
 #include "pipeline/data/VolumeData.h"
 #include "pipeline/TransformEditDialog.h"
@@ -258,7 +259,23 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
                                           to->acceptedTypes())) {
         return false;
       }
+      if (!from->canAcceptLink(to)) {
+        return false;
+      }
       if (to->link()) {
+        // Allow if dragging from a SinkGroupNode "+" to a sink that
+        // shares the same upstream port as the group.
+        auto* sg = qobject_cast<pipeline::SinkGroupNode*>(from->node());
+        if (sg) {
+          int idx = sg->outputPorts().indexOf(from);
+          if (idx >= 0 && idx < sg->inputPorts().size()) {
+            auto* groupInput = sg->inputPorts()[idx];
+            if (groupInput->link() &&
+                groupInput->link()->from() == to->link()->from()) {
+              return true;
+            }
+          }
+        }
         return false;
       }
       return true;
@@ -273,6 +290,12 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
             auto* p = pipeline();
             if (!p) {
               return;
+            }
+
+            // If the target already has a link (e.g. stealing a sink into
+            // a group), remove the existing link first.
+            if (to->link()) {
+              p->removeLink(to->link());
             }
 
             auto* link = p->createLink(from, to);
@@ -312,6 +335,40 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
             p->execute();
           });
 
+  // Leave-group: relink the member to the group's upstream port
+  connect(m_pipelineStrip, &pipeline::PipelineStripWidget::leaveGroupRequested,
+          this,
+          [this](pipeline::Node* member, pipeline::SinkGroupNode* group) {
+            auto* p = pipeline();
+            if (!p) {
+              return;
+            }
+            for (auto* inPort : member->inputPorts()) {
+              if (!inPort->link()) {
+                continue;
+              }
+              auto* groupPort = inPort->link()->from();
+              if (groupPort->node() != group) {
+                continue;
+              }
+              // Find the upstream port feeding the group's matching input.
+              int idx = group->outputPorts().indexOf(groupPort);
+              pipeline::OutputPort* upstream = nullptr;
+              if (idx >= 0 && idx < group->inputPorts().size()) {
+                auto* groupInput = group->inputPorts()[idx];
+                if (groupInput->link()) {
+                  upstream = groupInput->link()->from();
+                }
+              }
+              p->removeLink(inPort->link());
+              if (upstream) {
+                p->createLink(upstream, inPort);
+              }
+              break;
+            }
+            p->execute();
+          });
+
   // Context menu on links: delete action
   m_pipelineStrip->setLinkMenuProvider(
     [](pipeline::Link* link, QMenu& menu) {
@@ -321,6 +378,109 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
           p->removeLink(link);
         }
       });
+    });
+
+  // Context menu on nodes: type-specific actions
+  m_pipelineStrip->setNodeMenuProvider(
+    [this](pipeline::Node* node, QMenu& menu) {
+      auto* p = pipeline();
+      if (!p) {
+        return;
+      }
+
+      // SinkNode not inside a group: offer "Create Group"
+      auto* sink = qobject_cast<pipeline::SinkNode*>(node);
+      bool inGroup = false;
+      if (sink) {
+        for (auto* inPort : sink->inputPorts()) {
+          if (inPort->link() &&
+              qobject_cast<pipeline::SinkGroupNode*>(
+                inPort->link()->from()->node())) {
+            inGroup = true;
+            break;
+          }
+        }
+      }
+      if (sink && !inGroup) {
+        menu.addAction("Create Group", [p, sink]() {
+          // Create a SinkGroupNode with matching port types.
+          auto* group = new pipeline::SinkGroupNode();
+          for (auto* inPort : sink->inputPorts()) {
+            // Use the first accepted type flag as the passthrough type.
+            pipeline::PortType pt = pipeline::PortType::ImageData;
+            for (auto t :
+                 { pipeline::PortType::ImageData,
+                   pipeline::PortType::TiltSeries,
+                   pipeline::PortType::Volume, pipeline::PortType::Image,
+                   pipeline::PortType::Table,
+                   pipeline::PortType::Molecule }) {
+              if (inPort->acceptedTypes().testFlag(t)) {
+                pt = t;
+                break;
+              }
+            }
+            group->addPassthrough(inPort->name(), pt);
+          }
+          p->addNode(group);
+
+          // Relink: route sink through the group. If the sink had an
+          // upstream connection, break it and reconnect via the group.
+          for (int i = 0; i < sink->inputPorts().size(); ++i) {
+            auto* sinkInput = sink->inputPorts()[i];
+            if (sinkInput->link() && i < group->inputPorts().size()) {
+              auto* upstream = sinkInput->link()->from();
+              p->removeLink(sinkInput->link());
+              p->createLink(upstream, group->inputPorts()[i]);
+            }
+            // Always connect the sink to the group's output.
+            if (i < group->outputPorts().size()) {
+              p->createLink(group->outputPorts()[i], sinkInput);
+            }
+          }
+          p->execute();
+        });
+      }
+
+      // Node inside a group: offer "Leave Group"
+      for (auto* inPort : node->inputPorts()) {
+        if (!inPort->link()) {
+          continue;
+        }
+        auto* group = qobject_cast<pipeline::SinkGroupNode*>(
+          inPort->link()->from()->node());
+        if (!group) {
+          continue;
+        }
+        menu.addAction("Leave Group", [p, node, group]() {
+          for (auto* inp : node->inputPorts()) {
+            if (!inp->link()) {
+              continue;
+            }
+            auto* groupPort = inp->link()->from();
+            if (groupPort->node() != group) {
+              continue;
+            }
+            int idx = group->outputPorts().indexOf(groupPort);
+            pipeline::OutputPort* upstream = nullptr;
+            if (idx >= 0 && idx < group->inputPorts().size()) {
+              auto* gi = group->inputPorts()[idx];
+              if (gi->link()) {
+                upstream = gi->link()->from();
+              }
+            }
+            p->removeLink(inp->link());
+            if (upstream) {
+              p->createLink(upstream, inp);
+            }
+            break;
+          }
+          p->execute();
+        });
+        break;
+      }
+
+      // Delete node
+      menu.addAction("Delete", [p, node]() { p->removeNode(node); });
     });
 
   // Sync tip output port from ActiveObjects to the strip widget and colormap

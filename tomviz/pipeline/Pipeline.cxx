@@ -111,6 +111,10 @@ Link* Pipeline::createLink(OutputPort* from, InputPort* to)
     return nullptr;
   }
 
+  if (!from->canAcceptLink(to)) {
+    return nullptr;
+  }
+
   if (wouldCreateCycle(from, to)) {
     return nullptr;
   }

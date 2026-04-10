@@ -6,9 +6,11 @@
 #include "ActiveObjects.h"
 #include "MainWindow.h"
 
+#include "pipeline/Link.h"
 #include "pipeline/Pipeline.h"
 #include "pipeline/OutputPort.h"
 #include "pipeline/InputPort.h"
+#include "pipeline/SinkGroupNode.h"
 #include "pipeline/sinks/LegacyModuleSink.h"
 #include "pipeline/sinks/VolumeSink.h"
 #include "pipeline/sinks/SliceSink.h"
@@ -305,7 +307,25 @@ void PipelineModuleMenu::triggered(QAction* maction)
                 "the tip output port type.");
       return;
     }
-    pip->createLink(targetPort, input);
+
+    // If a compatible SinkGroupNode is already connected to the target
+    // port, add the new sink to that group instead.
+    pipeline::OutputPort* connectTo = targetPort;
+    for (auto* link : targetPort->links()) {
+      auto* sg = qobject_cast<pipeline::SinkGroupNode*>(
+        link->to()->node());
+      if (sg) {
+        // Find the group's output port corresponding to this input.
+        int idx = sg->inputPorts().indexOf(link->to());
+        if (idx >= 0 && idx < sg->outputPorts().size() &&
+            pipeline::isPortTypeCompatible(
+              sg->outputPorts()[idx]->type(), input->acceptedTypes())) {
+          connectTo = sg->outputPorts()[idx];
+          break;
+        }
+      }
+    }
+    pip->createLink(connectTo, input);
   }
   pip->execute();
 }

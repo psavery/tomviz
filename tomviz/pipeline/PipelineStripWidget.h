@@ -28,13 +28,15 @@ class Link;
 class Node;
 class OutputPort;
 class Pipeline;
+class SinkGroupNode;
 
 struct LayoutItem
 {
   enum Type
   {
     NodeCard,
-    PortCard
+    PortCard,
+    GroupMemberCard // sink displayed inside a SinkGroupNode
   };
 
   Type type = NodeCard;
@@ -121,6 +123,7 @@ signals:
   void linkSelected(Link* link);
   void nodeDoubleClicked(Node* node);
   void linkRequested(OutputPort* from, InputPort* to);
+  void leaveGroupRequested(Node* member, SinkGroupNode* group);
 
 public slots:
   void rebuildLayout();
@@ -151,6 +154,8 @@ private:
                      bool selected, bool hovered);
   void paintPortCard(QPainter& painter, const LayoutItem& item,
                      bool selected, bool hovered);
+  void paintGroupMemberCard(QPainter& painter, const LayoutItem& item,
+                            bool selected, bool hovered);
   void paintConnections(QPainter& painter);
   void computeLinkGeometries();
   void paintPendingLink(QPainter& painter);
@@ -186,6 +191,7 @@ private:
   QList<LinkGeometry> m_linkGeometries;
   int m_selectedIndex = -1;
   OutputPort* m_selectedPort = nullptr; // selected output dot (collapsed nodes)
+  Node* m_selectedMember = nullptr;    // selected group member (collapsed)
   OutputPort* m_tipOutputPort = nullptr;
   Link* m_selectedLink = nullptr;
   Link* m_hoveredLink = nullptr;
@@ -209,11 +215,13 @@ private:
   QHash<OutputPort*, int> m_outputGutterLanes;
   QHash<InputPort*, int> m_inputGutterLanes;
 
-  // Dimming state
+  // Dimming state — we store the bright set; everything else is dimmed
+  // when m_hasBrightSelection is true.
   qreal m_dimLevel = 0.75;
-  QSet<Node*> m_dimmedNodes;
-  QSet<OutputPort*> m_dimmedPorts;
-  QSet<Link*> m_dimmedLinks;
+  bool m_hasBrightSelection = false;
+  QSet<Node*> m_brightNodes;
+  QSet<OutputPort*> m_brightPorts;
+  QSet<Link*> m_brightLinks;
 
   // Layout constants
   static constexpr int GutterWidth = 24;

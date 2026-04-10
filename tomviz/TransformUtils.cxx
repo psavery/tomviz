@@ -12,6 +12,7 @@
 #include "pipeline/Node.h"
 #include "pipeline/OutputPort.h"
 #include "pipeline/Pipeline.h"
+#include "pipeline/SinkGroupNode.h"
 #include "pipeline/SinkNode.h"
 #include "pipeline/TransformEditDialog.h"
 #include "pipeline/TransformNode.h"
@@ -21,7 +22,14 @@
 
 namespace tomviz {
 
-/// Append a transform at the given targetPort, moving sink links to the
+/// True for SinkNode and SinkGroupNode (terminal pipeline nodes).
+static bool isTerminalNode(pipeline::Node* node)
+{
+  return dynamic_cast<pipeline::SinkNode*>(node) ||
+         dynamic_cast<pipeline::SinkGroupNode*>(node);
+}
+
+/// Append a transform at the given targetPort, moving sink/group links to the
 /// new transform's output.
 static void appendTransformAtPort(
   pipeline::Pipeline* pip,
@@ -31,12 +39,14 @@ static void appendTransformAtPort(
   pip->addNode(transform);
   pip->createLink(targetPort, transform->inputPorts()[0]);
 
-  // Re-link: move all sink links from old tip to new transform's output
+  // Re-link: move all terminal node links from old tip to new transform's output
   auto* newTip = transform->outputPorts()[0];
   QList<pipeline::Link*> linksToMove;
   for (auto* link : targetPort->links()) {
-    auto* targetNode = link->to()->node();
-    if (dynamic_cast<pipeline::SinkNode*>(targetNode)) {
+    if (link->to()->node() == transform) {
+      continue; // skip the link we just created
+    }
+    if (isTerminalNode(link->to()->node())) {
       linksToMove.append(link);
     }
   }
@@ -60,8 +70,10 @@ static pipeline::DeferredLinkInfo appendTransformAtPortDeferred(
   pipeline::DeferredLinkInfo deferred;
   auto* newTip = transform->outputPorts()[0];
   for (auto* link : targetPort->links()) {
-    auto* targetNode = link->to()->node();
-    if (dynamic_cast<pipeline::SinkNode*>(targetNode)) {
+    if (link->to()->node() == transform) {
+      continue; // skip the link we just created
+    }
+    if (isTerminalNode(link->to()->node())) {
       deferred.linksToBreak.append({ targetPort, link->to() });
       deferred.linksToCreate.append({ newTip, link->to() });
     }
