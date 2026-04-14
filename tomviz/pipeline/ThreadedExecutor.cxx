@@ -16,7 +16,11 @@ class ExecutionWorker : public QObject
   Q_OBJECT
 
 public:
-  ExecutionWorker(std::atomic<bool>& cancelFlag) : m_cancelFlag(cancelFlag) {}
+  ExecutionWorker(std::atomic<bool>& cancelFlag,
+                  std::atomic<Node*>& currentNode)
+    : m_cancelFlag(cancelFlag), m_currentNode(currentNode)
+  {
+  }
 
 public slots:
   void run(const QList<Node*>& nodes, Pipeline* pipeline)
@@ -43,8 +47,10 @@ public slots:
         continue;
       }
 
+      m_currentNode.store(node);
       emit nodeStarted(node);
       bool success = node->execute();
+      m_currentNode.store(nullptr);
       emit nodeFinished(node, success);
 
       if (!success) {
@@ -69,11 +75,12 @@ signals:
 
 private:
   std::atomic<bool>& m_cancelFlag;
+  std::atomic<Node*>& m_currentNode;
 };
 
 ThreadedExecutor::ThreadedExecutor(QObject* parent)
   : PipelineExecutor(parent), m_thread(new QThread(this)),
-    m_worker(new ExecutionWorker(m_cancelRequested))
+    m_worker(new ExecutionWorker(m_cancelRequested, m_currentNode))
 {
   m_worker->moveToThread(m_thread);
 
@@ -135,6 +142,9 @@ void ThreadedExecutor::execute(const QList<Node*>& nodes, Pipeline* pipeline)
 void ThreadedExecutor::cancel()
 {
   m_cancelRequested = true;
+  if (auto* node = m_currentNode.load()) {
+    node->cancelExecution();
+  }
 }
 
 bool ThreadedExecutor::isRunning() const

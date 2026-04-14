@@ -491,8 +491,50 @@ PipelineExecutor* Pipeline::executor() const
   return m_executor;
 }
 
+bool Pipeline::isExecuting() const
+{
+  return m_executor && m_executor->isRunning();
+}
+
+bool Pipeline::isPaused() const
+{
+  return m_paused;
+}
+
+void Pipeline::setPaused(bool paused)
+{
+  if (m_paused == paused) {
+    return;
+  }
+  m_paused = paused;
+  emit pausedChanged(m_paused);
+  if (!m_paused) {
+    // Resume: execute if any node is stale.
+    for (auto* node : m_nodes) {
+      if (node->state() == NodeState::Stale ||
+          node->state() == NodeState::New) {
+        execute();
+        break;
+      }
+    }
+  }
+}
+
+void Pipeline::cancelExecution()
+{
+  if (m_executor && m_executor->isRunning()) {
+    m_executor->cancel();
+  }
+}
+
 ExecutionFuture* Pipeline::execute()
 {
+  if (m_paused) {
+    auto* future = new ExecutionFuture(this);
+    future->setFinished(false);
+    return future;
+  }
+
   if (!m_executor) {
     auto* defaultExec = new DefaultExecutor(this);
     setExecutor(defaultExec);
@@ -513,14 +555,20 @@ ExecutionFuture* Pipeline::execute()
           static_cast<Qt::ConnectionType>(Qt::AutoConnection |
                                           Qt::SingleShotConnection));
 
-  emit executionStarted();
   m_executor->execute(order, this);
+  emit executionStarted();
 
   return future;
 }
 
 ExecutionFuture* Pipeline::execute(Node* target)
 {
+  if (m_paused) {
+    auto* future = new ExecutionFuture(this);
+    future->setFinished(false);
+    return future;
+  }
+
   if (!m_executor) {
     auto* defaultExec = new DefaultExecutor(this);
     setExecutor(defaultExec);
@@ -547,8 +595,8 @@ ExecutionFuture* Pipeline::execute(Node* target)
           static_cast<Qt::ConnectionType>(Qt::AutoConnection |
                                           Qt::SingleShotConnection));
 
-  emit executionStarted();
   m_executor->execute(order, this);
+  emit executionStarted();
 
   return future;
 }

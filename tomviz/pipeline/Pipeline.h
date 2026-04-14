@@ -63,8 +63,12 @@ public:
   // Execution
   void setExecutor(PipelineExecutor* executor);
   PipelineExecutor* executor() const;
+  bool isExecuting() const;
+  bool isPaused() const;
+  void setPaused(bool paused);
   ExecutionFuture* execute();
   ExecutionFuture* execute(Node* target);
+  void cancelExecution();
   QList<Node*> executionOrder(Node* target);
 
   // Transient cleanup
@@ -81,12 +85,14 @@ signals:
   void linkRemoved(Link* link);
   void executionStarted();
   void executionFinished();
+  void pausedChanged(bool paused);
   void breakpointReached(Node* node);
 
 private:
   QList<Node*> m_nodes;
   QList<Link*> m_links;
   PipelineExecutor* m_executor = nullptr;
+  bool m_paused = false;
 };
 
 } // namespace pipeline

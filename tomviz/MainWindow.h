@@ -34,6 +34,7 @@ class Link;
 class Node;
 class OutputPort;
 class Pipeline;
+class PipelineControlsWidget;
 class PipelineStripWidget;
 class VolumePropertiesWidget;
 } // namespace pipeline
@@ -108,6 +109,7 @@ private:
   void initPipeline();
   void clearDynamicPropertiesWidget();
   void updateColorMapDisplay();
+  void setPipelineMutationEnabled(bool enabled);
   QScopedPointer<Ui::MainWindow> m_ui;
   QMenu* m_customTransformsMenu = nullptr;
   QMenu* m_pipelineTemplates = nullptr;
@@ -115,11 +117,13 @@ private:
   bool m_isFirstShow = true;
 
   // New pipeline infrastructure
+  pipeline::PipelineControlsWidget* m_pipelineControls = nullptr;
   pipeline::PipelineStripWidget* m_pipelineStrip = nullptr;
   pipeline::Pipeline* m_pipeline = nullptr;
   ProgressDialogManager* m_progressDialogManager = nullptr;
   QMetaObject::Connection m_tipDataChangedConn;
   QMetaObject::Connection m_sinkColorMapChangedConn;
+  QMetaObject::Connection m_editingChangedConn;
   QPointer<QWidget> m_dynamicPropertiesWidget;
 
   // Lazily loaded dialogs

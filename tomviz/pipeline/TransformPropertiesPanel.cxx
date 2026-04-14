@@ -32,9 +32,19 @@ TransformPropertiesPanel::TransformPropertiesPanel(TransformNode* transform,
 
     auto* buttonBox = new QDialogButtonBox(
       QDialogButtonBox::Apply, Qt::Horizontal, this);
-    connect(buttonBox->button(QDialogButtonBox::Apply), &QPushButton::clicked,
+    auto* applyBtn = buttonBox->button(QDialogButtonBox::Apply);
+    connect(applyBtn, &QPushButton::clicked,
             this, &TransformPropertiesPanel::apply);
     layout->addWidget(buttonBox);
+
+    // Disable Apply while the pipeline is executing.
+    connect(m_pipeline, &Pipeline::executionStarted, this,
+            [applyBtn]() { applyBtn->setEnabled(false); });
+    connect(m_pipeline, &Pipeline::executionFinished, this,
+            [applyBtn]() { applyBtn->setEnabled(true); });
+    if (m_pipeline->isExecuting()) {
+      applyBtn->setEnabled(false);
+    }
   }
 }
 

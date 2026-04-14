@@ -32,6 +32,7 @@ private:
   ExecutionWorker* m_worker = nullptr;
   std::atomic<bool> m_cancelRequested{ false };
   std::atomic<bool> m_running{ false };
+  std::atomic<Node*> m_currentNode{ nullptr };
   QMetaObject::Connection m_breakpointConnection;
 };
 

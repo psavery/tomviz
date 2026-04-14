@@ -85,6 +85,19 @@ void TransformEditDialog::init()
 
   // Add button box at the bottom
   layout->addWidget(m_buttonBox);
+
+  // Disable Apply/OK while the pipeline is executing.
+  auto updateButtons = [this](bool executing) {
+    m_buttonBox->button(QDialogButtonBox::Apply)->setEnabled(!executing);
+    m_buttonBox->button(QDialogButtonBox::Ok)->setEnabled(!executing);
+  };
+  connect(m_pipeline, &Pipeline::executionStarted, this,
+          [updateButtons]() { updateButtons(true); });
+  connect(m_pipeline, &Pipeline::executionFinished, this,
+          [updateButtons]() { updateButtons(false); });
+  if (m_pipeline->isExecuting()) {
+    updateButtons(true);
+  }
 }
 
 bool TransformEditDialog::inputsReady() const

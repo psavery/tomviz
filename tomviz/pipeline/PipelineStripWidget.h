@@ -104,6 +104,11 @@ public:
 
   /// Dimming: blend element colors toward the background.
   /// dimLevel 0 = normal, 1 = fully faded to background.
+  /// When true, mutation interactions (link dragging, double-click-to-edit,
+  /// context-menu actions, delete key) are suppressed.
+  void setInteractionLocked(bool locked);
+  bool isInteractionLocked() const;
+
   void setDimLevel(qreal level);
   qreal dimLevel() const;
   void setNodeDimmed(Node* node, bool dimmed);
@@ -185,6 +190,7 @@ private:
   QRect menuButtonRect(const QRect& cardRect) const;
   QRect actionButtonRect(const QRect& cardRect) const;
 
+  bool m_interactionLocked = false;
   Pipeline* m_pipeline = nullptr;
   SortOrder m_sortOrder{}; // SortOrder::Default
   QList<LayoutItem> m_layout;

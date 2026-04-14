@@ -37,6 +37,9 @@ namespace pipeline {
 static void paintTintedIcon(QPainter& painter, const QIcon& icon,
                             const QRect& rect, const QColor& color)
 {
+  if (rect.isEmpty() || icon.isNull()) {
+    return;
+  }
   qreal dpr = painter.device()->devicePixelRatioF();
   QSize pxSize(qRound(rect.width() * dpr), qRound(rect.height() * dpr));
   QPixmap pix = icon.pixmap(pxSize);
@@ -83,9 +86,6 @@ PipelineStripWidget::PipelineStripWidget(QWidget* parent) : QWidget(parent)
   setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Minimum);
   setMouseTracking(true);
   setAutoFillBackground(true);
-  QPalette pal = palette();
-  pal.setColor(QPalette::Window, Qt::white);
-  setPalette(pal);
 
   m_spinnerTimer.setInterval(50);
   connect(&m_spinnerTimer, &QTimer::timeout, this, [this]() {
@@ -892,14 +892,17 @@ void PipelineStripWidget::connectPipeline()
   connect(m_pipeline, &Pipeline::linkCreated, this, [this](Link* link) {
     connect(link, &Link::validityChanged, this, [this]() {
       rebuildLayout();
+      updateDimming();
       update();
     });
     rebuildLayout();
+    updateDimming();
     update();
   });
 
   connect(m_pipeline, &Pipeline::linkRemoved, this, [this](Link*) {
     rebuildLayout();
+    updateDimming();
     update();
   });
 
@@ -1006,7 +1009,6 @@ void PipelineStripWidget::paintEvent(QPaintEvent* event)
   Q_UNUSED(event);
   QPainter painter(this);
   painter.setRenderHint(QPainter::Antialiasing);
-  painter.fillRect(rect(), palette().window());
 
   // Layer 1: Node and port cards (behind links)
   for (int i = 0; i < m_layout.size(); ++i) {
@@ -1294,13 +1296,13 @@ void PipelineStripWidget::paintPortCard(QPainter& painter,
   QRect pIconRect(sqRect.left() + (sqEdge - iconSize) / 2,
                   sqRect.top() + (sqEdge - iconSize) / 2,
                   iconSize, iconSize);
-  QColor iconColor = selected ? Qt::white : color;
+  QColor iconColor = selected ? palette().highlightedText().color() : color;
   paintTintedIcon(painter, pIcon, pIconRect, iconColor);
 
   int x = r.left() + sqEdge + 6; // 2px extra inset from icon square
 
   // Port name
-  QColor fg = selected ? Qt::white : palette().text().color();
+  QColor fg = selected ? palette().highlightedText().color() : palette().text().color();
   if (isDim) {
     fg = dimmed(fg);
   }
@@ -1316,7 +1318,7 @@ void PipelineStripWidget::paintPortCard(QPainter& painter,
   int menuCX = r.right() - menuPad;
   int menuCY = r.top() + r.height() / 2;
 
-  QColor dotColor = selected ? Qt::white : palette().buttonText().color();
+  QColor dotColor = selected ? palette().highlightedText().color() : palette().buttonText().color();
   if (isDim) {
     dotColor = dimmed(dotColor);
   }
@@ -1363,7 +1365,7 @@ void PipelineStripWidget::paintGroupMemberCard(QPainter& painter,
   QRect iconRect(iconX, iconY, iconSize, iconSize);
   QIcon sinkIcon = memberNode->icon();
   if (selected) {
-    paintTintedIcon(painter, sinkIcon, iconRect, Qt::white);
+    paintTintedIcon(painter, sinkIcon, iconRect, palette().highlightedText().color());
   } else if (isDim) {
     painter.setOpacity(1.0 - m_dimLevel);
     sinkIcon.paint(&painter, iconRect);
@@ -1374,7 +1376,7 @@ void PipelineStripWidget::paintGroupMemberCard(QPainter& painter,
 
   int x = r.left() + r.height() + 4;
 
-  QColor fg = selected ? Qt::white : palette().text().color();
+  QColor fg = selected ? palette().highlightedText().color() : palette().text().color();
   if (isDim) {
     fg = dimmed(fg);
   }
@@ -1627,7 +1629,7 @@ void PipelineStripWidget::paintOutputDots(QPainter& painter,
                      pos.y() - OutputSquareIconSize / 2,
                      OutputSquareIconSize, OutputSquareIconSize);
       if (isSelected) {
-        paintTintedIcon(painter, sinkIcon, iconRect, Qt::white);
+        paintTintedIcon(painter, sinkIcon, iconRect, palette().highlightedText().color());
       } else if (isNodeDimmed(member)) {
         painter.setOpacity(1.0 - m_dimLevel);
         sinkIcon.paint(&painter, iconRect);
@@ -1676,7 +1678,7 @@ void PipelineStripWidget::paintOutputDots(QPainter& painter,
       }
 
       // Draw "+" inside the circle
-      QColor plusColor = isSelected ? Qt::white : color;
+      QColor plusColor = isSelected ? palette().highlightedText().color() : color;
       painter.setPen(QPen(plusColor, 1.5));
       int arm = 4;
       painter.drawLine(pos.x() - arm, pos.y(), pos.x() + arm, pos.y());
@@ -1714,7 +1716,7 @@ void PipelineStripWidget::paintOutputDots(QPainter& painter,
       QRect iconRect(pos.x() - OutputSquareIconSize / 2,
                      pos.y() - OutputSquareIconSize / 2,
                      OutputSquareIconSize, OutputSquareIconSize);
-      QColor iconColor = isSelected ? Qt::white : color;
+      QColor iconColor = isSelected ? palette().highlightedText().color() : color;
       paintTintedIcon(painter, icon, iconRect, iconColor);
     }
   }
@@ -2254,10 +2256,26 @@ QRect PipelineStripWidget::actionButtonRect(const QRect& cardRect) const
 
 // --- Interaction ---
 
+void PipelineStripWidget::setInteractionLocked(bool locked)
+{
+  m_interactionLocked = locked;
+  if (locked && m_draggingLink) {
+    m_draggingLink = false;
+    m_dragFromPort = nullptr;
+    m_dragToPort = nullptr;
+    update();
+  }
+}
+
+bool PipelineStripWidget::isInteractionLocked() const
+{
+  return m_interactionLocked;
+}
+
 void PipelineStripWidget::mousePressEvent(QMouseEvent* event)
 {
   if (event->button() == Qt::LeftButton) {
-    // Check for output port dot press (potential link drag start)
+    // Check for output port dot press (potential link drag start / port select)
     auto* outPort = outputPortHitTest(event->pos());
     if (outPort) {
       m_dragFromPort = outPort;
@@ -2389,7 +2407,7 @@ void PipelineStripWidget::mousePressEvent(QMouseEvent* event)
 
       // Leave-group icon
       QRect leaveRect(leaveX, btnY, HeaderIconSize, HeaderIconSize);
-      if (leaveRect.contains(event->pos())) {
+      if (leaveRect.contains(event->pos()) && !m_interactionLocked) {
         // Find the SinkGroupNode this member belongs to.
         for (auto* inPort : memberNode->inputPorts()) {
           if (!inPort->link()) {
@@ -2455,7 +2473,7 @@ void PipelineStripWidget::mouseReleaseEvent(QMouseEvent* event)
 
 void PipelineStripWidget::mouseDoubleClickEvent(QMouseEvent* event)
 {
-  if (event->button() == Qt::LeftButton) {
+  if (event->button() == Qt::LeftButton && !m_interactionLocked) {
     int idx = hitTest(event->pos());
     if (idx >= 0 && m_layout[idx].type == LayoutItem::NodeCard) {
       emit nodeDoubleClicked(m_layout[idx].node);
@@ -2489,8 +2507,9 @@ void PipelineStripWidget::keyPressEvent(QKeyEvent* event)
       break;
     case Qt::Key_Delete:
     case Qt::Key_Backspace:
-      // Show context menu at widget origin for the selected element
-      showContextMenu(mapToGlobal(QPoint(0, 0)));
+      if (!m_interactionLocked) {
+        showContextMenu(mapToGlobal(QPoint(0, 0)));
+      }
       break;
     default:
       QWidget::keyPressEvent(event);
@@ -2584,9 +2603,10 @@ void PipelineStripWidget::mouseMoveEvent(QMouseEvent* event)
   // Handle link creation drag
   if (m_dragFromPort) {
     if (!m_draggingLink) {
-      // Check drag threshold
-      if ((event->pos() - m_dragStartPos).manhattanLength() >=
-          QApplication::startDragDistance()) {
+      // Check drag threshold — don't start a link drag when locked
+      if (!m_interactionLocked &&
+          (event->pos() - m_dragStartPos).manhattanLength() >=
+            QApplication::startDragDistance()) {
         m_draggingLink = true;
       }
     }

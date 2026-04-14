@@ -358,6 +358,8 @@ set(SOURCES
   pipeline/TransformEditDialog.h
   pipeline/PipelineUtils.cxx
   pipeline/PipelineUtils.h
+  pipeline/PipelineControlsWidget.cxx
+  pipeline/PipelineControlsWidget.h
   pipeline/PipelineStripWidget.cxx
   pipeline/PipelineStripWidget.h
   pipeline/VolumeScalarsModel.cxx

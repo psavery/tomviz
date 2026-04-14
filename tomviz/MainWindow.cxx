@@ -20,6 +20,8 @@
 #include <vtkVector.h>
 
 #include <QCheckBox>
+#include <QScrollArea>
+#include <QVBoxLayout>
 
 #include "AboutDialog.h"
 #include "AcquisitionWidget.h"
@@ -46,6 +48,7 @@
 #include "pipeline/Pipeline.h"
 #include "pipeline/PipelineExecutor.h"
 #include "pipeline/ThreadedExecutor.h"
+#include "pipeline/PipelineControlsWidget.h"
 #include "pipeline/PipelineStripWidget.h"
 #include "pipeline/Node.h"
 #include "pipeline/TransformNode.h"
@@ -215,10 +218,28 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   // and onPortSelected() which call CentralWidget::setActiveSinkNode()
   // and CentralWidget::setActiveVolumeData().
 
-  // Create pipeline strip widget in the left dock
+  // Create pipeline controls and strip widgets in the left dock
+  m_pipelineControls = new pipeline::PipelineControlsWidget(this);
+  m_ui->pipelineContainerLayout->addWidget(m_pipelineControls);
   m_pipelineStrip = new pipeline::PipelineStripWidget(this);
   m_pipelineStrip->setSortOrder(pipeline::SortOrder::DepthFirst);
-  m_ui->pipelineContainerLayout->addWidget(m_pipelineStrip);
+  auto* pipelineScroll = new QScrollArea(this);
+  pipelineScroll->setWidgetResizable(true);
+  pipelineScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
+  // pipelineScroll->setFrameShape(QFrame::NoFrame);
+  QPalette scrollPal = pipelineScroll->palette();
+  scrollPal.setColor(QPalette::Window, Qt::white);
+  pipelineScroll->setPalette(scrollPal);
+  // Wrap the strip widget in a container with padding so the scroll area
+  // provides insets on the top, right, and bottom.
+  auto* scrollContainer = new QWidget();
+  scrollContainer->setAutoFillBackground(true);
+  scrollContainer->setPalette(scrollPal);
+  auto* scrollLayout = new QVBoxLayout(scrollContainer);
+  scrollLayout->setContentsMargins(0, 4, 4, 4);
+  scrollLayout->addWidget(m_pipelineStrip);
+  pipelineScroll->setWidget(scrollContainer);
+  m_ui->pipelineContainerLayout->addWidget(pipelineScroll);
   connect(m_pipelineStrip, &pipeline::PipelineStripWidget::nodeSelected,
           this, &MainWindow::onNodeSelected);
   connect(m_pipelineStrip, &pipeline::PipelineStripWidget::portSelected,
@@ -371,13 +392,16 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
 
   // Context menu on links: delete action
   m_pipelineStrip->setLinkMenuProvider(
-    [](pipeline::Link* link, QMenu& menu) {
-      menu.addAction("Delete Link", [link]() {
+    [this](pipeline::Link* link, QMenu& menu) {
+      auto* action = menu.addAction("Delete Link", [link]() {
         auto* p = qobject_cast<pipeline::Pipeline*>(link->parent());
         if (p) {
           p->removeLink(link);
         }
       });
+      if (pipeline() && pipeline()->isExecuting()) {
+        action->setEnabled(false);
+      }
     });
 
   // Context menu on nodes: type-specific actions
@@ -387,6 +411,7 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
       if (!p) {
         return;
       }
+      bool locked = p->isExecuting();
 
       // SinkNode not inside a group: offer "Create Group"
       auto* sink = qobject_cast<pipeline::SinkNode*>(node);
@@ -402,7 +427,7 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
         }
       }
       if (sink && !inGroup) {
-        menu.addAction("Create Group", [p, sink]() {
+        auto* action = menu.addAction("Create Group", [p, sink]() {
           // Create a SinkGroupNode with matching port types.
           auto* group = new pipeline::SinkGroupNode();
           for (auto* inPort : sink->inputPorts()) {
@@ -439,6 +464,9 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
           }
           p->execute();
         });
+        if (locked) {
+          action->setEnabled(false);
+        }
       }
 
       // Node inside a group: offer "Leave Group"
@@ -451,7 +479,7 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
         if (!group) {
           continue;
         }
-        menu.addAction("Leave Group", [p, node, group]() {
+        auto* action = menu.addAction("Leave Group", [p, node, group]() {
           for (auto* inp : node->inputPorts()) {
             if (!inp->link()) {
               continue;
@@ -476,11 +504,18 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
           }
           p->execute();
         });
+        if (locked) {
+          action->setEnabled(false);
+        }
         break;
       }
 
       // Delete node
-      menu.addAction("Delete", [p, node]() { p->removeNode(node); });
+      auto* deleteAction =
+        menu.addAction("Delete", [p, node]() { p->removeNode(node); });
+      if (locked) {
+        deleteAction->setEnabled(false);
+      }
     });
 
   // Sync tip output port from ActiveObjects to the strip widget and colormap
@@ -1428,6 +1463,7 @@ void MainWindow::initPipeline()
   p->setExecutor(new pipeline::ThreadedExecutor(p));
   m_pipeline = p;
   m_pipelineStrip->setPipeline(p);
+  m_pipelineControls->setPipeline(p);
   ActiveObjects::instance().setPipeline(p);
   m_progressDialogManager = new ProgressDialogManager(this);
   m_progressDialogManager->setPipeline(p);
@@ -1553,6 +1589,27 @@ void MainWindow::initPipeline()
       }
     }
   });
+
+  // Lock all mutation UI while the pipeline is executing.
+  connect(p, &pipeline::Pipeline::executionStarted,
+          this, [this]() { setPipelineMutationEnabled(false); });
+  connect(p, &pipeline::Pipeline::executionFinished,
+          this, [this]() { setPipelineMutationEnabled(true); });
+}
+
+void MainWindow::setPipelineMutationEnabled(bool enabled)
+{
+  m_pipelineStrip->setInteractionLocked(!enabled);
+  m_ui->menuData->setEnabled(enabled);
+  m_ui->menuTomography->setEnabled(enabled);
+  m_ui->menuSegmentation->setEnabled(enabled);
+  m_ui->menuModules->setEnabled(enabled);
+  if (m_customTransformsMenu) {
+    m_customTransformsMenu->setEnabled(enabled);
+  }
+  if (m_pipelineTemplates) {
+    m_pipelineTemplates->setEnabled(enabled);
+  }
 }
 
 pipeline::Pipeline* MainWindow::pipeline() const
@@ -1591,6 +1648,7 @@ void MainWindow::onActiveNodeChanged(pipeline::Node* node)
 {
   m_pipelineStrip->setSelectedNode(node);
   disconnect(m_sinkColorMapChangedConn);
+  disconnect(m_editingChangedConn);
   clearDynamicPropertiesWidget();
 
   if (!node) {
@@ -1598,11 +1656,41 @@ void MainWindow::onActiveNodeChanged(pipeline::Node* node)
     return;
   }
 
+  // Hide the properties panel while an edit dialog is open for the active
+  // node, and restore it when the dialog is dismissed.
+  //
+  // Both TransformEditDialog and TransformPropertiesPanel manage the
+  // parametersApplied → execute() auto-wiring.  To avoid them stepping on
+  // each other we must guarantee ordering:
+  //   editing=true  → destroy the panel *immediately* so its destructor
+  //                    restores auto-wiring before the dialog's constructor
+  //                    re-disconnects it.
+  //   editing=false → *defer* panel creation so the dialog's destructor
+  //                    restores auto-wiring before the new panel suppresses it.
+  m_editingChangedConn = connect(
+    node, &pipeline::Node::editingChanged, this, [this](bool editing) {
+      if (editing) {
+        if (m_dynamicPropertiesWidget) {
+          auto* w = m_dynamicPropertiesWidget.data();
+          m_dynamicPropertiesWidget = nullptr;
+          m_ui->propertiesPanelStackedWidget->removeWidget(w);
+          delete w;
+        }
+        m_ui->propertiesPanelStackedWidget->setCurrentWidget(m_ui->empty);
+      } else {
+        QTimer::singleShot(0, this, [this]() {
+          onActiveNodeChanged(ActiveObjects::instance().activeNode());
+        });
+      }
+    });
+
   QWidget* propsWidget = nullptr;
 
   if (auto* sink = dynamic_cast<pipeline::LegacyModuleSink*>(node)) {
-    propsWidget = sink->createPropertiesWidget(
-      m_ui->propertiesPanelStackedWidget);
+    if (!node->isEditing()) {
+      propsWidget = sink->createPropertiesWidget(
+        m_ui->propertiesPanelStackedWidget);
+    }
     // React to detached colormap toggling while this sink is selected
     m_sinkColorMapChangedConn = connect(
       sink, &pipeline::LegacyModuleSink::colorMapChanged,
@@ -1614,7 +1702,7 @@ void MainWindow::onActiveNodeChanged(pipeline::Node* node)
         }
       });
   } else if (auto* transform = dynamic_cast<pipeline::TransformNode*>(node)) {
-    if (transform->hasPropertiesWidget()) {
+    if (transform->hasPropertiesWidget() && !node->isEditing()) {
       propsWidget = new pipeline::TransformPropertiesPanel(
         transform, pipeline(), m_ui->propertiesPanelStackedWidget);
     }
