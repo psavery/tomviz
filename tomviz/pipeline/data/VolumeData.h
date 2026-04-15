@@ -111,13 +111,16 @@ public:
   vtkPiecewiseFunction* gradientOpacity() const;
 
   /// Rescale the color and opacity maps to the current scalarRange().
-  /// Uses cached VTK objects directly (no SM proxy interaction).
   void rescaleColorMap();
 
   /// Copy color/opacity map control points from another VolumeData as-is
-  /// (preserving the source's X positions). Uses cached VTK objects directly.
+  /// (preserving the source's X positions).
   /// Both this and source must have initColorMap() called first.
   void copyColorMapFrom(const VolumeData& source);
+
+  /// Push the client-side VTK color/opacity state into the SM proxy
+  /// properties so that proxy-level operations see the current values.
+  void syncColorMapToProxy();
 
   /// Convenience: copyColorMapFrom() + rescaleColorMap().
   void copyAndRescaleColorMapFrom(const VolumeData& source);

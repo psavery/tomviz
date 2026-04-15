@@ -7,7 +7,6 @@
 #include "BrightnessContrastWidget.h"
 #include "ColorMap.h"
 #include "ColorMapSettingsWidget.h"
-#include "legacy/DataSource.h"
 #include "DoubleSliderWidget.h"
 #include "PresetDialog.h"
 #include "QVTKGLWidget.h"
@@ -222,6 +221,11 @@ void HistogramWidget::setLUTProxy(vtkSMProxy* proxy)
   }
 }
 
+void HistogramWidget::setVolumeData(pipeline::VolumeDataPtr volumeData)
+{
+  m_volumeData = std::move(volumeData);
+}
+
 void HistogramWidget::updateLUTProxy()
 {
   // Update the LUT proxy from the LUT object
@@ -248,10 +252,6 @@ void HistogramWidget::updateLUTProxy()
 
 void HistogramWidget::updateColorMapDialogs()
 {
-  // TODO: activeDataSource() no longer exists on ActiveObjects.
-  // The DataSource for BrightnessContrastWidget needs to come from
-  // the active node's associated data. For now, pass nullptr.
-  DataSource* ds = nullptr; // TODO: obtain DataSource from active node
   auto* lut = m_LUT.Get();
 
   if (m_colorMapSettingsWidget) {
@@ -260,7 +260,7 @@ void HistogramWidget::updateColorMapDialogs()
   }
 
   if (m_brightnessContrastWidget) {
-    m_brightnessContrastWidget->setDataSource(ds);
+    m_brightnessContrastWidget->setVolumeData(m_volumeData);
     m_brightnessContrastWidget->setLut(lut);
     m_brightnessContrastWidget->updateGui();
   }
@@ -534,15 +534,12 @@ void HistogramWidget::onResetRangeClicked()
 
 void HistogramWidget::resetRange()
 {
-  // TODO: activeDataSource() no longer exists on ActiveObjects.
-  // Need to obtain DataSource from active node to get data range.
-  // For now, this is a no-op without a DataSource.
-  DataSource* activeDataSource = nullptr; // TODO: obtain from active node
-  if (!activeDataSource)
+  if (!m_volumeData || !m_volumeData->isValid()) {
     return;
+  }
 
-  double range[2];
-  activeDataSource->getRange(range);
+  auto sr = m_volumeData->scalarRange();
+  double range[2] = { sr[0], sr[1] };
   resetRange(range);
 }
 
@@ -555,19 +552,18 @@ void HistogramWidget::resetRange(double range[2])
 
 void HistogramWidget::onCustomRangeClicked()
 {
-  // TODO: activeDataSource() no longer exists on ActiveObjects.
-  // Need to obtain DataSource from active node to get data range and type.
-  // For now, this is a no-op without a DataSource.
-  DataSource* activeDataSource = nullptr; // TODO: obtain from active node
-  if (!activeDataSource)
+  if (!m_volumeData || !m_volumeData->isValid()) {
     return;
+  }
 
-  double maxRange[2];
-  activeDataSource->getRange(maxRange);
+  auto sr = m_volumeData->scalarRange();
+  double maxRange[2] = { sr[0], sr[1] };
 
   // Get the type of the active scalar
-  auto scalar = activeDataSource->activeScalars();
-  auto array = activeDataSource->getScalarsArray(scalar);
+  auto* array = m_volumeData->scalars();
+  if (!array) {
+    return;
+  }
   auto dataType = array->GetDataType();
   int precision = 0;
   if (dataType == VTK_FLOAT || dataType == VTK_DOUBLE) {
@@ -749,10 +745,8 @@ void HistogramWidget::onBrightnessAndContrastClicked()
   dialog.setLayout(new QVBoxLayout);
   dialog.setWindowTitle("Brightness and Contrast");
 
-  // TODO: activeDataSource() no longer exists on ActiveObjects.
-  // BrightnessContrastWidget needs a DataSource from the active node.
-  DataSource* ds = nullptr; // TODO: obtain from active node
-  m_brightnessContrastWidget = new BrightnessContrastWidget(ds, m_LUT, this);
+  m_brightnessContrastWidget =
+    new BrightnessContrastWidget(m_volumeData, m_LUT, this);
   dialog.layout()->addWidget(m_brightnessContrastWidget);
 
   auto* widget = m_brightnessContrastWidget.data();
@@ -771,18 +765,11 @@ void HistogramWidget::autoAdjustContrast()
 {
   auto* table = m_inputData.Get();
 
-  // For now, auto adjust contrast for the whole data source. We can
-  // also do it for individual slices in the future (in which case
-  // we should generate a histogram for an individual slice).
-  // TODO: activeDataSource() no longer exists on ActiveObjects.
-  // Need to obtain DataSource from active node for auto-contrast.
-  DataSource* ds = nullptr; // TODO: obtain from active node
-
-  if (!table || !ds || !m_LUT) {
+  if (!table || !m_volumeData || !m_volumeData->isValid() || !m_LUT) {
     return;
   }
 
-  auto* imageData = ds->imageData();
+  auto* imageData = m_volumeData->imageData();
   auto* histogram =
     vtkDataArray::SafeDownCast(table->GetColumnByName("image_pops"));
   auto* extents =
@@ -801,8 +788,8 @@ void HistogramWidget::autoAdjustContrast(vtkDataArray* histogram,
                                          vtkImageData* imageData)
 {
   // Gather some information
-  double range[2];
-  DataSource::getRange(imageData, range);
+  auto sr = m_volumeData->scalarRange();
+  double range[2] = { sr[0], sr[1] };
 
   int dims[3];
   imageData->GetDimensions(dims);
@@ -894,9 +881,6 @@ void HistogramWidget::updateUI()
     }
   }
 
-  // TODO: activeDataSource() no longer exists on ActiveObjects.
-  // The check below disables buttons when there's no data source.
-  // Use activeNode() as a proxy: if no active node, disable.
   auto* activeNode = ActiveObjects::instance().activeNode();
   if (!activeNode) {
     QSignalBlocker blocker1(m_colorLegendToolButton);
@@ -941,19 +925,22 @@ void HistogramWidget::showEvent(QShowEvent* event)
 
 void HistogramWidget::addPlaceholderNodes()
 {
-  auto* lut = m_LUT.Get();
-  auto* opacity = m_scalarOpacityFunction.Get();
-  // TODO: activeDataSource() no longer exists on ActiveObjects.
-  // addPlaceholderNodes() requires a DataSource* for range information.
-  // Need to obtain DataSource from active node.
-  DataSource* ds = nullptr; // TODO: obtain from active node
-
-  if (lut && ds) {
-    tomviz::addPlaceholderNodes(lut, ds);
+  if (!m_volumeData || !m_volumeData->isValid()) {
+    return;
   }
 
-  if (opacity && ds) {
-    tomviz::addPlaceholderNodes(opacity, ds);
+  auto sr = m_volumeData->scalarRange();
+  double range[2] = { sr[0], sr[1] };
+
+  auto* lut = m_LUT.Get();
+  auto* opacity = m_scalarOpacityFunction.Get();
+
+  if (lut) {
+    tomviz::addPlaceholderNodes(lut, range);
+  }
+
+  if (opacity) {
+    tomviz::addPlaceholderNodes(opacity, range);
   }
 }
 

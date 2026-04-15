@@ -1457,16 +1457,13 @@ static bool nodeYsMatch(double* a, double* b)
 
 } // namespace
 
-void addPlaceholderNodes(vtkColorTransferFunction* lut, DataSource* ds)
+void addPlaceholderNodes(vtkColorTransferFunction* lut, const double range[2])
 {
   // Add nodes on the data ends as placeholders
   auto numNodes = lut->GetSize();
   if (numNodes == 0) {
     return;
   }
-
-  double range[2];
-  ds->getRange(range);
 
   auto* dataArray = lut->GetDataPointer();
   int nodeStride = 4;
@@ -1485,6 +1482,13 @@ void addPlaceholderNodes(vtkColorTransferFunction* lut, DataSource* ds)
   for (const auto& point : addPoints) {
     lut->AddRGBPoint(point[0], point[1], point[2], point[3]);
   }
+}
+
+void addPlaceholderNodes(vtkColorTransferFunction* lut, DataSource* ds)
+{
+  double range[2];
+  ds->getRange(range);
+  addPlaceholderNodes(lut, range);
 }
 
 void removePlaceholderNodes(vtkColorTransferFunction* lut)
@@ -1523,16 +1527,13 @@ void removePlaceholderNodes(vtkColorTransferFunction* lut)
   }
 }
 
-void addPlaceholderNodes(vtkPiecewiseFunction* opacity, DataSource* ds)
+void addPlaceholderNodes(vtkPiecewiseFunction* opacity, const double range[2])
 {
   // Add nodes on the data ends as placeholders
   auto numNodes = opacity->GetSize();
   if (numNodes == 0) {
     return;
   }
-
-  double range[2];
-  ds->getRange(range);
 
   auto* dataArray = opacity->GetDataPointer();
   int nodeStride = 2;
@@ -1551,6 +1552,13 @@ void addPlaceholderNodes(vtkPiecewiseFunction* opacity, DataSource* ds)
   for (const auto& point : addPoints) {
     opacity->AddPoint(point[0], point[1]);
   }
+}
+
+void addPlaceholderNodes(vtkPiecewiseFunction* opacity, DataSource* ds)
+{
+  double range[2];
+  ds->getRange(range);
+  addPlaceholderNodes(opacity, range);
 }
 
 void removePlaceholderNodes(vtkPiecewiseFunction* opacity)
@@ -1655,12 +1663,11 @@ void rescaleNodes(vtkPiecewiseFunction* opacity, double newMin, double newMax)
   }
 }
 
-void removePointsOutOfRange(vtkColorTransferFunction* lut, DataSource* ds)
+void removePointsOutOfRange(vtkColorTransferFunction* lut,
+                            const double range[2])
 {
-  // Remove points outside the range of the data source
+  // Remove points outside the range
   // This will also add points on the ends of the range
-  double range[2];
-  ds->getRange(range);
 
   // Make sure there are points on the ends of the data
   double startColor[3], endColor[3];
@@ -1686,13 +1693,18 @@ void removePointsOutOfRange(vtkColorTransferFunction* lut, DataSource* ds)
   lut->AddRGBPoint(range[1], endColor[0], endColor[1], endColor[2]);
 }
 
-void removePointsOutOfRange(vtkPiecewiseFunction* opacity, DataSource* ds)
+void removePointsOutOfRange(vtkColorTransferFunction* lut, DataSource* ds)
 {
-  // Remove points outside the range of the data source
-  // This will also add points on the ends of the range
-
   double range[2];
   ds->getRange(range);
+  removePointsOutOfRange(lut, range);
+}
+
+void removePointsOutOfRange(vtkPiecewiseFunction* opacity,
+                            const double range[2])
+{
+  // Remove points outside the range
+  // This will also add points on the ends of the range
 
   // Make sure there are points on the ends of the data
   double startY = opacity->GetValue(range[0]);
@@ -1714,6 +1726,13 @@ void removePointsOutOfRange(vtkPiecewiseFunction* opacity, DataSource* ds)
 
   opacity->AddPoint(range[0], startY);
   opacity->AddPoint(range[1], endY);
+}
+
+void removePointsOutOfRange(vtkPiecewiseFunction* opacity, DataSource* ds)
+{
+  double range[2];
+  ds->getRange(range);
+  removePointsOutOfRange(opacity, range);
 }
 
 bool loadPlugin(QString path)

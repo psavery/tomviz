@@ -623,6 +623,14 @@ void VolumePropertiesWidget::onActiveScalarsChanged(const QString& name)
     return;
   }
   pointData->SetActiveScalars(name.toUtf8().constData());
+
+  // Bump the imageData MTime so the histogram cache is invalidated
+  // (SetActiveScalars only modifies vtkPointData's MTime).
+  vol->imageData()->Modified();
+
+  // Rescale color/opacity maps to the new scalar range.
+  vol->rescaleColorMap();
+
   updateData();
   if (m_port) {
     emit m_port->metadataChanged();

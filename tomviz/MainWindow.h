@@ -64,6 +64,7 @@ public slots:
 private slots:
   void onNodeSelected(pipeline::Node* node);
   void onPortSelected(pipeline::OutputPort* port);
+  void onLinkSelected(pipeline::Link* link);
   void onActiveNodeChanged(pipeline::Node* node);
   void onActivePortChanged(pipeline::OutputPort* port);
   void onActiveLinkChanged(pipeline::Link* link);
@@ -122,6 +123,7 @@ private:
   pipeline::Pipeline* m_pipeline = nullptr;
   ProgressDialogManager* m_progressDialogManager = nullptr;
   QMetaObject::Connection m_tipDataChangedConn;
+  QMetaObject::Connection m_tipMetadataChangedConn;
   QMetaObject::Connection m_sinkColorMapChangedConn;
   QMetaObject::Connection m_editingChangedConn;
   QPointer<QWidget> m_dynamicPropertiesWidget;

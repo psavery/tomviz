@@ -19,79 +19,7 @@
 #include <vtkSMTransferFunctionProxy.h>
 
 #include <array>
-#include <vector>
 
-namespace {
-
-double rescaleValue(double val, double oldMin, double oldMax, double newMin,
-                    double newMax)
-{
-  if (oldMax == oldMin) {
-    return newMin;
-  }
-  return (val - oldMin) * (newMax - newMin) / (oldMax - oldMin) + newMin;
-}
-
-void rescaleCTFNodes(vtkColorTransferFunction* lut, double newMin,
-                     double newMax)
-{
-  auto numNodes = lut->GetSize();
-  if (numNodes == 0) {
-    return;
-  }
-
-  auto* dataArray = lut->GetDataPointer();
-  int nodeStride = 4; // X, R, G, B
-  double* firstNode = dataArray;
-  double* backNode = firstNode + (numNodes - 1) * nodeStride;
-
-  double oldMin = firstNode[0];
-  double oldMax = backNode[0];
-
-  std::vector<std::array<double, 4>> points;
-  for (int i = 0; i < numNodes; ++i) {
-    double* n = firstNode + i * nodeStride;
-    double newX = rescaleValue(n[0], oldMin, oldMax, newMin, newMax);
-    points.push_back({ newX, n[1], n[2], n[3] });
-  }
-
-  lut->RemoveAllPoints();
-  for (const auto& p : points) {
-    lut->AddRGBPoint(p[0], p[1], p[2], p[3]);
-  }
-}
-
-void rescalePWFNodes(vtkPiecewiseFunction* pwf, double newMin, double newMax)
-{
-  int numNodes = pwf->GetSize();
-  if (numNodes == 0) {
-    return;
-  }
-
-  // Use GetNodeValue() which returns [X, Y, Midpoint, Sharpness]
-  // (GetDataPointer() only returns (X,Y) pairs without midpoint/sharpness)
-  double first[4], last[4];
-  pwf->GetNodeValue(0, first);
-  pwf->GetNodeValue(numNodes - 1, last);
-
-  double oldMin = first[0];
-  double oldMax = last[0];
-
-  std::vector<std::array<double, 4>> points;
-  for (int i = 0; i < numNodes; ++i) {
-    double val[4];
-    pwf->GetNodeValue(i, val);
-    double newX = rescaleValue(val[0], oldMin, oldMax, newMin, newMax);
-    points.push_back({ newX, val[1], val[2], val[3] });
-  }
-
-  pwf->RemoveAllPoints();
-  for (const auto& p : points) {
-    pwf->AddPoint(p[0], p[1], p[2], p[3]);
-  }
-}
-
-} // anonymous namespace
 
 namespace tomviz {
 namespace pipeline {
@@ -230,7 +158,7 @@ std::array<double, 2> VolumeData::scalarRange() const
   std::array<double, 2> range = { 0.0, 0.0 };
   auto* s = scalars();
   if (s) {
-    s->GetRange(range.data());
+    s->GetFiniteRange(range.data(), -1);
   }
   return range;
 }
@@ -318,14 +246,53 @@ vtkPiecewiseFunction* VolumeData::gradientOpacity() const
   return m_gradientOpacity;
 }
 
-void VolumeData::rescaleColorMap()
+void VolumeData::syncColorMapToProxy()
 {
-  if (!m_ctf || !m_opacity) {
+  if (!m_colorMap) {
     return;
   }
+
+  // Push CTF control points to the proxy's RGBPoints property
+  if (m_ctf && m_ctf->GetSize() > 0) {
+    auto* prop = m_colorMap->GetProperty("RGBPoints");
+    auto numNodes = m_ctf->GetSize();
+    auto* data = m_ctf->GetDataPointer();
+    vtkSMPropertyHelper(prop).Set(data, numNodes * 4);
+  }
+
+  // Push opacity control points to the proxy's Points property
+  auto* omap =
+    vtkSMPropertyHelper(m_colorMap, "ScalarOpacityFunction").GetAsProxy();
+  if (omap && m_opacity && m_opacity->GetSize() > 0) {
+    vtkSMPropertyHelper pointsHelper(omap, "Points");
+    pointsHelper.SetNumberOfElements(4 * m_opacity->GetSize());
+    for (int i = 0; i < m_opacity->GetSize(); ++i) {
+      double val[4];
+      m_opacity->GetNodeValue(i, val);
+      pointsHelper.Set(4 * i + 0, val[0]);
+      pointsHelper.Set(4 * i + 1, val[1]);
+      pointsHelper.Set(4 * i + 2, val[2]);
+      pointsHelper.Set(4 * i + 3, val[3]);
+    }
+  }
+}
+
+void VolumeData::rescaleColorMap()
+{
+  if (!m_colorMap) {
+    return;
+  }
+
   auto range = scalarRange();
-  rescaleCTFNodes(m_ctf, range[0], range[1]);
-  rescalePWFNodes(m_opacity, range[0], range[1]);
+  double r[2] = { range[0], range[1] };
+
+  vtkSMTransferFunctionProxy::RescaleTransferFunction(m_colorMap, r);
+
+  auto* omap =
+    vtkSMPropertyHelper(m_colorMap, "ScalarOpacityFunction").GetAsProxy();
+  if (omap) {
+    vtkSMTransferFunctionProxy::RescaleTransferFunction(omap, r);
+  }
 }
 
 void VolumeData::copyColorMapFrom(const VolumeData& source)
@@ -372,6 +339,11 @@ void VolumeData::copyColorMapFrom(const VolumeData& source)
     }
     m_gradientOpacity->Modified();
   }
+
+  // Sync the VTK object state into the SM proxy so that proxy-level
+  // operations (e.g. rescaleColorMap, RescaleTransferFunction) see
+  // the copied values rather than the stale defaults.
+  syncColorMapToProxy();
 }
 
 void VolumeData::copyAndRescaleColorMapFrom(const VolumeData& source)

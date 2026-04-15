@@ -222,7 +222,16 @@ void CentralWidget::histogramReady(vtkSmartPointer<vtkImageData> input,
                                    vtkSmartPointer<vtkTable> output)
 {
   vtkImageData* inputIm = getInputImage(input);
-  if (!inputIm || !output) {
+  if (!inputIm) {
+    // The image pointer doesn't match the current active data.
+    // The pipeline may have replaced the image. Trigger a refresh
+    // so we request a histogram for the current image.
+    if (m_activeVolumeData && m_activeVolumeData->isValid() && input) {
+      refreshHistogram();
+    }
+    return;
+  }
+  if (!output) {
     return;
   }
 
@@ -281,6 +290,7 @@ void CentralWidget::setActiveSinkNode(pipeline::LegacyModuleSink* sink)
 
   if (!sink) {
     m_activeVolumeData.reset();
+    m_ui->histogramWidget->setVolumeData(nullptr);
     m_ui->histogramWidget->setInputData(nullptr, "", "");
     m_ui->gradientOpacityWidget->setInputData(nullptr, "", "");
     return;
@@ -289,6 +299,7 @@ void CentralWidget::setActiveSinkNode(pipeline::LegacyModuleSink* sink)
   // Cache the VolumeData for histogram computation
   auto vol = sink->volumeData();
   m_activeVolumeData = vol;
+  m_ui->histogramWidget->setVolumeData(vol);
 
   // Set the color map proxy on the histogram widget
   auto* cmap = sink->colorMap();
@@ -325,6 +336,7 @@ void CentralWidget::setActiveVolumeData(pipeline::VolumeDataPtr volumeData)
   }
 
   m_activeVolumeData = volumeData;
+  m_ui->histogramWidget->setVolumeData(volumeData);
 
   if (!volumeData || !volumeData->isValid()) {
     m_ui->histogramWidget->setInputData(nullptr, "", "");

@@ -245,7 +245,7 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   connect(m_pipelineStrip, &pipeline::PipelineStripWidget::portSelected,
           this, &MainWindow::onPortSelected);
   connect(m_pipelineStrip, &pipeline::PipelineStripWidget::linkSelected,
-          &ActiveObjects::instance(), &ActiveObjects::setActiveLink);
+          this, &MainWindow::onLinkSelected);
 
   // Sync ActiveObjects changes back to the strip widget and properties panel.
   // This ensures programmatic setActiveNode/Port/Link calls are reflected.
@@ -527,9 +527,13 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
           &ActiveObjects::activeTipOutputPortChanged,
           this, [this](pipeline::OutputPort* port) {
             disconnect(m_tipDataChangedConn);
+            disconnect(m_tipMetadataChangedConn);
             if (port) {
               m_tipDataChangedConn = connect(
                 port, &pipeline::OutputPort::dataChanged,
+                this, &MainWindow::updateColorMapDisplay);
+              m_tipMetadataChangedConn = connect(
+                port, &pipeline::OutputPort::metadataChanged,
                 this, &MainWindow::updateColorMapDisplay);
             }
             updateColorMapDisplay();
@@ -1534,7 +1538,7 @@ void MainWindow::initPipeline()
   // Pipeline-complete handler: initialize color maps for new VolumeData
   // (requires SM proxy creation, only safe after worker is idle), then
   // update any sinks whose color map was just created.
-  connect(p, &pipeline::Pipeline::executionFinished, this, [p]() {
+  connect(p, &pipeline::Pipeline::executionFinished, this, [this, p]() {
     bool anyNewColorMaps = false;
     for (auto* node : p->topologicalSort()) {
       pipeline::VolumeDataPtr upstream;
@@ -1579,7 +1583,8 @@ void MainWindow::initPipeline()
 
     // If any new color maps were created, update sinks that may have
     // skipped updateColorMap() during execution because the proxy
-    // didn't exist yet.
+    // didn't exist yet, and refresh the central widget so it picks up
+    // the newly available LUT proxy.
     if (anyNewColorMaps) {
       for (auto* node : p->nodes()) {
         auto* sink = dynamic_cast<pipeline::LegacyModuleSink*>(node);
@@ -1587,6 +1592,7 @@ void MainWindow::initPipeline()
           sink->updateColorMap();
         }
       }
+      updateColorMapDisplay();
     }
   });
 
@@ -1629,8 +1635,17 @@ void MainWindow::onNodeSelected(pipeline::Node* node)
 void MainWindow::onPortSelected(pipeline::OutputPort* port)
 {
   // Forward to ActiveObjects; the rest is handled by onActivePortChanged.
+  ActiveObjects::instance().setActiveNode(nullptr);
   ActiveObjects::instance().setActivePort(port);
   ActiveObjects::instance().setActiveLink(nullptr);
+}
+
+void MainWindow::onLinkSelected(pipeline::Link* link)
+{
+  // Forward to ActiveObjects; the rest is handled by onActiveLinkChanged.
+  ActiveObjects::instance().setActiveNode(nullptr);
+  ActiveObjects::instance().setActivePort(nullptr);
+  ActiveObjects::instance().setActiveLink(link);
 }
 
 void MainWindow::clearDynamicPropertiesWidget()
@@ -1730,10 +1745,11 @@ void MainWindow::onActiveNodeChanged(pipeline::Node* node)
 void MainWindow::onActivePortChanged(pipeline::OutputPort* port)
 {
   m_pipelineStrip->setSelectedPort(port);
-  if (!port) {
-    return; // Null port — leave current properties panel in place.
-  }
   clearDynamicPropertiesWidget();
+  if (!port) {
+    m_ui->propertiesPanelStackedWidget->setCurrentWidget(m_ui->empty);
+    return;
+  }
 
   if (pipeline::isVolumeType(port->type())) {
     auto* propsWidget =
