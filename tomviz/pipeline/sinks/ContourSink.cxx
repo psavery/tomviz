@@ -5,6 +5,7 @@
 #include "ContourSinkWidget.h"
 
 #include "data/VolumeData.h"
+#include "vtkActiveScalarsProducer.h"
 
 #include <QCheckBox>
 #include <QSignalBlocker>
@@ -35,6 +36,7 @@ ContourSink::ContourSink(QObject* parent) : LegacyModuleSink(parent)
   m_property->SetSpecularPower(100.0);
   m_property->SetRepresentationToSurface();
 
+  m_flyingEdges->SetInputConnection(m_contourArrayProducer->GetOutputPort());
   m_mapper->SetInputConnection(m_flyingEdges->GetOutputPort());
   m_mapper->SetScalarModeToUsePointFieldData();
   m_mapper->SetColorModeToMapScalars();
@@ -92,7 +94,8 @@ bool ContourSink::consume(const QMap<QString, PortData>& inputs)
     return false;
   }
 
-  m_flyingEdges->SetInputData(volume->imageData());
+  m_contourArrayProducer->SetOutput(volume->imageData());
+  applyActiveScalars();
 
   // Cache scalar range
   auto range = volume->scalarRange();
@@ -156,6 +159,8 @@ void ContourSink::setIsoValue(double value)
   m_isoValue = value;
   m_isoValueSet = true;
   m_flyingEdges->SetValue(0, value);
+  m_flyingEdges->Update();
+  m_mapper->SetInputDataObject(m_flyingEdges->GetOutput());
   if (m_controllers) {
     QSignalBlocker blocker(m_controllers);
     m_controllers->setIso(value);
@@ -331,6 +336,11 @@ int ContourSink::activeScalars() const
 void ContourSink::setActiveScalars(int idx)
 {
   m_activeScalars = idx;
+  applyActiveScalars();
+  m_flyingEdges->Update();
+  m_mapper->SetInputDataObject(m_flyingEdges->GetOutput());
+  updateColorMap();
+  emit renderNeeded();
 }
 
 // --- Scalar Range ---
@@ -359,6 +369,37 @@ void ContourSink::setMapScalars(bool map)
   emit renderNeeded();
 }
 
+bool ContourSink::applyActiveScalars()
+{
+  auto vol = volumeData();
+  if (!vol || !vol->isValid()) {
+    return false;
+  }
+
+  auto* pointData = vol->imageData()->GetPointData();
+  QString arrayName;
+  int idx = m_activeScalars;
+  if (idx < 0) {
+    // Default: use whatever vtkPointData considers active
+    auto* active = pointData->GetScalars();
+    if (active && active->GetName()) {
+      arrayName = QString::fromUtf8(active->GetName());
+    }
+  } else if (idx < pointData->GetNumberOfArrays()) {
+    auto* array = pointData->GetArray(idx);
+    if (array && array->GetName()) {
+      arrayName = QString::fromUtf8(array->GetName());
+    }
+  }
+
+  bool changed = (!arrayName.isEmpty() && arrayName != m_lastContourArrayName);
+  if (!arrayName.isEmpty()) {
+    m_contourArrayProducer->SetActiveScalars(arrayName.toUtf8().constData());
+    m_lastContourArrayName = arrayName;
+  }
+  return changed;
+}
+
 // --- Color Map ---
 
 void ContourSink::updateColorMap()
@@ -385,12 +426,21 @@ void ContourSink::updateColorArray()
     // Empty color array → use actor's diffuse color
     name = "";
   } else {
-    // Use the active scalars (contour-by array)
+    // Use the contour-by array (resolving the active scalars override)
     auto vol = volumeData();
     if (vol && vol->isValid()) {
-      auto* scalars = vol->imageData()->GetPointData()->GetScalars();
-      if (scalars && scalars->GetName()) {
-        name = scalars->GetName();
+      auto* pointData = vol->imageData()->GetPointData();
+      int idx = m_activeScalars;
+      if (idx < 0) {
+        auto* scalars = pointData->GetScalars();
+        if (scalars && scalars->GetName()) {
+          name = scalars->GetName();
+        }
+      } else if (idx < pointData->GetNumberOfArrays()) {
+        auto* array = pointData->GetArray(idx);
+        if (array && array->GetName()) {
+          name = array->GetName();
+        }
       }
     }
   }
@@ -531,6 +581,7 @@ QJsonObject ContourSink::serialize() const
   json["useSolidColor"] = m_useSolidColor;
   json["colorByArray"] = m_colorByArray;
   json["colorByArrayName"] = m_colorByArrayName;
+  json["activeScalars"] = m_activeScalars;
 
   auto c = qcolor();
   json["color"] = c.name();
@@ -577,6 +628,9 @@ bool ContourSink::deserialize(const QJsonObject& json)
   if (json.contains("colorByArrayName")) {
     setColorByArrayName(json["colorByArrayName"].toString());
   }
+  if (json.contains("activeScalars")) {
+    m_activeScalars = json["activeScalars"].toInt(-1);
+  }
 
   // Some of the above operations modify the contour value.
   // Set this at the end.
@@ -618,6 +672,13 @@ void ContourSink::onMetadataChanged()
     m_actor->SetScale(scale);
   }
 
+  if (applyActiveScalars()) {
+    // The contour array changed — re-execute flying edges and reconnect
+    // the mapper so the contour geometry reflects the new array.
+    m_flyingEdges->Update();
+    m_mapper->SetInputDataObject(m_flyingEdges->GetOutput());
+  }
+  updateColorArray();
   emit renderNeeded();
 }
 

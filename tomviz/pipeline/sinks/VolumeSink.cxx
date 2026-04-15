@@ -483,6 +483,7 @@ void VolumeSink::onMetadataChanged()
   auto orient = vol->displayOrientation();
   m_volume->SetPosition(pos.data());
   m_volume->SetOrientation(orient.data());
+  applyActiveScalars();
   emit renderNeeded();
 }
 

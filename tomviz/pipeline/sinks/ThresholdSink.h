@@ -8,6 +8,8 @@
 
 #include <QPointer>
 #include <QSet>
+#include <QString>
+#include <QStringList>
 #include <vtkSmartPointer.h>
 
 #include <array>
@@ -70,6 +72,16 @@ public:
   bool mapScalars() const;
   void setMapScalars(bool map);
 
+  /// Active scalar array index for thresholding (-1 = default).
+  int activeScalars() const;
+  void setActiveScalars(int idx);
+
+  /// Color by a different array than the threshold array.
+  bool colorByArray() const;
+  void setColorByArray(bool state);
+  QString colorByArrayName() const;
+  void setColorByArrayName(const QString& name);
+
   /// Cached scalar range from the last consume().
   void scalarRange(double range[2]) const;
 
@@ -82,12 +94,12 @@ protected:
   void updateColorMap() override;
   void updatePanel();
 
-private slots:
-  void onScalarArrayChanged();
-
 private:
   /// Build or update the SM proxy pipeline on the main thread.
   void setupOrUpdatePipeline();
+  void applyActiveScalars();
+  void updateColorArray();
+  void updateScalarArrayOptions();
   void applyClippingPlanes();
 
   vtkSmartPointer<vtkSMSourceProxy> m_producer;
@@ -98,7 +110,11 @@ private:
   double m_upper = 1.0;
   bool m_rangeSet = false;
   bool m_mapScalars = true;
+  int m_activeScalars = -1;
+  bool m_colorByArray = false;
+  QString m_colorByArrayName;
   double m_scalarRange[2] = { 0.0, 1.0 };
+  QStringList m_scalarArrayNames;
   QPointer<ThresholdSinkWidget> m_controllers;
   QSet<vtkPlane*> m_clippingPlanes;
   std::array<double, 3> m_lastSpacing = { 0.0, 0.0, 0.0 };

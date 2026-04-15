@@ -29,6 +29,9 @@ public:
   ~ThresholdSinkWidget() override;
 
   void setThresholdRange(double range[2]);
+  void setThresholdByArrayOptions(const QStringList& scalars,
+                                  int activeScalar);
+  void setColorByArrayOptions(const QStringList& options);
 
   //@{
   /**
@@ -42,6 +45,9 @@ public:
   void setRepresentation(const QString& representation);
   void setOpacity(double value);
   void setSpecular(double value);
+  void setThresholdByArrayValue(int i);
+  void setColorByArray(bool state);
+  void setColorByArrayName(const QString& name);
   //@}
 
 signals:
@@ -55,10 +61,15 @@ signals:
   void representationChanged(const QString& representation);
   void opacityChanged(double value);
   void specularChanged(double value);
+  void thresholdByArrayValueChanged(int i);
+  void colorByArrayToggled(bool state);
+  void colorByArrayNameChanged(const QString& name);
   //@}
 
 private:
   void onRepresentationIndexChanged(int i);
+  void onThresholdByArrayIndexChanged(int i);
+  void onColorByArrayIndexChanged(int i);
 
   ThresholdSinkWidget(const ThresholdSinkWidget&) = delete;
   void operator=(const ThresholdSinkWidget&) = delete;

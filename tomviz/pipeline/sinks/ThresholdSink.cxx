@@ -10,8 +10,6 @@
 #include <QSignalBlocker>
 #include <QVBoxLayout>
 
-#include "pqStringVectorPropertyWidget.h"
-
 #include <vtkCompositeRepresentation.h>
 #include <vtkDataArray.h>
 #include <vtkDataObject.h>
@@ -111,6 +109,24 @@ bool ThresholdSink::consume(const QMap<QString, PortData>& inputs)
   m_scalarRange[0] = range[0];
   m_scalarRange[1] = range[1];
 
+  // Cache scalar array names
+  m_scalarArrayNames.clear();
+  auto* pointData = volume->imageData()->GetPointData();
+  for (int i = 0; i < pointData->GetNumberOfArrays(); ++i) {
+    auto* arr = pointData->GetArray(i);
+    if (arr && arr->GetName()) {
+      m_scalarArrayNames.append(QString::fromUtf8(arr->GetName()));
+    }
+  }
+
+  // Initialize default color-by array name if not set
+  if (m_colorByArrayName.isEmpty() && !m_scalarArrayNames.isEmpty()) {
+    auto* scalars = pointData->GetScalars();
+    if (scalars && scalars->GetName()) {
+      m_colorByArrayName = QString::fromUtf8(scalars->GetName());
+    }
+  }
+
   // Auto-set to the middle 10% of range if not explicitly set
   // (copied from old ModuleThreshold::initialize).
   if (!m_rangeSet) {
@@ -184,7 +200,8 @@ void ThresholdSink::setupOrUpdatePipeline()
       .Set(visibility() ? 1 : 0);
 
     updateColorMap();
-    onScalarArrayChanged();
+    applyActiveScalars();
+    updateColorArray();
 
   } else {
     // --- Subsequent calls: update the existing pipeline ---
@@ -200,6 +217,7 @@ void ThresholdSink::setupOrUpdatePipeline()
     vtkSMPropertyHelper(m_thresholdRepresentation, "Visibility")
       .Set(visibility() ? 1 : 0);
 
+    applyActiveScalars();
     updateColorMap();
   }
 
@@ -396,18 +414,6 @@ QWidget* ThresholdSink::createPropertiesWidget(QWidget* parent)
   connect(separateCmapCheck, &QCheckBox::toggled,
           [this](bool on) { setUseDetachedColorMap(on); });
 
-  // Array selection (copied from ModuleThreshold::addToPanel).
-  if (m_thresholdFilter) {
-    auto* arraySelection = new pqStringVectorPropertyWidget(
-      m_thresholdFilter->GetProperty("SelectInputScalars"),
-      m_thresholdFilter);
-    layout->addWidget(arraySelection);
-    connect(arraySelection, &pqPropertyWidget::changeFinished, arraySelection,
-            &pqPropertyWidget::apply);
-    connect(arraySelection, &pqPropertyWidget::changeFinished, this,
-            &ThresholdSink::onScalarArrayChanged);
-  }
-
   // Create, update and connect
   m_controllers = new ThresholdSinkWidget;
   layout->addWidget(m_controllers);
@@ -426,6 +432,12 @@ QWidget* ThresholdSink::createPropertiesWidget(QWidget* parent)
           [this](double v) { setOpacity(v); });
   connect(m_controllers, &ThresholdSinkWidget::specularChanged, this,
           [this](double v) { setSpecular(v); });
+  connect(m_controllers, &ThresholdSinkWidget::thresholdByArrayValueChanged,
+          this, [this](int i) { setActiveScalars(i); });
+  connect(m_controllers, &ThresholdSinkWidget::colorByArrayToggled, this,
+          [this](bool state) { setColorByArray(state); });
+  connect(m_controllers, &ThresholdSinkWidget::colorByArrayNameChanged, this,
+          [this](const QString& name) { setColorByArrayName(name); });
 
   return widget;
 }
@@ -438,12 +450,17 @@ void ThresholdSink::updatePanel()
   QSignalBlocker blocker(m_controllers);
 
   m_controllers->setThresholdRange(m_scalarRange);
+  updateScalarArrayOptions();
+
   m_controllers->setColorMapData(mapScalars());
   m_controllers->setMinimum(lowerThreshold());
   m_controllers->setMaximum(upperThreshold());
   m_controllers->setRepresentation(representationString());
   m_controllers->setOpacity(opacity());
   m_controllers->setSpecular(specular());
+  m_controllers->setThresholdByArrayValue(activeScalars());
+  m_controllers->setColorByArray(colorByArray());
+  m_controllers->setColorByArrayName(colorByArrayName());
 }
 
 // --- Clipping ---
@@ -502,31 +519,134 @@ void ThresholdSink::applyClippingPlanes()
   }
 }
 
-// --- Scalar Array Changed (copied from ModuleThreshold) ---
+// --- Active Scalars ---
 
-void ThresholdSink::onScalarArrayChanged()
+int ThresholdSink::activeScalars() const
+{
+  return m_activeScalars;
+}
+
+void ThresholdSink::setActiveScalars(int idx)
+{
+  m_activeScalars = idx;
+  applyActiveScalars();
+  if (!m_colorByArray) {
+    updateColorArray();
+  }
+  emit renderNeeded();
+}
+
+void ThresholdSink::applyActiveScalars()
+{
+  if (!m_thresholdFilter) {
+    return;
+  }
+
+  auto vol = volumeData();
+  if (!vol || !vol->isValid()) {
+    return;
+  }
+
+  auto* pointData = vol->imageData()->GetPointData();
+  QString arrayName;
+  int idx = m_activeScalars;
+  if (idx < 0) {
+    auto* active = pointData->GetScalars();
+    if (active && active->GetName()) {
+      arrayName = QString::fromUtf8(active->GetName());
+    }
+  } else if (idx < pointData->GetNumberOfArrays()) {
+    auto* array = pointData->GetArray(idx);
+    if (array && array->GetName()) {
+      arrayName = QString::fromUtf8(array->GetName());
+    }
+  }
+
+  if (!arrayName.isEmpty()) {
+    vtkSMPropertyHelper(m_thresholdFilter, "SelectInputScalars")
+      .SetInputArrayToProcess(vtkDataObject::FIELD_ASSOCIATION_POINTS,
+                              arrayName.toUtf8().constData());
+    m_thresholdFilter->UpdateVTKObjects();
+  }
+}
+
+// --- Color By Array ---
+
+bool ThresholdSink::colorByArray() const
+{
+  return m_colorByArray;
+}
+
+void ThresholdSink::setColorByArray(bool state)
+{
+  m_colorByArray = state;
+  updateColorArray();
+  emit renderNeeded();
+}
+
+QString ThresholdSink::colorByArrayName() const
+{
+  return m_colorByArrayName;
+}
+
+void ThresholdSink::setColorByArrayName(const QString& name)
+{
+  m_colorByArrayName = name;
+  updateColorArray();
+  emit renderNeeded();
+}
+
+void ThresholdSink::updateColorArray()
 {
   if (!m_thresholdRepresentation) {
     return;
   }
 
-  // Determine the active scalar array name from the VolumeData.
-  QString arrayName;
-  auto vol = volumeData();
-  if (vol && vol->isValid()) {
-    auto* scalars = vol->imageData()->GetPointData()->GetScalars();
-    if (scalars && scalars->GetName()) {
-      arrayName = QString::fromUtf8(scalars->GetName());
+  QString name;
+  if (m_colorByArray) {
+    name = m_colorByArrayName;
+  } else {
+    // Use the threshold-by array (resolving the active scalars override)
+    auto vol = volumeData();
+    if (vol && vol->isValid()) {
+      auto* pointData = vol->imageData()->GetPointData();
+      int idx = m_activeScalars;
+      if (idx < 0) {
+        auto* scalars = pointData->GetScalars();
+        if (scalars && scalars->GetName()) {
+          name = QString::fromUtf8(scalars->GetName());
+        }
+      } else if (idx < pointData->GetNumberOfArrays()) {
+        auto* array = pointData->GetArray(idx);
+        if (array && array->GetName()) {
+          name = QString::fromUtf8(array->GetName());
+        }
+      }
     }
   }
 
-  vtkSMPropertyHelper(m_thresholdRepresentation, "ColorArrayName")
-    .SetInputArrayToProcess(vtkDataObject::FIELD_ASSOCIATION_POINTS,
-                            arrayName.toLatin1().data());
-  m_thresholdRepresentation->UpdateVTKObjects();
+  if (!name.isEmpty()) {
+    vtkSMPropertyHelper(m_thresholdRepresentation, "ColorArrayName")
+      .SetInputArrayToProcess(vtkDataObject::FIELD_ASSOCIATION_POINTS,
+                              name.toUtf8().constData());
+    m_thresholdRepresentation->UpdateVTKObjects();
+  }
+}
 
-  m_thresholdFilter->UpdateVTKObjects();
-  emit renderNeeded();
+void ThresholdSink::updateScalarArrayOptions()
+{
+  if (!m_controllers)
+    return;
+
+  QSignalBlocker blocker(m_controllers);
+  m_controllers->setThresholdByArrayOptions(m_scalarArrayNames, m_activeScalars);
+  m_controllers->setColorByArrayOptions(m_scalarArrayNames);
+
+  if (!m_scalarArrayNames.contains(m_colorByArrayName) &&
+      !m_scalarArrayNames.isEmpty()) {
+    m_colorByArrayName = m_scalarArrayNames.first();
+  }
+  m_controllers->setColorByArrayName(m_colorByArrayName);
 }
 
 // --- Serialization ---
@@ -534,10 +654,9 @@ void ThresholdSink::onScalarArrayChanged()
 QJsonObject ThresholdSink::serialize() const
 {
   auto json = LegacyModuleSink::serialize();
-  if (m_thresholdFilter) {
-    vtkSMPropertyHelper scalars(m_thresholdFilter, "SelectInputScalars");
-    json["scalarArray"] = scalars.GetAsInt();
-  }
+  json["activeScalars"] = m_activeScalars;
+  json["colorByArray"] = m_colorByArray;
+  json["colorByArrayName"] = m_colorByArrayName;
   json["lowerThreshold"] = m_lower;
   json["upperThreshold"] = m_upper;
   json["opacity"] = opacity();
@@ -552,10 +671,14 @@ bool ThresholdSink::deserialize(const QJsonObject& json)
   if (!LegacyModuleSink::deserialize(json)) {
     return false;
   }
-  if (json.contains("scalarArray") && m_thresholdFilter) {
-    vtkSMPropertyHelper(m_thresholdFilter, "SelectInputScalars")
-      .Set(json["scalarArray"].toInt());
-    m_thresholdFilter->UpdateVTKObjects();
+  if (json.contains("activeScalars")) {
+    m_activeScalars = json["activeScalars"].toInt(-1);
+  }
+  if (json.contains("colorByArray")) {
+    m_colorByArray = json["colorByArray"].toBool();
+  }
+  if (json.contains("colorByArrayName")) {
+    m_colorByArrayName = json["colorByArrayName"].toString();
   }
   if (json.contains("lowerThreshold")) {
     setThresholdRange(json["lowerThreshold"].toDouble(),
@@ -625,6 +748,8 @@ void ThresholdSink::onMetadataChanged()
     actor->SetScale(scale);
   }
 
+  applyActiveScalars();
+  updateColorArray();
   emit renderNeeded();
 }
 

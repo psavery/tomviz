@@ -6,6 +6,7 @@
 #include "DoubleSliderWidget.h"
 #include "IntSliderWidget.h"
 #include "data/VolumeData.h"
+#include "vtkActiveScalarsProducer.h"
 #include "vtkNonOrthoImagePlaneWidget.h"
 
 #include <QCheckBox>
@@ -165,10 +166,11 @@ bool SliceSink::consume(const QMap<QString, PortData>& inputs)
   volume->imageData()->GetBounds(m_bounds);
 
   if (m_widget) {
-    // Feed data to the widget via a trivial producer
-    vtkNew<vtkTrivialProducer> producer;
-    producer->SetOutput(volume->imageData());
-    m_widget->SetInputConnection(producer->GetOutputPort());
+    // Feed data to the widget via the active-scalars producer so it can
+    // independently select which scalar array to display.
+    m_producer->SetOutput(volume->imageData());
+    applyActiveScalars();
+    m_widget->SetInputConnection(m_producer->GetOutputPort());
 
     // Apply direction and slice
     applyDirection();
@@ -391,6 +393,46 @@ void SliceSink::setMapScalars(bool map)
   emit renderNeeded();
 }
 
+int SliceSink::activeScalars() const
+{
+  return m_activeScalars;
+}
+
+void SliceSink::setActiveScalars(int index)
+{
+  m_activeScalars = index;
+  applyActiveScalars();
+  emit renderNeeded();
+}
+
+void SliceSink::applyActiveScalars()
+{
+  auto vol = volumeData();
+  if (!vol || !vol->isValid()) {
+    return;
+  }
+
+  auto* pointData = vol->imageData()->GetPointData();
+  QString arrayName;
+  int idx = m_activeScalars;
+  if (idx < 0) {
+    // Default: use whatever vtkPointData considers active
+    auto* active = pointData->GetScalars();
+    if (active && active->GetName()) {
+      arrayName = QString::fromUtf8(active->GetName());
+    }
+  } else if (idx < pointData->GetNumberOfArrays()) {
+    auto* array = pointData->GetArray(idx);
+    if (array && array->GetName()) {
+      arrayName = QString::fromUtf8(array->GetName());
+    }
+  }
+
+  if (!arrayName.isEmpty()) {
+    m_producer->SetActiveScalars(arrayName.toUtf8().constData());
+  }
+}
+
 void SliceSink::updateColorMap()
 {
   if (!m_widget) {
@@ -560,8 +602,18 @@ QWidget* SliceSink::createPropertiesWidget(QWidget* parent)
         }
       }
     }
+    if (m_activeScalars < 0) {
+      scalarsCombo->setCurrentIndex(0);
+    } else {
+      int idx = scalarsCombo->findData(m_activeScalars);
+      scalarsCombo->setCurrentIndex(idx >= 0 ? idx : 0);
+    }
   }
   formLayout->addRow("Scalars", scalarsCombo);
+  connect(scalarsCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+          this, [this, scalarsCombo](int idx) {
+            setActiveScalars(scalarsCombo->itemData(idx).toInt());
+          });
 
   // --- Direction ---
   auto* dirCombo = new QComboBox(widget);
@@ -836,6 +888,7 @@ QJsonObject SliceSink::serialize() const
   json["interpolate"] = m_interpolate;
   json["showArrow"] = m_showArrow;
   json["mapScalars"] = m_mapScalars;
+  json["activeScalars"] = m_activeScalars;
 
   // Serialize plane geometry from widget if available
   double point[3];
@@ -893,6 +946,9 @@ bool SliceSink::deserialize(const QJsonObject& json)
   }
   if (json.contains("mapScalars")) {
     setMapScalars(json["mapScalars"].toBool());
+  }
+  if (json.contains("activeScalars")) {
+    m_activeScalars = json["activeScalars"].toInt(-1);
   }
   // Restore plane geometry
   if (m_widget && json.contains("origin") && json.contains("point1") &&
@@ -957,6 +1013,7 @@ void SliceSink::onMetadataChanged()
     }
   }
 
+  applyActiveScalars();
   emit renderNeeded();
 }
 

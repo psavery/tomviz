@@ -61,6 +61,14 @@ ThresholdSinkWidget::ThresholdSinkWidget(QWidget* parent_)
           &ThresholdSinkWidget::opacityChanged);
   connect(m_ui->sliSpecular, &DoubleSliderWidget::valueEdited, this,
           &ThresholdSinkWidget::specularChanged);
+  connect(m_ui->cbColorByArray, &QCheckBox::toggled, this,
+          &ThresholdSinkWidget::colorByArrayToggled);
+  connect(m_ui->comboColorByArray,
+          QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+          &ThresholdSinkWidget::onColorByArrayIndexChanged);
+  connect(m_ui->comboThresholdByArray,
+          QOverload<int>::of(&QComboBox::currentIndexChanged), this,
+          &ThresholdSinkWidget::onThresholdByArrayIndexChanged);
 }
 
 ThresholdSinkWidget::~ThresholdSinkWidget() = default;
@@ -108,9 +116,71 @@ void ThresholdSinkWidget::setSpecular(double value)
   m_ui->sliSpecular->setValue(value);
 }
 
+void ThresholdSinkWidget::setThresholdByArrayOptions(
+  const QStringList& scalars, int activeScalar)
+{
+  const QSignalBlocker blocker(m_ui->comboThresholdByArray);
+  m_ui->comboThresholdByArray->clear();
+
+  m_ui->comboThresholdByArray->addItem("Default", -1);
+  for (int i = 0; i < scalars.size(); ++i)
+    m_ui->comboThresholdByArray->addItem(scalars[i], i);
+
+  int currentIndex = (activeScalar == -1) ? 0 : activeScalar + 1;
+  m_ui->comboThresholdByArray->setCurrentIndex(currentIndex);
+}
+
+void ThresholdSinkWidget::setColorByArrayOptions(const QStringList& options)
+{
+  m_ui->comboColorByArray->clear();
+
+  for (const auto& opt : options)
+    m_ui->comboColorByArray->addItem(opt, opt);
+}
+
+void ThresholdSinkWidget::setThresholdByArrayValue(int val)
+{
+  for (int i = 0; i < m_ui->comboThresholdByArray->count(); ++i) {
+    if (m_ui->comboThresholdByArray->itemData(i).toInt() == val) {
+      m_ui->comboThresholdByArray->setCurrentIndex(i);
+      return;
+    }
+  }
+}
+
+void ThresholdSinkWidget::setColorByArray(bool state)
+{
+  m_ui->cbColorByArray->setChecked(state);
+}
+
+void ThresholdSinkWidget::setColorByArrayName(const QString& name)
+{
+  if (name.isEmpty() || m_ui->comboColorByArray->count() == 0)
+    return;
+
+  for (int i = 0; i < m_ui->comboColorByArray->count(); ++i) {
+    if (m_ui->comboColorByArray->itemData(i).toString() == name) {
+      m_ui->comboColorByArray->setCurrentIndex(i);
+      return;
+    }
+  }
+}
+
 void ThresholdSinkWidget::onRepresentationIndexChanged(int i)
 {
   emit representationChanged(m_ui->cbRepresentation->itemData(i).toString());
+}
+
+void ThresholdSinkWidget::onThresholdByArrayIndexChanged(int i)
+{
+  emit thresholdByArrayValueChanged(
+    m_ui->comboThresholdByArray->itemData(i).toInt());
+}
+
+void ThresholdSinkWidget::onColorByArrayIndexChanged(int i)
+{
+  emit colorByArrayNameChanged(
+    m_ui->comboColorByArray->itemData(i).toString());
 }
 
 } // namespace tomviz

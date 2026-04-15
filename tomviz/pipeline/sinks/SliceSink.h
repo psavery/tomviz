@@ -6,10 +6,12 @@
 
 #include "LegacyModuleSink.h"
 
+#include <vtkNew.h>
 #include <vtkSmartPointer.h>
 
 #include <array>
 
+class vtkActiveScalarsProducer;
 class vtkNonOrthoImagePlaneWidget;
 class vtkScalarsToColors;
 
@@ -84,6 +86,10 @@ public:
   bool mapScalars() const;
   void setMapScalars(bool map);
 
+  /// Active scalar array index (-1 = use default active scalars).
+  int activeScalars() const;
+  void setActiveScalars(int index);
+
   /// Set the center (point on the plane) for Custom direction.
   void setPlaneCenter(double x, double y, double z);
   void planeCenter(double xyz[3]) const;
@@ -112,9 +118,11 @@ private slots:
 private:
   void setupWidget();
   void applyDirection();
+  void applyActiveScalars();
   int directionAxis() const;
 
   vtkSmartPointer<vtkNonOrthoImagePlaneWidget> m_widget;
+  vtkNew<vtkActiveScalarsProducer> m_producer;
 
   Direction m_direction = XY;
   int m_slice = -1;
@@ -124,6 +132,7 @@ private:
   double m_opacity = 1.0;
   bool m_showArrow = true;
   bool m_mapScalars = true;
+  int m_activeScalars = -1;
 
   // For custom direction
   double m_planeCenter[3] = { 0, 0, 0 };

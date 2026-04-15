@@ -13,6 +13,7 @@
 
 #include <array>
 
+class vtkActiveScalarsProducer;
 class vtkActor;
 class vtkColorTransferFunction;
 class vtkDataSetMapper;
@@ -111,10 +112,12 @@ protected:
   bool consume(const QMap<QString, PortData>& inputs) override;
   void updateColorMap() override;
   void updatePanel();
+  bool applyActiveScalars();
   void updateColorArray();
   void updateScalarArrayOptions();
 
 private:
+  vtkNew<vtkActiveScalarsProducer> m_contourArrayProducer;
   vtkNew<vtkFlyingEdges3D> m_flyingEdges;
   vtkNew<vtkDataSetMapper> m_mapper;
   vtkNew<vtkActor> m_actor;
@@ -126,6 +129,7 @@ private:
   bool m_colorByArray = false;
   QString m_colorByArrayName;
   int m_activeScalars = -1;
+  QString m_lastContourArrayName;
   double m_scalarRange[2] = { 0.0, 1.0 };
   std::array<double, 3> m_baseSpacing = { 0.0, 0.0, 0.0 };
   std::array<double, 3> m_baseOrigin = { 0.0, 0.0, 0.0 };
