@@ -195,9 +195,28 @@ void PipelineStripWidget::clearDimming()
   update();
 }
 
+void PipelineStripWidget::setDimmingEnabled(bool enabled)
+{
+  if (m_dimmingEnabled == enabled) {
+    return;
+  }
+  m_dimmingEnabled = enabled;
+  if (m_dimmingEnabled) {
+    updateDimming();
+    update();
+  } else {
+    clearDimming();
+  }
+}
+
+bool PipelineStripWidget::isDimmingEnabled() const
+{
+  return m_dimmingEnabled;
+}
+
 void PipelineStripWidget::updateDimming()
 {
-  if (!m_pipeline) {
+  if (!m_dimmingEnabled || !m_pipeline) {
     clearDimming();
     return;
   }

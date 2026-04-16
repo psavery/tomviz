@@ -109,6 +109,9 @@ public:
   void setInteractionLocked(bool locked);
   bool isInteractionLocked() const;
 
+  void setDimmingEnabled(bool enabled);
+  bool isDimmingEnabled() const;
+
   void setDimLevel(qreal level);
   qreal dimLevel() const;
   void setNodeDimmed(Node* node, bool dimmed);
@@ -224,6 +227,7 @@ private:
   // Dimming state — we store the bright set; everything else is dimmed
   // when m_hasBrightSelection is true.
   qreal m_dimLevel = 0.75;
+  bool m_dimmingEnabled = true;
   bool m_hasBrightSelection = false;
   QSet<Node*> m_brightNodes;
   QSet<OutputPort*> m_brightPorts;

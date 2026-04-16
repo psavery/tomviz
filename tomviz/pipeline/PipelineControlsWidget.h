@@ -25,6 +25,11 @@ public:
   void setPipeline(Pipeline* pipeline);
   Pipeline* pipeline() const;
 
+  bool isDimmingEnabled() const;
+
+signals:
+  void dimmingToggled(bool enabled);
+
 private:
   void updateState();
   void onButtonClicked();
@@ -37,6 +42,8 @@ private:
   QTimer* m_spinnerTimer = nullptr;
   int m_spinnerAngle = 0;
   bool m_stopping = false;
+  bool m_dimmingEnabled = true;
+  QToolButton* m_dimmingButton = nullptr;
 
   static constexpr int SpinnerSize = 14;
 };

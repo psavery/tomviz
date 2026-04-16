@@ -240,6 +240,10 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   scrollLayout->addWidget(m_pipelineStrip);
   pipelineScroll->setWidget(scrollContainer);
   m_ui->pipelineContainerLayout->addWidget(pipelineScroll);
+  connect(m_pipelineControls,
+          &pipeline::PipelineControlsWidget::dimmingToggled,
+          m_pipelineStrip,
+          &pipeline::PipelineStripWidget::setDimmingEnabled);
   connect(m_pipelineStrip, &pipeline::PipelineStripWidget::nodeSelected,
           this, &MainWindow::onNodeSelected);
   connect(m_pipelineStrip, &pipeline::PipelineStripWidget::portSelected,

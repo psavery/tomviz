@@ -5,6 +5,7 @@
 
 #include "Pipeline.h"
 
+#include <QFrame>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
@@ -40,6 +41,32 @@ PipelineControlsWidget::PipelineControlsWidget(QWidget* parent)
   connect(m_button, &QToolButton::clicked, this,
           &PipelineControlsWidget::onButtonClicked);
   layout->addWidget(m_button);
+
+  auto* separator = new QFrame(this);
+  separator->setFrameShape(QFrame::VLine);
+  separator->setFrameShadow(QFrame::Sunken);
+  layout->addWidget(separator);
+
+  m_dimmingButton = new QToolButton(this);
+  m_dimmingButton->setAutoRaise(true);
+  m_dimmingButton->setIconSize(QSize(20, 20));
+  m_dimmingButton->setIcon(QIcon(":/icons/filter_disabled.svg"));
+  m_dimmingButton->setToolTip(
+    tr("Disable focus dimming (show all pipeline elements at full opacity)"));
+  connect(m_dimmingButton, &QToolButton::clicked, this, [this]() {
+    m_dimmingEnabled = !m_dimmingEnabled;
+    if (m_dimmingEnabled) {
+      m_dimmingButton->setIcon(QIcon(":/icons/filter_disabled.svg"));
+      m_dimmingButton->setToolTip(
+        tr("Disable focus dimming (show all pipeline elements at full opacity)"));
+    } else {
+      m_dimmingButton->setIcon(QIcon(":/icons/filter.svg"));
+      m_dimmingButton->setToolTip(
+        tr("Enable focus dimming (dim unrelated pipeline elements on selection)"));
+    }
+    emit dimmingToggled(m_dimmingEnabled);
+  });
+  layout->addWidget(m_dimmingButton);
 
   m_spinnerTimer = new QTimer(this);
   m_spinnerTimer->setInterval(50);
@@ -82,6 +109,11 @@ void PipelineControlsWidget::setPipeline(Pipeline* pipeline)
 Pipeline* PipelineControlsWidget::pipeline() const
 {
   return m_pipeline;
+}
+
+bool PipelineControlsWidget::isDimmingEnabled() const
+{
+  return m_dimmingEnabled;
 }
 
 void PipelineControlsWidget::updateState()

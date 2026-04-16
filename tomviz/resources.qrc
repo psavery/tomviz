@@ -42,5 +42,7 @@
         <file>icons/port_table.svg</file>
         <file>icons/port_molecule.svg</file>
         <file>icons/pqVcrStop.svg</file>
+        <file>icons/filter.svg</file>
+        <file>icons/filter_disabled.svg</file>
     </qresource>
 </RCC>
