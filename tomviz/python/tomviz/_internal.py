@@ -289,7 +289,14 @@ def transform_single_external_operator(transform_method: Callable,
         print('Executing operator with command:', ' '.join(cmd))
 
         # Run the operator
-        subprocess.run(cmd, check=True, env=custom_env)
+        result = subprocess.run(
+            cmd, env=custom_env,
+            capture_output=True, text=True)
+        if result.stdout:
+            print(result.stdout)
+        if result.returncode != 0:
+            print('tomviz-pipeline stderr:', result.stderr)
+            result.check_returncode()
 
         # Load and return the result
         output_dataset = load_dataset(output_path)
@@ -394,6 +401,10 @@ def convert_to_dataset(data):
         # It is already a dataset
         return data
 
+    from tomviz.pipeline_dataset import PipelineDataset
+    if isinstance(data, PipelineDataset):
+        data = data._data_object
+
     if in_application():
         if isinstance(data, vtkDataObject):
             # Make a new dataset object with no Datasource
@@ -407,12 +418,13 @@ def convert_to_vtk_data_object(data):
     # This method will extract/convert certain data types to a vtkDataObject
 
     from tomviz.dataset import Dataset
+    from tomviz.pipeline_dataset import PipelineDataset
 
     if isinstance(data, vtkDataObject):
         # It is already a vtkDataObject
         return data
 
-    if isinstance(data, Dataset):
+    if isinstance(data, (Dataset, PipelineDataset)):
         # Should be stored in _data_object
         return data._data_object
 

@@ -568,8 +568,27 @@ QMap<QString, PortData> LegacyPythonTransform::transform(
       kwargs[py::str(dsName.toStdString())] = dsObj;
     }
 
-    // Call the transform function
-    py::object pyResult = transformFunc(dataset, **kwargs);
+    // Route through transform_method_wrapper so that
+    // tomviz_pipeline_env (external execution) is honored.
+    py::object wrapperFunc =
+      py::module_::import("tomviz._internal")
+        .attr("transform_method_wrapper");
+
+    QJsonObject opJson;
+    opJson["type"] = QStringLiteral("Python");
+    opJson["description"] = m_jsonDescription;
+    opJson["label"] = label();
+    opJson["script"] = m_script;
+    if (!m_parameters.isEmpty()) {
+      opJson["arguments"] =
+        QJsonObject::fromVariantMap(m_parameters);
+    }
+    QString opSerialized =
+      QString::fromUtf8(QJsonDocument(opJson).toJson());
+
+    py::object pyResult = wrapperFunc(
+      transformFunc, py::str(opSerialized.toStdString()),
+      dataset, **kwargs);
 
     // Determine the output vtkImageData.
     // Default: outputImage (deep copy of input, modified in-place by Python).
