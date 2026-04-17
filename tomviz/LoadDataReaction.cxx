@@ -12,7 +12,6 @@
 #include "ImageStackDialog.h"
 #include "ImageStackModel.h"
 #include "LoadStackReaction.h"
-#include "MainWindow.h"
 #include "legacy/modules/ModuleManager.h"
 #include "MoleculeSource.h"
 #include "legacy/Pipeline.h"
@@ -67,6 +66,7 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QMessageBox>
+#include <QTimer>
 
 #include <sstream>
 
@@ -586,8 +586,7 @@ void LoadDataReaction::sourceNodeAdded(pipeline::SourceNode* source,
     return;
   }
 
-  auto* mainWindow = qobject_cast<MainWindow*>(QApplication::activeWindow());
-  auto* pip = mainWindow ? mainWindow->pipeline() : nullptr;
+  auto* pip = ActiveObjects::instance().pipeline();
   if (!pip) {
     return;
   }
@@ -641,8 +640,9 @@ void LoadDataReaction::sourceNodeAdded(pipeline::SourceNode* source,
     }
   }
 
-  // Execute the pipeline (renders the data)
-  pip->execute();
+  // Defer so the event loop can process pending signals before executing.
+  // ThreadedExecutor handles the case where it's already running.
+  QTimer::singleShot(0, pip, [pip]() { pip->execute(); });
 }
 
 QJsonObject LoadDataReaction::readerProperties(vtkSMProxy* reader)

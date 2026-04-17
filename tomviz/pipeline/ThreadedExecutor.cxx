@@ -97,6 +97,7 @@ ThreadedExecutor::ThreadedExecutor(QObject* parent)
           [this](bool success) {
             m_running = false;
             emit executionComplete(success);
+            executePending();
           });
 
   m_thread->start();
@@ -104,6 +105,8 @@ ThreadedExecutor::ThreadedExecutor(QObject* parent)
 
 ThreadedExecutor::~ThreadedExecutor()
 {
+  m_pendingPipeline = nullptr;
+  m_pendingNodes.clear();
   cancel();
   m_thread->quit();
   m_thread->wait();
@@ -113,11 +116,12 @@ ThreadedExecutor::~ThreadedExecutor()
 void ThreadedExecutor::execute(const QList<Node*>& nodes, Pipeline* pipeline)
 {
   if (m_running) {
+    // Store the request and cancel; executePending() will pick it up
+    // when the current run finishes.
+    m_pendingNodes = nodes;
+    m_pendingPipeline = pipeline;
     cancel();
-    // Wait for previous run to finish
-    while (m_running) {
-      QThread::msleep(1);
-    }
+    return;
   }
 
   // Disconnect previous breakpoint forwarding, if any
@@ -137,6 +141,17 @@ void ThreadedExecutor::execute(const QList<Node*>& nodes, Pipeline* pipeline)
   QMetaObject::invokeMethod(
     m_worker, [this, nodes, pipeline]() { m_worker->run(nodes, pipeline); },
     Qt::QueuedConnection);
+}
+
+void ThreadedExecutor::executePending()
+{
+  if (m_pendingPipeline) {
+    auto nodes = m_pendingNodes;
+    auto* pipeline = m_pendingPipeline;
+    m_pendingNodes.clear();
+    m_pendingPipeline = nullptr;
+    execute(nodes, pipeline);
+  }
 }
 
 void ThreadedExecutor::cancel()

@@ -28,12 +28,18 @@ public:
   bool isRunning() const override;
 
 private:
+  void executePending();
+
   QThread* m_thread = nullptr;
   ExecutionWorker* m_worker = nullptr;
   std::atomic<bool> m_cancelRequested{ false };
   std::atomic<bool> m_running{ false };
   std::atomic<Node*> m_currentNode{ nullptr };
   QMetaObject::Connection m_breakpointConnection;
+
+  // Pending execution request queued while a run was in progress
+  QList<Node*> m_pendingNodes;
+  Pipeline* m_pendingPipeline = nullptr;
 };
 
 } // namespace pipeline
