@@ -42,6 +42,7 @@
 #include "ModulePropertiesPanel.h"
 #include "OperatorFactory.h"
 #include "OperatorProxy.h"
+#include "OperatorSearchDialog.h"
 #include "PassiveAcquisitionWidget.h"
 #include "Pipeline.h"
 #include "PipelineManager.h"
@@ -80,7 +81,9 @@
 #include <QFileInfo>
 #include <QFutureWatcher>
 #include <QIcon>
+#include <QKeySequence>
 #include <QMessageBox>
+#include <QShortcut>
 #include <QOffscreenSurface>
 #include <QOpenGLContext>
 #include <QStandardPaths>
@@ -292,78 +295,75 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
     m_ui->menuTomography->addAction("Set Tilt Angles");
   m_ui->menuTomography->addSeparator();
 
-  QAction* dataProcessingLabel =
-    m_ui->menuTomography->addAction("Pre-processing:");
-  dataProcessingLabel->setEnabled(false);
+  // === Pre-processing submenu ===
+  QMenu* preprocessingMenu = m_ui->menuTomography->addMenu("Pre-processing");
   QAction* downsampleByTwoAction =
-    m_ui->menuTomography->addAction("Bin Tilt Images x2");
+    preprocessingMenu->addAction("Bin Tilt Images x2");
   QAction* removeBadPixelsAction =
-    m_ui->menuTomography->addAction("Remove Bad Pixels");
+    preprocessingMenu->addAction("Remove Bad Pixels");
   QAction* gaussianFilterAction =
-    m_ui->menuTomography->addAction("Gaussian Filter");
+    preprocessingMenu->addAction("Gaussian Filter");
   QAction* autoSubtractBackgroundAction =
-    m_ui->menuTomography->addAction("Background Subtraction (Auto)");
+    preprocessingMenu->addAction("Background Subtraction (Auto)");
   QAction* subtractBackgroundAction =
-    m_ui->menuTomography->addAction("Background Subtraction (Manual)");
+    preprocessingMenu->addAction("Background Subtraction (Manual)");
   QAction* normalizationAction =
-    m_ui->menuTomography->addAction("Normalize Average Image Intensity");
+    preprocessingMenu->addAction("Normalize Average Image Intensity");
   QAction* gradientMagnitude2DSobelAction =
-    m_ui->menuTomography->addAction("2D Gradient Magnitude");
-  QAction* ctfCorrectAction = m_ui->menuTomography->addAction("CTF Correction");
+    preprocessingMenu->addAction("2D Gradient Magnitude");
+  QAction* ctfCorrectAction =
+    preprocessingMenu->addAction("CTF Correction");
 
-  m_ui->menuTomography->addSeparator();
-  QAction* alignmentLabel = m_ui->menuTomography->addAction("Alignment:");
-  alignmentLabel->setEnabled(false);
-  QAction* autoAlignCCAction = m_ui->menuTomography->addAction(
+  // === Alignment submenu ===
+  QMenu* alignmentMenu = m_ui->menuTomography->addMenu("Alignment");
+  QAction* autoAlignCCAction = alignmentMenu->addAction(
     "Image Alignment (Auto: Cross Correlation)");
   QAction* autoAlignCOMAction =
-    m_ui->menuTomography->addAction("Image Alignment (Auto: Center of Mass)");
+    alignmentMenu->addAction("Image Alignment (Auto: Center of Mass)");
   QAction* autoAlignPyStackRegAction =
-    m_ui->menuTomography->addAction("Image Alignment (Auto: PyStackReg)");
+    alignmentMenu->addAction("Image Alignment (Auto: PyStackReg)");
   QAction* alignAction =
-    m_ui->menuTomography->addAction("Image Alignment (Manual)");
+    alignmentMenu->addAction("Image Alignment (Manual)");
+  alignmentMenu->addSeparator();
   QAction* autoRotateAlignAction =
-    m_ui->menuTomography->addAction("Tilt Axis Rotation Alignment (Auto)");
+    alignmentMenu->addAction("Tilt Axis Rotation Alignment (Auto)");
   QAction* autoRotateAlignShiftAction =
-    m_ui->menuTomography->addAction("Tilt Axis Shift Alignment (Auto)");
+    alignmentMenu->addAction("Tilt Axis Shift Alignment (Auto)");
   QAction* rotateAlignAction =
-    m_ui->menuTomography->addAction("Tilt Axis Alignment (Manual)");
+    alignmentMenu->addAction("Tilt Axis Alignment (Manual)");
   QAction* shiftRotationCenterAction =
-    m_ui->menuTomography->addAction("Shift Rotation Center (Manual)");
-  m_ui->menuTomography->addSeparator();
+    alignmentMenu->addAction("Shift Rotation Center (Manual)");
 
-  QAction* reconLabel = m_ui->menuTomography->addAction("Reconstruction:");
-  reconLabel->setEnabled(false);
+  // === Reconstruction submenu ===
+  QMenu* reconstructionMenu = m_ui->menuTomography->addMenu("Reconstruction");
   QAction* reconDFMAction =
-    m_ui->menuTomography->addAction("Direct Fourier Method");
+    reconstructionMenu->addAction("Direct Fourier Method");
   QAction* reconWBPAction =
-    m_ui->menuTomography->addAction("Weighted Back Projection");
+    reconstructionMenu->addAction("Weighted Back Projection");
   QAction* reconWBP_CAction =
-    m_ui->menuTomography->addAction("Simple Back Projection (C++)");
-  QAction* reconARTAction =
-    m_ui->menuTomography->addAction("Algebraic Reconstruction Technique (ART)");
-  QAction* reconSIRTAction = m_ui->menuTomography->addAction(
+    reconstructionMenu->addAction("Simple Back Projection (C++)");
+  QAction* reconARTAction = reconstructionMenu->addAction(
+    "Algebraic Reconstruction Technique (ART)");
+  QAction* reconSIRTAction = reconstructionMenu->addAction(
     "Simultaneous Iterative Recon. Technique (SIRT)");
   QAction* reconDFMConstraintAction =
-    m_ui->menuTomography->addAction("Constraint-based Direct Fourier Method");
+    reconstructionMenu->addAction("Constraint-based Direct Fourier Method");
   QAction* reconTVMinimizationAction =
-    m_ui->menuTomography->addAction("TV Minimization Method");
+    reconstructionMenu->addAction("TV Minimization Method");
   QAction* reconTomoPyGridRecAction =
-    m_ui->menuTomography->addAction("TomoPy Reconstruction");
-  m_ui->menuTomography->addSeparator();
+    reconstructionMenu->addAction("TomoPy Reconstruction");
 
-  QAction* simulationLabel =
-    m_ui->menuTomography->addAction("Simulation and Demonstrations:");
-  simulationLabel->setEnabled(false);
+  // === Simulation submenu ===
+  QMenu* simulationMenu =
+    m_ui->menuTomography->addMenu("Simulation && Demonstrations");
   QAction* generateTiltSeriesAction =
-    m_ui->menuTomography->addAction("Project Tilt Series from Volume");
-
+    simulationMenu->addAction("Project Tilt Series from Volume");
   QAction* randomShiftsAction =
-    m_ui->menuTomography->addAction("Shift Tilt Series Randomly");
+    simulationMenu->addAction("Shift Tilt Series Randomly");
   QAction* reconRealTimeAction =
-    m_ui->menuTomography->addAction("Initialize Real-Time Tomography");
+    simulationMenu->addAction("Initialize Real-Time Tomography");
   QAction* addPoissonNoiseAction =
-    m_ui->menuTomography->addAction("Add Poisson Noise");
+    simulationMenu->addAction("Add Poisson Noise");
 
   // Set up reactions for Tomography Menu
   //#################################################################
@@ -476,6 +476,42 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
                                  readInJSONDescription("AddPoissonNoise"));
 
   //#################################################################
+
+  // Set up operator search dialog
+  m_operatorSearchDialog = new OperatorSearchDialog(this);
+  m_operatorSearchDialog->collectActionsFromMenu(m_ui->menuData,
+                                                 "Data Transforms");
+  m_operatorSearchDialog->collectActionsFromMenu(m_ui->menuSegmentation,
+                                                 "Segmentation");
+  m_operatorSearchDialog->collectActionsFromMenu(m_ui->menuTomography,
+                                                 "Tomography");
+
+  // Add "Search Operators..." to each operator menu (like ParaView does for
+  // Sources, Filters, and Extractors)
+  auto showSearch = [this]() {
+    m_operatorSearchDialog->show();
+    m_operatorSearchDialog->raise();
+    m_operatorSearchDialog->activateWindow();
+  };
+
+  for (auto* menu :
+       { m_ui->menuData, m_ui->menuSegmentation, m_ui->menuTomography }) {
+    // Show "Ctrl+Space" text on all three, but don't set a real shortcut
+    // to avoid ambiguity. The global shortcut below handles the actual key.
+    auto* searchAction = new QAction("Search Operators...", menu);
+    searchAction->setShortcut(QKeySequence("Ctrl+Space"));
+    searchAction->setShortcutContext(Qt::WidgetShortcut);
+    connect(searchAction, &QAction::triggered, this, showSearch);
+    QAction* firstAction = menu->actions().isEmpty() ? nullptr
+                                                     : menu->actions().first();
+    menu->insertAction(firstAction, searchAction);
+    menu->insertSeparator(firstAction);
+  }
+
+  // Global shortcut for Ctrl+Space to open the search dialog
+  auto* globalSearchShortcut = new QShortcut(QKeySequence("Ctrl+Space"), this);
+  connect(globalSearchShortcut, &QShortcut::activated, this, showSearch);
+
   new ModuleMenu(m_ui->modulesToolbar, m_ui->menuModules, this);
   new RecentFilesMenu(*m_ui->menuRecentlyOpened, m_ui->menuRecentlyOpened);
 
