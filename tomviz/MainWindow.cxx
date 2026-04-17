@@ -1757,7 +1757,7 @@ void MainWindow::onActivePortChanged(pipeline::OutputPort* port)
 
   if (pipeline::isVolumeType(port->type())) {
     auto* propsWidget =
-      new pipeline::VolumePropertiesWidget(m_ui->propertiesPanelStackedWidget);
+      new pipeline::VolumePropertiesWidget(nullptr);
     propsWidget->setOutputPort(port);
     connect(propsWidget->showTimeSeriesLabelCheckBox(), &QCheckBox::toggled,
             &ActiveObjects::instance(),
@@ -1767,9 +1767,13 @@ void MainWindow::onActivePortChanged(pipeline::OutputPort* port)
             propsWidget->showTimeSeriesLabelCheckBox(),
             &QCheckBox::setChecked);
     propsWidget->setupInteractiveTransform();
-    m_dynamicPropertiesWidget = propsWidget;
-    m_ui->propertiesPanelStackedWidget->addWidget(propsWidget);
-    m_ui->propertiesPanelStackedWidget->setCurrentWidget(propsWidget);
+    auto* scrollArea = new QScrollArea(m_ui->propertiesPanelStackedWidget);
+    scrollArea->setFrameShape(QFrame::NoFrame);
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setWidget(propsWidget);
+    m_dynamicPropertiesWidget = scrollArea;
+    m_ui->propertiesPanelStackedWidget->addWidget(scrollArea);
+    m_ui->propertiesPanelStackedWidget->setCurrentWidget(scrollArea);
   } else if (port->type() == pipeline::PortType::Molecule && port->hasData()) {
     try {
       auto molecule =
