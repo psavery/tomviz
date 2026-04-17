@@ -9,6 +9,7 @@
 
 #include <QDialogButtonBox>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QVBoxLayout>
 
 namespace tomviz {
@@ -28,7 +29,11 @@ TransformPropertiesPanel::TransformPropertiesPanel(TransformNode* transform,
 
   m_editWidget = transform->createPropertiesWidget(this);
   if (m_editWidget) {
-    layout->addWidget(m_editWidget, 1);
+    auto* scrollArea = new QScrollArea(this);
+    scrollArea->setFrameShape(QFrame::NoFrame);
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setWidget(m_editWidget);
+    layout->addWidget(scrollArea, 1);
 
     auto* buttonBox = new QDialogButtonBox(
       QDialogButtonBox::Apply, Qt::Horizontal, this);
