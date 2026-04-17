@@ -4,6 +4,7 @@
 #include "TransformPropertiesPanel.h"
 
 #include "EditTransformWidget.h"
+#include "InputPort.h"
 #include "Pipeline.h"
 #include "TransformNode.h"
 
@@ -26,6 +27,16 @@ TransformPropertiesPanel::TransformPropertiesPanel(TransformNode* transform,
 
   auto* layout = new QVBoxLayout(this);
   layout->setContentsMargins(0, 0, 0, 0);
+
+  // Skip widget creation if the transform needs input data that isn't
+  // available yet (e.g., nodeAdded fires before createLink).
+  if (transform->propertiesWidgetNeedsInput()) {
+    for (auto* input : transform->inputPorts()) {
+      if (!input->link() || !input->hasData()) {
+        return;
+      }
+    }
+  }
 
   m_editWidget = transform->createPropertiesWidget(this);
   if (m_editWidget) {
