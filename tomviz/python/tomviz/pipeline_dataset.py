@@ -98,7 +98,9 @@ class PipelineDataset(AbstractDataset):
     def set_scalars(self, name, array):
         if np.isfortran(array):
             arr = array.reshape(-1, order='F')
+            vtkshape = array.shape
         else:
+            vtkshape = array.shape
             tmp = np.asfortranarray(array)
             arr = tmp.reshape(-1, order='F')
 
@@ -106,6 +108,12 @@ class PipelineDataset(AbstractDataset):
             np_s.get_vtk_array_type(arr.dtype)
         except TypeError:
             arr = arr.astype(np.float32)
+
+        sameshape = list(vtkshape) == list(self._data_object.GetDimensions())
+        if not sameshape:
+            extent = [0, vtkshape[0] - 1, 0, vtkshape[1] - 1,
+                      0, vtkshape[2] - 1]
+            self._data_object.SetExtent(extent)
 
         do = dsa.WrapDataObject(self._data_object)
         do.PointData.append(arr, name)
