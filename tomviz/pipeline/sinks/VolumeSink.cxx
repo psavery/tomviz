@@ -68,6 +68,7 @@ VolumeSink::VolumeSink(QObject* parent) : LegacyModuleSink(parent)
   m_volumeProperty->SetSpecularPower(100.0);
 
   m_volume->SetMapper(m_volumeMapper);
+  m_volume->SetVisibility(0);
   m_volume->SetProperty(m_volumeProperty);
 }
 

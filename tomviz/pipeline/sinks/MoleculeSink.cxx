@@ -25,6 +25,7 @@ MoleculeSink::MoleculeSink(QObject* parent) : LegacyModuleSink(parent)
   setLabel("Molecule");
 
   m_actor->SetMapper(m_moleculeMapper);
+  m_actor->SetVisibility(0);
 }
 
 MoleculeSink::~MoleculeSink()
