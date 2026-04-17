@@ -301,7 +301,7 @@ vtkSMProxy* HistogramWidget::getScalarBarRepresentation(vtkSMProxy* view)
     vtkSMPropertyHelper(sbProxy, "Enabled").Set(0);
     vtkSMPropertyHelper(sbProxy, "Title").Set("");
     vtkSMPropertyHelper(sbProxy, "ComponentTitle").Set("");
-    vtkSMPropertyHelper(sbProxy, "RangeLabelFormat").Set("%g");
+    vtkSMPropertyHelper(sbProxy, "RangeLabelFormat").Set("{:g}");
     sbProxy->UpdateVTKObjects();
   }
 

@@ -38,6 +38,17 @@ int main(int argc, char** argv)
   viskores::cont::Initialize();
 #endif
 
+#ifdef Q_OS_LINUX
+  // VTK's render windows use X11/GLX, which conflicts with the Qt Wayland
+  // platform plugin and causes BadAccess on glXMakeCurrent the second time a
+  // render view is created. Force xcb on Wayland sessions unless the user has
+  // already chosen a platform.
+  if (qgetenv("XDG_SESSION_TYPE") == "wayland" &&
+      !qEnvironmentVariableIsSet("QT_QPA_PLATFORM")) {
+    qputenv("QT_QPA_PLATFORM", "xcb");
+  }
+#endif
+
   QSurfaceFormat::setDefaultFormat(QVTKOpenGLStereoWidget::defaultFormat());
 
   QCoreApplication::setApplicationName("tomviz");
