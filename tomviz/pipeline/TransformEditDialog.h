@@ -9,6 +9,7 @@
 #include <QDialog>
 
 class QDialogButtonBox;
+class QShowEvent;
 
 namespace tomviz {
 namespace pipeline {
@@ -55,10 +56,15 @@ private slots:
   void onOkay();
   void onCancel();
 
+protected:
+  void showEvent(QShowEvent* event) override;
+
 private:
   void init();
   bool inputsReady() const;
   void setupContent();
+  void saveGeometry();
+  void restoreGeometry();
 
   void completeInsertion();
 
