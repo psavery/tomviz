@@ -32,6 +32,7 @@
 #include "pipeline/SourceNode.h"
 #include "pipeline/data/VolumeData.h"
 #include "pipeline/sinks/OutlineSink.h"
+#include "pipeline/sinks/SliceSink.h"
 #include "pipeline/sinks/VolumeSink.h"
 #include "ColorMap.h"
 
@@ -623,11 +624,21 @@ void LoadDataReaction::sourceNodeAdded(pipeline::SourceNode* source,
     pip->addNode(outline);
     pip->createLink(group->outputPorts()[0], outline->inputPorts()[0]);
 
-    auto* volume = new pipeline::VolumeSink();
-    volume->setLabel("Volume");
-    volume->initialize(view);
-    pip->addNode(volume);
-    pip->createLink(group->outputPorts()[0], volume->inputPorts()[0]);
+    bool isTiltSeries = source->outputPorts()[0]->type() ==
+                        pipeline::PortType::TiltSeries;
+    if (isTiltSeries) {
+      auto* slice = new pipeline::SliceSink();
+      slice->setLabel("Slice");
+      slice->initialize(view);
+      pip->addNode(slice);
+      pip->createLink(group->outputPorts()[0], slice->inputPorts()[0]);
+    } else {
+      auto* volume = new pipeline::VolumeSink();
+      volume->setLabel("Volume");
+      volume->initialize(view);
+      pip->addNode(volume);
+      pip->createLink(group->outputPorts()[0], volume->inputPorts()[0]);
+    }
   }
 
   // Execute the pipeline (renders the data)
