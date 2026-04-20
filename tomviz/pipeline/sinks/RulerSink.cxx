@@ -46,10 +46,12 @@ RulerSink::RulerSink(QObject* parent) : LegacyModuleSink(parent)
   // Set up the persistent line visual.
   m_mapper->SetInputConnection(m_lineSource->GetOutputPort());
   m_lineActor->SetMapper(m_mapper);
+  m_lineActor->SetVisibility(0);
   m_lineActor->GetProperty()->SetLineWidth(2.0);
   m_lineActor->GetProperty()->SetColor(0.0, 1.0, 0.0);
 
   // Set up the distance label.
+  m_textActor->SetVisibility(0);
   m_textActor->GetTextProperty()->SetFontSize(18);
   m_textActor->GetTextProperty()->SetColor(1.0, 1.0, 1.0);
   m_textActor->GetTextProperty()->SetJustificationToCentered();

@@ -4,11 +4,13 @@
 #include "TransformPropertiesPanel.h"
 
 #include "EditTransformWidget.h"
+#include "InputPort.h"
 #include "Pipeline.h"
 #include "TransformNode.h"
 
 #include <QDialogButtonBox>
 #include <QPushButton>
+#include <QScrollArea>
 #include <QVBoxLayout>
 
 namespace tomviz {
@@ -26,9 +28,23 @@ TransformPropertiesPanel::TransformPropertiesPanel(TransformNode* transform,
   auto* layout = new QVBoxLayout(this);
   layout->setContentsMargins(0, 0, 0, 0);
 
+  // Skip widget creation if the transform needs input data that isn't
+  // available yet (e.g., nodeAdded fires before createLink).
+  if (transform->propertiesWidgetNeedsInput()) {
+    for (auto* input : transform->inputPorts()) {
+      if (!input->link() || !input->hasData()) {
+        return;
+      }
+    }
+  }
+
   m_editWidget = transform->createPropertiesWidget(this);
   if (m_editWidget) {
-    layout->addWidget(m_editWidget, 1);
+    auto* scrollArea = new QScrollArea(this);
+    scrollArea->setFrameShape(QFrame::NoFrame);
+    scrollArea->setWidgetResizable(true);
+    scrollArea->setWidget(m_editWidget);
+    layout->addWidget(scrollArea, 1);
 
     auto* buttonBox = new QDialogButtonBox(
       QDialogButtonBox::Apply, Qt::Horizontal, this);

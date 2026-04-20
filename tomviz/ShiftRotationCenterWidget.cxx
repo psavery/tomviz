@@ -7,6 +7,7 @@
 #include "ActiveObjects.h"
 #include "ColorMap.h"
 #include "PresetDialog.h"
+#include "PythonUtilities.h"
 #include "Utilities.h"
 
 // Qt defines 'slots' as a macro which conflicts with Python's object.h.
@@ -217,9 +218,11 @@ public:
     // Set up the projection view showing one projection image (Z-axis slice).
     // This matches the orientation used by the main slice view in
     // RotateAlignWidget: XY plane, camera looking from +Z.
-    projMapper->SetInputData(image);
-    projMapper->SetSliceNumber(image->GetDimensions()[2] / 2);
-    projMapper->Update();
+    if (image) {
+      projMapper->SetInputData(image);
+      projMapper->SetSliceNumber(image->GetDimensions()[2] / 2);
+      projMapper->Update();
+    }
     projSlice->SetMapper(projMapper);
 
     // Use the source color map for the projection view
@@ -269,16 +272,18 @@ public:
     chartQn->GetAxis(vtkAxis::BOTTOM)->SetTitle("Center (px)");
     chartQn->GetAxis(vtkAxis::LEFT)->SetTitle("");
 
-    tomviz::setupRenderer(projRenderer, projMapper, nullptr);
-    projRenderer->GetActiveCamera()->SetViewUp(1, 0, 0);
+    if (image) {
+      tomviz::setupRenderer(projRenderer, projMapper, nullptr);
+      projRenderer->GetActiveCamera()->SetViewUp(1, 0, 0);
 
-    // Mirror the image left-to-right by placing the camera on the -Z side.
-    auto* cam = projRenderer->GetActiveCamera();
-    double* pos = cam->GetPosition();
-    double* fp = cam->GetFocalPoint();
-    cam->SetPosition(pos[0], pos[1], fp[2] - (pos[2] - fp[2]));
+      // Mirror the image left-to-right by placing the camera on the -Z side.
+      auto* cam = projRenderer->GetActiveCamera();
+      double* pos = cam->GetPosition();
+      double* fp = cam->GetFocalPoint();
+      cam->SetPosition(pos[0], pos[1], fp[2] - (pos[2] - fp[2]));
 
-    projRenderer->ResetCameraClippingRange();
+      projRenderer->ResetCameraClippingRange();
+    }
     updateCenterLine();
     updateSliceLine();
 
@@ -318,31 +323,33 @@ public:
     // This isn't always working in Qt designer, so set it here as well
     ui.colorPresetButton->setIcon(QIcon(":/pqWidgets/Icons/pqFavorites.svg"));
 
-    auto* dims = image->GetDimensions();
+    if (image) {
+      auto* dims = image->GetDimensions();
 
-    // All center-related values are offsets from the image midpoint in pixels.
-    // 0 means the rotation center is exactly at the midpoint.
-    setRotationCenter(0);
+      // All center-related values are offsets from the image midpoint in pixels.
+      // 0 means the rotation center is exactly at the midpoint.
+      setRotationCenter(0);
 
-    // Default start/stop to +/- 50 pixels
-    ui.start->setValue(-50);
-    ui.stop->setValue(50);
+      // Default start/stop to +/- 50 pixels
+      ui.start->setValue(-50);
+      ui.stop->setValue(50);
 
-    // Display image dimensions
-    ui.imageDimensionsLabel->setText(
-      QString("Image: %1 x %2 x %3 (shift axis: Y = %2 px)")
-        .arg(dims[0]).arg(dims[1]).arg(dims[2]));
+      // Display image dimensions
+      ui.imageDimensionsLabel->setText(
+        QString("Image: %1 x %2 x %3 (shift axis: Y = %2 px)")
+          .arg(dims[0]).arg(dims[1]).arg(dims[2]));
 
-    // Default projection number to the middle projection
-    ui.projectionNo->setMaximum(dims[2] - 1);
-    ui.projectionNo->setValue(dims[2] / 2);
+      // Default projection number to the middle projection
+      ui.projectionNo->setMaximum(dims[2] - 1);
+      ui.projectionNo->setValue(dims[2] / 2);
 
-    // Default slice to the middle slice (bounded by image height)
-    ui.slice->setMaximum(dims[0] - 1);
-    ui.slice->setValue(dims[0] / 2);
+      // Default slice to the middle slice (bounded by image height)
+      ui.slice->setMaximum(dims[0] - 1);
+      ui.slice->setValue(dims[0] / 2);
 
-    // Load saved settings for steps, algorithm, numIterations only
-    readSettings();
+      // Load saved settings for steps, algorithm, numIterations only
+      readSettings();
+    }
 
     // Hide iterations by default (only shown for iterative algorithms)
     updateAlgorithmUI();
@@ -554,6 +561,11 @@ public:
     ui.numIterations->setValue(settings->value("numIterations", 15).toInt());
     ui.circMaskRatio->setValue(settings->value("circMaskRatio", 0.8).toDouble());
 
+    if (!image) {
+      settings->endGroup();
+      return;
+    }
+
     // Restore start/stop only if the saved values fit within the current image
     auto halfDim = image->GetDimensions()[1] / 2.0;
     if (settings->contains("start")) {
@@ -593,6 +605,11 @@ public:
 
   void startGeneratingTestImages()
   {
+    if (!image) {
+      QMessageBox::warning(parent, "Tomviz",
+                           "No input data available.");
+      return;
+    }
     progressDialog->show();
     auto future =
       QtConcurrent::run(std::bind(&Internal::generateTestImages, this));
@@ -629,12 +646,8 @@ public:
     testRotationsSuccess = false;
     rotations.clear();
 
-    if (!Py_IsInitialized()) {
-      py::initialize_interpreter();
-    }
-
     try {
-      py::gil_scoped_acquire gil;
+      Python python;
 
       // Create PipelineDataset wrapping the vtkImageData
       py::module_ datasetMod = py::module_::import("tomviz.pipeline_dataset");
@@ -683,8 +696,12 @@ public:
           "No image data was returned from test_rotations()";
         return;
       }
+      py::object imagesObj = result["images"].cast<py::object>();
+      if (py::hasattr(imagesObj, "_data_object")) {
+        imagesObj = imagesObj.attr("_data_object");
+      }
       auto* imageData = dynamic_cast<vtkImageData*>(
-        vtkPythonUtil::GetPointerFromObject(result["images"].ptr(),
+        vtkPythonUtil::GetPointerFromObject(imagesObj.ptr(),
                                             "vtkImageData"));
       if (!imageData) {
         PyErr_Clear();

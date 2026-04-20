@@ -12,7 +12,6 @@
 #include "ImageStackDialog.h"
 #include "ImageStackModel.h"
 #include "LoadStackReaction.h"
-#include "MainWindow.h"
 #include "legacy/modules/ModuleManager.h"
 #include "MoleculeSource.h"
 #include "legacy/Pipeline.h"
@@ -32,6 +31,7 @@
 #include "pipeline/SourceNode.h"
 #include "pipeline/data/VolumeData.h"
 #include "pipeline/sinks/OutlineSink.h"
+#include "pipeline/sinks/SliceSink.h"
 #include "pipeline/sinks/VolumeSink.h"
 #include "ColorMap.h"
 
@@ -66,6 +66,7 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QMessageBox>
+#include <QTimer>
 
 #include <sstream>
 
@@ -585,8 +586,7 @@ void LoadDataReaction::sourceNodeAdded(pipeline::SourceNode* source,
     return;
   }
 
-  auto* mainWindow = qobject_cast<MainWindow*>(QApplication::activeWindow());
-  auto* pip = mainWindow ? mainWindow->pipeline() : nullptr;
+  auto* pip = ActiveObjects::instance().pipeline();
   if (!pip) {
     return;
   }
@@ -623,15 +623,26 @@ void LoadDataReaction::sourceNodeAdded(pipeline::SourceNode* source,
     pip->addNode(outline);
     pip->createLink(group->outputPorts()[0], outline->inputPorts()[0]);
 
-    auto* volume = new pipeline::VolumeSink();
-    volume->setLabel("Volume");
-    volume->initialize(view);
-    pip->addNode(volume);
-    pip->createLink(group->outputPorts()[0], volume->inputPorts()[0]);
+    bool isTiltSeries = source->outputPorts()[0]->type() ==
+                        pipeline::PortType::TiltSeries;
+    if (isTiltSeries) {
+      auto* slice = new pipeline::SliceSink();
+      slice->setLabel("Slice");
+      slice->initialize(view);
+      pip->addNode(slice);
+      pip->createLink(group->outputPorts()[0], slice->inputPorts()[0]);
+    } else {
+      auto* volume = new pipeline::VolumeSink();
+      volume->setLabel("Volume");
+      volume->initialize(view);
+      pip->addNode(volume);
+      pip->createLink(group->outputPorts()[0], volume->inputPorts()[0]);
+    }
   }
 
-  // Execute the pipeline (renders the data)
-  pip->execute();
+  // Defer so the event loop can process pending signals before executing.
+  // ThreadedExecutor handles the case where it's already running.
+  QTimer::singleShot(0, pip, [pip]() { pip->execute(); });
 }
 
 QJsonObject LoadDataReaction::readerProperties(vtkSMProxy* reader)

@@ -10,9 +10,16 @@
 #include "Pipeline.h"
 #include "TransformNode.h"
 
+#include "Utilities.h"
+
+#include <pqApplicationCore.h>
+#include <pqSettings.h>
+
 #include <QDialogButtonBox>
 #include <QLabel>
 #include <QPushButton>
+#include <QScreen>
+#include <QShowEvent>
 #include <QVBoxLayout>
 
 namespace tomviz {
@@ -38,6 +45,8 @@ TransformEditDialog::TransformEditDialog(TransformNode* transform,
 
 TransformEditDialog::~TransformEditDialog()
 {
+  saveGeometry();
+
   // Restore the parametersApplied → execute() auto-wiring that was
   // disconnected in init(), unless the node was removed (cancel in insertion
   // mode).
@@ -85,6 +94,8 @@ void TransformEditDialog::init()
 
   // Add button box at the bottom
   layout->addWidget(m_buttonBox);
+
+  restoreGeometry();
 
   // Disable Apply/OK while the pipeline is executing.
   auto updateButtons = [this](bool executing) {
@@ -184,6 +195,60 @@ void TransformEditDialog::onCancel()
   }
 
   reject();
+}
+
+void TransformEditDialog::showEvent(QShowEvent* event)
+{
+  QDialog::showEvent(event);
+
+  auto* mainWin = tomviz::mainWidget();
+  if (!mainWin) {
+    return;
+  }
+
+  auto* screen = mainWin->screen();
+  auto screenGeom = screen ? screen->availableGeometry()
+                           : QRect(0, 0, 1920, 1080);
+
+  auto mainCenter = mainWin->frameGeometry().center();
+  auto dlgSize = frameGeometry().size();
+
+  int x = mainCenter.x() - dlgSize.width() / 2;
+  int y = mainCenter.y() - dlgSize.height() / 2;
+
+  x = qBound(screenGeom.left(), x,
+              screenGeom.right() - dlgSize.width());
+  y = qBound(screenGeom.top(), y,
+              screenGeom.bottom() - dlgSize.height());
+
+  move(x, y);
+  raise();
+  activateWindow();
+}
+
+void TransformEditDialog::saveGeometry()
+{
+  if (!m_transform) {
+    return;
+  }
+  QSettings* settings = pqApplicationCore::instance()->settings();
+  QString key =
+    QString("Edit%1TransformDialogGeometry").arg(m_transform->label());
+  settings->setValue(key, QVariant(geometry()));
+}
+
+void TransformEditDialog::restoreGeometry()
+{
+  if (!m_transform) {
+    return;
+  }
+  QSettings* settings = pqApplicationCore::instance()->settings();
+  QString key =
+    QString("Edit%1TransformDialogGeometry").arg(m_transform->label());
+  QVariant saved = settings->value(key);
+  if (!saved.isNull()) {
+    resize(saved.toRect().size());
+  }
 }
 
 void TransformEditDialog::completeInsertion()

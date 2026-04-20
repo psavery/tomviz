@@ -108,6 +108,7 @@ SegmentSink::SegmentSink(QObject* parent) : LegacyModuleSink(parent)
 
   m_mapper->SetInputConnection(m_contour->GetOutputPort());
   m_actor->SetMapper(m_mapper);
+  m_actor->SetVisibility(0);
   m_actor->SetProperty(m_property);
 }
 
