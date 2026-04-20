@@ -54,8 +54,12 @@ set(tomviz_js_binary_path "${tomviz_html_binary_dir}/tomviz.js")
 set(tomviz_html_binary_path "${tomviz_html_binary_dir}/tomviz.html")
 set(tomviz_web_install_dir "${INSTALL_DATA_DIR}/tomviz/web")
 
-# Centrally set the grand exception for macOS...
 if(APPLE)
+  option(TOMVIZ_MACOSX_BUNDLE "Build a macOS app bundle" ON)
+endif()
+
+# Centrally set the grand exception for macOS...
+if(APPLE AND TOMVIZ_MACOSX_BUNDLE)
   set(MACOSX_BUNDLE_NAME "tomviz")
   set(prefix "Applications/${MACOSX_BUNDLE_NAME}.app/Contents")
   set(INSTALL_INCLUDE_DIR "${prefix}/${INSTALL_INCLUDE_DIR}")

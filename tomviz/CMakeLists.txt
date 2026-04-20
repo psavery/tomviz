@@ -745,7 +745,7 @@ install(FILES "${tomviz_SOURCE_DIR}/docs/TomvizBasicUserGuide.pdf"
   DESTINATION "${tomviz_data_install_dir}/docs"
   COMPONENT "Documentation")
 
-if(APPLE)
+if(APPLE AND TOMVIZ_MACOSX_BUNDLE)
   list(APPEND exec_sources icons/tomviz.icns)
   set(MACOSX_BUNDLE_ICON_FILE tomviz.icns)
   set(MACOSX_BUNDLE_BUNDLE_VERSION "${tomviz_version}")
@@ -774,7 +774,11 @@ set_target_properties(tomvizlib PROPERTIES ENABLE_EXPORTS TRUE)
 
 set_property(TARGET tomvizlib PROPERTY POSITION_INDEPENDENT_CODE TRUE)
 
-add_executable(tomviz WIN32 MACOSX_BUNDLE ${exec_sources} resources.qrc)
+if(APPLE AND TOMVIZ_MACOSX_BUNDLE)
+  add_executable(tomviz MACOSX_BUNDLE ${exec_sources} resources.qrc)
+else()
+  add_executable(tomviz WIN32 ${exec_sources} resources.qrc)
+endif()
 target_link_libraries(tomviz PRIVATE tomvizlib ${OPENGL_LIBRARIES} ${extra_link_libraries})
 
 # Need to set this property so that in stack traces, tomviz symbols
@@ -804,7 +808,7 @@ target_link_libraries(tomvizlib
     Python3::Python
     $<$<PLATFORM_ID:Windows>:dbghelp shell32>)
 
-if(APPLE)
+if(APPLE AND TOMVIZ_MACOSX_BUNDLE)
   set_target_properties(tomviz
     PROPERTIES
       MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/tomviz.plist.in)
