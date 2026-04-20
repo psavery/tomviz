@@ -54,6 +54,8 @@
 
 #ifdef _WIN32
 	#include <direct.h>
+	#include <dbghelp.h>
+	#include <shlobj.h>
 
 	#define localtime_r(a, b) localtime_s(b, a) // No localtime_r with MSVC, but arguments are swapped for localtime_s
 #else
@@ -1900,10 +1902,171 @@ namespace loguru
 
 #ifdef _WIN32
 namespace loguru {
+
+	static bool create_directory_recursive(const wchar_t* path)
+	{
+		DWORD attrs = GetFileAttributesW(path);
+		if (attrs != INVALID_FILE_ATTRIBUTES) {
+			return (attrs & FILE_ATTRIBUTE_DIRECTORY) != 0;
+		}
+
+		wchar_t parent[MAX_PATH];
+		wcscpy_s(parent, path);
+		wchar_t* last_sep = wcsrchr(parent, L'\\');
+		if (!last_sep) last_sep = wcsrchr(parent, L'/');
+		if (last_sep) {
+			*last_sep = L'\0';
+			if (!create_directory_recursive(parent)) return false;
+		}
+
+		return CreateDirectoryW(path, NULL) || GetLastError() == ERROR_ALREADY_EXISTS;
+	}
+
+	static bool get_crash_dump_dir(wchar_t* out_path, size_t max_len)
+	{
+		wchar_t appdata[MAX_PATH];
+		if (SUCCEEDED(SHGetFolderPathW(NULL, CSIDL_LOCAL_APPDATA, NULL, 0, appdata))) {
+			_snwprintf_s(out_path, max_len, _TRUNCATE, L"%s\\tomviz\\crashes", appdata);
+			return create_directory_recursive(out_path);
+		}
+		return false;
+	}
+
+	static const char* exception_code_name(DWORD code)
+	{
+		switch (code) {
+			case EXCEPTION_ACCESS_VIOLATION:      return "EXCEPTION_ACCESS_VIOLATION";
+			case EXCEPTION_ARRAY_BOUNDS_EXCEEDED:  return "EXCEPTION_ARRAY_BOUNDS_EXCEEDED";
+			case EXCEPTION_BREAKPOINT:             return "EXCEPTION_BREAKPOINT";
+			case EXCEPTION_DATATYPE_MISALIGNMENT:  return "EXCEPTION_DATATYPE_MISALIGNMENT";
+			case EXCEPTION_FLT_DENORMAL_OPERAND:   return "EXCEPTION_FLT_DENORMAL_OPERAND";
+			case EXCEPTION_FLT_DIVIDE_BY_ZERO:     return "EXCEPTION_FLT_DIVIDE_BY_ZERO";
+			case EXCEPTION_FLT_INEXACT_RESULT:     return "EXCEPTION_FLT_INEXACT_RESULT";
+			case EXCEPTION_FLT_INVALID_OPERATION:  return "EXCEPTION_FLT_INVALID_OPERATION";
+			case EXCEPTION_FLT_OVERFLOW:           return "EXCEPTION_FLT_OVERFLOW";
+			case EXCEPTION_FLT_STACK_CHECK:        return "EXCEPTION_FLT_STACK_CHECK";
+			case EXCEPTION_FLT_UNDERFLOW:          return "EXCEPTION_FLT_UNDERFLOW";
+			case EXCEPTION_GUARD_PAGE:             return "EXCEPTION_GUARD_PAGE";
+			case EXCEPTION_ILLEGAL_INSTRUCTION:    return "EXCEPTION_ILLEGAL_INSTRUCTION";
+			case EXCEPTION_IN_PAGE_ERROR:          return "EXCEPTION_IN_PAGE_ERROR";
+			case EXCEPTION_INT_DIVIDE_BY_ZERO:     return "EXCEPTION_INT_DIVIDE_BY_ZERO";
+			case EXCEPTION_INT_OVERFLOW:           return "EXCEPTION_INT_OVERFLOW";
+			case EXCEPTION_INVALID_DISPOSITION:    return "EXCEPTION_INVALID_DISPOSITION";
+			case EXCEPTION_NONCONTINUABLE_EXCEPTION: return "EXCEPTION_NONCONTINUABLE_EXCEPTION";
+			case EXCEPTION_PRIV_INSTRUCTION:       return "EXCEPTION_PRIV_INSTRUCTION";
+			case EXCEPTION_SINGLE_STEP:            return "EXCEPTION_SINGLE_STEP";
+			case EXCEPTION_STACK_OVERFLOW:         return "EXCEPTION_STACK_OVERFLOW";
+			default:                               return "UNKNOWN_EXCEPTION";
+		}
+	}
+
+	static LONG WINAPI windows_exception_handler(EXCEPTION_POINTERS* exception_info)
+	{
+		DWORD code = exception_info->ExceptionRecord->ExceptionCode;
+
+		// Skip C++ exceptions (0xE06D7363 = "msc" in little-endian) and
+		// non-fatal exceptions like OUTPUT_DEBUG_STRING
+		if (code == 0xE06D7363 || (code & 0x80000000) == 0) {
+			return EXCEPTION_CONTINUE_SEARCH;
+		}
+
+		wchar_t crash_dir[MAX_PATH];
+		if (!get_crash_dump_dir(crash_dir, MAX_PATH)) {
+			return EXCEPTION_CONTINUE_SEARCH;
+		}
+
+		SYSTEMTIME st;
+		GetLocalTime(&st);
+
+		// Write minidump
+		wchar_t dump_path[MAX_PATH];
+		_snwprintf_s(dump_path, MAX_PATH, _TRUNCATE,
+			L"%s\\tomviz_%04d%02d%02d_%02d%02d%02d.dmp",
+			crash_dir, st.wYear, st.wMonth, st.wDay,
+			st.wHour, st.wMinute, st.wSecond);
+
+		HANDLE dump_file = CreateFileW(dump_path, GENERIC_WRITE, 0, NULL,
+			CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+
+		if (dump_file != INVALID_HANDLE_VALUE) {
+			MINIDUMP_EXCEPTION_INFORMATION mei;
+			mei.ThreadId = GetCurrentThreadId();
+			mei.ExceptionPointers = exception_info;
+			mei.ClientPointers = FALSE;
+
+			MiniDumpWriteDump(GetCurrentProcess(), GetCurrentProcessId(),
+				dump_file,
+				static_cast<MINIDUMP_TYPE>(MiniDumpWithDataSegs | MiniDumpWithHandleData),
+				&mei, NULL, NULL);
+			CloseHandle(dump_file);
+		}
+
+		// Write human-readable crash log
+		wchar_t log_path[MAX_PATH];
+		_snwprintf_s(log_path, MAX_PATH, _TRUNCATE,
+			L"%s\\tomviz_%04d%02d%02d_%02d%02d%02d.log",
+			crash_dir, st.wYear, st.wMonth, st.wDay,
+			st.wHour, st.wMinute, st.wSecond);
+
+		HANDLE log_file = CreateFileW(log_path, GENERIC_WRITE, 0, NULL,
+			CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+
+		if (log_file != INVALID_HANDLE_VALUE) {
+			char buf[2048];
+			int len = 0;
+
+			len += sprintf_s(buf + len, sizeof(buf) - len,
+				"Tomviz Crash Report\r\n");
+			len += sprintf_s(buf + len, sizeof(buf) - len,
+				"====================\r\n\r\n");
+			len += sprintf_s(buf + len, sizeof(buf) - len,
+				"Time: %04d-%02d-%02d %02d:%02d:%02d\r\n",
+				st.wYear, st.wMonth, st.wDay,
+				st.wHour, st.wMinute, st.wSecond);
+			len += sprintf_s(buf + len, sizeof(buf) - len,
+				"Exception Code: 0x%08lX (%s)\r\n",
+				code, exception_code_name(code));
+			len += sprintf_s(buf + len, sizeof(buf) - len,
+				"Exception Address: 0x%p\r\n",
+				exception_info->ExceptionRecord->ExceptionAddress);
+
+			if (code == EXCEPTION_ACCESS_VIOLATION &&
+				exception_info->ExceptionRecord->NumberParameters >= 2) {
+				const char* op = exception_info->ExceptionRecord->ExceptionInformation[0] == 0
+					? "reading" : "writing";
+				len += sprintf_s(buf + len, sizeof(buf) - len,
+					"Access violation %s address: 0x%llX\r\n",
+					op, (unsigned long long)exception_info->ExceptionRecord->ExceptionInformation[1]);
+			}
+
+			len += sprintf_s(buf + len, sizeof(buf) - len,
+				"\r\nA minidump file has been saved alongside this log.\r\n"
+				"Please send both files to the tomviz developers for analysis.\r\n");
+
+			DWORD written;
+			WriteFile(log_file, buf, (DWORD)len, &written, NULL);
+			CloseHandle(log_file);
+		}
+
+		// Also try to show a message box so the user knows a dump was saved
+		wchar_t wmsg[512];
+		const char* code_name = exception_code_name(code);
+		wchar_t wcode_name[64];
+		MultiByteToWideChar(CP_UTF8, 0, code_name, -1, wcode_name, 64);
+		_snwprintf_s(wmsg, 512, _TRUNCATE,
+			L"Tomviz has crashed (%s).\n\n"
+			L"Crash dump files have been saved to:\n%s\n\n"
+			L"Please send these files to the developers.",
+			wcode_name, crash_dir);
+		MessageBoxW(NULL, wmsg, L"Tomviz Crash", MB_OK | MB_ICONERROR);
+
+		return EXCEPTION_EXECUTE_HANDLER;
+	}
+
 	void install_signal_handlers(const SignalOptions& signal_options)
 	{
-		(void)signal_options;
-		// TODO: implement signal handlers on windows
+		s_signal_options = signal_options;
+		SetUnhandledExceptionFilter(windows_exception_handler);
 	}
 } // namespace loguru
 

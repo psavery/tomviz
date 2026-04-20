@@ -801,7 +801,8 @@ target_link_libraries(tomvizlib
     Qt6::Network
   PRIVATE
     Qt6::Core5Compat
-    Python3::Python)
+    Python3::Python
+    $<$<PLATFORM_ID:Windows>:dbghelp shell32>)
 
 if(APPLE)
   set_target_properties(tomviz
