@@ -4,6 +4,7 @@
 #ifndef tomvizPipelinePipeline_h
 #define tomvizPipelinePipeline_h
 
+#include <QHash>
 #include <QList>
 #include <QObject>
 
@@ -40,9 +41,32 @@ public:
   QList<Node*> nodes() const;
   QList<Node*> roots() const;
 
+  /// Remove every node and link. Used by the file-reset action and by
+  /// state-file loaders that replace the whole graph.
+  void clear();
+
   /// Return the index at which @a node was added (creation order).
   /// Returns -1 if the node is not in this pipeline.
   int creationIndex(Node* node) const;
+
+  /// File-scoped integer id for @a node, used by the state-file schema
+  /// as a stable cross-reference within a single saved session. Assigns
+  /// a fresh id on first access (monotonic, never reused). Returns -1
+  /// for null or unowned nodes.
+  int nodeId(Node* node);
+
+  /// Reverse lookup: the node with the given id, or nullptr.
+  Node* nodeById(int id) const;
+
+  /// Explicitly set the id for @a node. Used by the state loader to
+  /// preserve ids persisted in the file so re-saves round-trip
+  /// identically.
+  void setNodeId(Node* node, int id);
+
+  /// Next id the allocator will hand out. Written to the state file so
+  /// re-saves don't collide with ids for nodes added after load.
+  int nextNodeId() const;
+  void setNextNodeId(int id);
 
   // Link management
   Link* createLink(OutputPort* from, InputPort* to);
@@ -91,6 +115,8 @@ signals:
 private:
   QList<Node*> m_nodes;
   QList<Link*> m_links;
+  QHash<Node*, int> m_nodeIds;
+  int m_nextNodeId = 1;
   PipelineExecutor* m_executor = nullptr;
   bool m_paused = false;
 };

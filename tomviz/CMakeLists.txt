@@ -261,6 +261,8 @@ set(SOURCES
   pipeline/Link.h
   pipeline/Node.cxx
   pipeline/Node.h
+  pipeline/NodeFactory.cxx
+  pipeline/NodeFactory.h
   pipeline/SourceNode.cxx
   pipeline/SourceNode.h
   pipeline/TransformNode.cxx
@@ -275,6 +277,8 @@ set(SOURCES
   pipeline/LegacyStateLoader.h
   pipeline/Pipeline.cxx
   pipeline/Pipeline.h
+  pipeline/PipelineStateIO.cxx
+  pipeline/PipelineStateIO.h
   pipeline/PipelineExecutor.cxx
   pipeline/PipelineExecutor.h
   pipeline/DefaultExecutor.cxx
@@ -287,8 +291,6 @@ set(SOURCES
   pipeline/data/VolumeData.h
   pipeline/sources/SphereSource.cxx
   pipeline/sources/SphereSource.h
-  pipeline/sources/DataReader.cxx
-  pipeline/sources/DataReader.h
   pipeline/sources/ReaderSourceNode.cxx
   pipeline/sources/ReaderSourceNode.h
   pipeline/transforms/ThresholdTransform.cxx
@@ -370,8 +372,12 @@ set(SOURCES
   pipeline/VolumePropertiesWidget.h
   pipeline/vtkNonOrthoImagePlaneWidget.cxx
   pipeline/vtkNonOrthoImagePlaneWidget.h
+  FileReader.cxx
+  FileReader.h
   Tvh5Format.cxx
   Tvh5Format.h
+  ViewsLayoutsSerializer.cxx
+  ViewsLayoutsSerializer.h
   Utilities.cxx
   Utilities.h
   core/Variant.h

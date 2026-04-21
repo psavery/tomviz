@@ -64,6 +64,7 @@ void Pipeline::removeNode(Node* node)
   }
 
   m_nodes.removeOne(node);
+  m_nodeIds.remove(node);
   emit nodeRemoved(node);
   delete node;
 }
@@ -71,6 +72,22 @@ void Pipeline::removeNode(Node* node)
 QList<Node*> Pipeline::nodes() const
 {
   return m_nodes;
+}
+
+void Pipeline::clear()
+{
+  // Drop links first so their removal signals fire while both
+  // endpoint nodes are still alive. removeNode() itself also scrubs
+  // any remaining links connected to the node and deletes the node;
+  // we don't touch `node` afterward.
+  const auto links = m_links;
+  for (auto* link : links) {
+    removeLink(link);
+  }
+  const auto nodes = m_nodes;
+  for (auto* node : nodes) {
+    removeNode(node);
+  }
 }
 
 QList<Node*> Pipeline::roots() const
@@ -99,6 +116,48 @@ QList<Node*> Pipeline::roots() const
 int Pipeline::creationIndex(Node* node) const
 {
   return m_nodes.indexOf(node);
+}
+
+int Pipeline::nodeId(Node* node)
+{
+  if (!node || !m_nodes.contains(node)) {
+    return -1;
+  }
+  auto it = m_nodeIds.find(node);
+  if (it != m_nodeIds.end()) {
+    return it.value();
+  }
+  int id = m_nextNodeId++;
+  m_nodeIds.insert(node, id);
+  return id;
+}
+
+Node* Pipeline::nodeById(int id) const
+{
+  for (auto it = m_nodeIds.constBegin(); it != m_nodeIds.constEnd(); ++it) {
+    if (it.value() == id) {
+      return it.key();
+    }
+  }
+  return nullptr;
+}
+
+void Pipeline::setNodeId(Node* node, int id)
+{
+  if (!node || !m_nodes.contains(node)) {
+    return;
+  }
+  m_nodeIds[node] = id;
+}
+
+int Pipeline::nextNodeId() const
+{
+  return m_nextNodeId;
+}
+
+void Pipeline::setNextNodeId(int id)
+{
+  m_nextNodeId = id;
 }
 
 Link* Pipeline::createLink(OutputPort* from, InputPort* to)

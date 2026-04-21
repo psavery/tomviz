@@ -71,6 +71,14 @@ public:
     vtkSMProxy* reader, bool defaultModules = true, bool child = false,
     bool addToPipeline = true);
 
+  /// Capture reader-proxy property values for round-tripping.
+  static QJsonObject readerProperties(vtkSMProxy* reader);
+
+  /// Apply filename-related properties from a reader descriptor onto a
+  /// ParaView proxy.
+  static void setFileNameProperties(const QJsonObject& props,
+                                    vtkSMProxy* reader);
+
 protected:
   /// Called when the action is triggered.
   void onTriggered() override;
@@ -81,9 +89,6 @@ private:
   static pipeline::SourceNode* createSourceFromImageData(
     vtkImageData* image, const QString& label,
     const QStringList& fileNames = {});
-  static QJsonObject readerProperties(vtkSMProxy* reader);
-  static void setFileNameProperties(const QJsonObject& props,
-                                    vtkSMProxy* reader);
 };
 } // namespace tomviz
 

@@ -229,25 +229,20 @@ QString resolveReaderFileName(const QJsonObject& reader, const QDir& stateDir)
 
 } // namespace
 
-bool LegacyStateLoader::clearPipeline(Pipeline* pipeline)
+void LegacyStateLoader::restoreViewsLayoutsAndPalette(
+  const QJsonObject& state, Pipeline* pipeline,
+  QMap<int, vtkSMViewProxy*>* viewIdMap)
 {
-  if (!pipeline) {
-    return false;
+  LoadContext ctx;
+  ctx.pipeline = pipeline;
+  if (state.contains("paletteColor")) {
+    applyPaletteColor(state.value("paletteColor").toArray());
   }
-  // Remove nodes in reverse creation order so downstream nodes leave
-  // before upstream (cheaper link accounting). Link removal is handled
-  // implicitly when both endpoint nodes disappear; we also remove links
-  // explicitly to be safe.
-  const auto links = pipeline->links();
-  for (auto* link : links) {
-    pipeline->removeLink(link);
+  restoreViewsAndLayouts(state, ctx);
+  scheduleViewStatesApply(state, ctx);
+  if (viewIdMap) {
+    *viewIdMap = ctx.viewIdMap;
   }
-  const auto nodes = pipeline->nodes();
-  for (auto* node : nodes) {
-    pipeline->removeNode(node);
-    node->deleteLater();
-  }
-  return true;
 }
 
 bool LegacyStateLoader::load(const QJsonObject& state, const QDir& stateDir,
@@ -261,7 +256,7 @@ bool LegacyStateLoader::load(const QJsonObject& state, const QDir& stateDir,
     return false;
   }
 
-  clearPipeline(ctx.pipeline);
+  ctx.pipeline->clear();
 
   if (state.contains("paletteColor")) {
     applyPaletteColor(state.value("paletteColor").toArray());
@@ -355,7 +350,7 @@ bool LegacyStateLoader::loadFromH5(const QString& filename,
     return false;
   }
 
-  clearPipeline(ctx.pipeline);
+  ctx.pipeline->clear();
 
   auto state = doc.object();
   if (state.contains("paletteColor")) {

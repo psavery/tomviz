@@ -8,6 +8,7 @@
 #include "PortData.h"
 #include "PortType.h"
 
+#include <QJsonObject>
 #include <QList>
 
 namespace tomviz {
@@ -63,6 +64,20 @@ public:
 
   QList<Link*> links() const;
 
+  /// Serialize the metadata of the port's current payload (VolumeData,
+  /// Molecule, Table, ...) as JSON. Does NOT include raw voxel / table
+  /// byte payloads — those are embedded by container-level savers (e.g.
+  /// Tvh5Format) under their own HDF5 groups. Returns an empty object
+  /// if the port has no data or the payload type isn't round-trippable.
+  /// Override in subclasses that carry specialized payloads.
+  virtual QJsonObject serialize() const;
+
+  /// Apply JSON produced by serialize() onto this port's current
+  /// payload. No-op if the port has no payload yet (loaders that need
+  /// to reconstruct the payload from scratch must do so before calling
+  /// deserialize). Returns false on unrecoverable parse errors.
+  virtual bool deserialize(const QJsonObject& json);
+
 signals:
   void dataChanged();
   void staleChanged(bool stale);
@@ -86,6 +101,10 @@ private:
   bool m_transient = false;
   bool m_stale = false;
   QList<Link*> m_links;
+  /// Metadata deserialized before setData ran (typical load path:
+  /// source node populates data only when it executes). Applied in
+  /// setData() and then cleared.
+  QJsonObject m_pendingData;
 };
 
 } // namespace pipeline

@@ -291,9 +291,14 @@ QList<LegacyModuleSink*> LegacyModuleSink::siblingSinks(
 
 QJsonObject LegacyModuleSink::serialize() const
 {
-  QJsonObject json;
-  json["label"] = label();
+  QJsonObject json = Node::serialize();
   json["visible"] = m_visible;
+  if (m_viewProxy) {
+    // Persist the ParaView proxy GlobalID so the loader can re-bind
+    // this sink to the same view after restoreViewsAndLayouts() has
+    // rebuilt the scene.
+    json["viewId"] = static_cast<int>(m_viewProxy->GetGlobalID());
+  }
   if (m_useDetachedColorMap) {
     json["useDetachedColorMap"] = true;
     if (m_detachedColorMap) {
@@ -309,9 +314,7 @@ QJsonObject LegacyModuleSink::serialize() const
 
 bool LegacyModuleSink::deserialize(const QJsonObject& json)
 {
-  if (json.contains("label")) {
-    setLabel(json["label"].toString());
-  }
+  Node::deserialize(json);
   // setUseDetachedColorMap must run before the map payload deserializes
   // so that m_detachedColorMap exists for the proxy-based apply.
   if (json.contains("useDetachedColorMap")) {

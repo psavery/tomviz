@@ -75,8 +75,8 @@ public:
 
   bool execute() override;
 
-  virtual QJsonObject serialize() const;
-  virtual bool deserialize(const QJsonObject& json);
+  QJsonObject serialize() const override;
+  bool deserialize(const QJsonObject& json) override;
 
   /// Push active color/opacity maps into the VTK pipeline. Subclasses
   /// that need a color map should override this.

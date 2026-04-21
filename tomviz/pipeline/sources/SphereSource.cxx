@@ -12,6 +12,9 @@
 #include <vtkNew.h>
 #include <vtkPointData.h>
 
+#include <QJsonArray>
+#include <QJsonObject>
+
 #include <cmath>
 
 namespace tomviz {
@@ -78,6 +81,38 @@ bool SphereSource::execute()
                 PortData(std::any(volume), PortType::ImageData));
 
   setExecState(NodeExecState::Idle);
+  return true;
+}
+
+QJsonObject SphereSource::serialize() const
+{
+  auto json = SourceNode::serialize();
+  QJsonArray dims;
+  dims.append(m_dimensions[0]);
+  dims.append(m_dimensions[1]);
+  dims.append(m_dimensions[2]);
+  json[QStringLiteral("dimensions")] = dims;
+  json[QStringLiteral("radiusFraction")] = m_radiusFraction;
+  return json;
+}
+
+bool SphereSource::deserialize(const QJsonObject& json)
+{
+  if (!SourceNode::deserialize(json)) {
+    return false;
+  }
+  if (json.contains(QStringLiteral("dimensions"))) {
+    auto dims = json.value(QStringLiteral("dimensions")).toArray();
+    if (dims.size() == 3) {
+      setDimensions(dims[0].toInt(m_dimensions[0]),
+                    dims[1].toInt(m_dimensions[1]),
+                    dims[2].toInt(m_dimensions[2]));
+    }
+  }
+  if (json.contains(QStringLiteral("radiusFraction"))) {
+    setRadiusFraction(
+      json.value(QStringLiteral("radiusFraction")).toDouble(m_radiusFraction));
+  }
   return true;
 }
 

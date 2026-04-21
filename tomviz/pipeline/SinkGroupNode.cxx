@@ -8,6 +8,9 @@
 #include "PassthroughOutputPort.h"
 #include "SinkNode.h"
 
+#include <QJsonArray>
+#include <QJsonObject>
+
 namespace tomviz {
 namespace pipeline {
 
@@ -61,6 +64,24 @@ QList<SinkNode*> SinkGroupNode::sinks() const
     }
   }
   return result;
+}
+
+bool SinkGroupNode::deserialize(const QJsonObject& json)
+{
+  if (json.contains(QStringLiteral("outputPorts"))) {
+    auto outputs = json.value(QStringLiteral("outputPorts")).toObject();
+    for (auto it = outputs.constBegin(); it != outputs.constEnd(); ++it) {
+      auto name = it.key();
+      if (outputPort(name)) {
+        continue;
+      }
+      auto entry = it.value().toObject();
+      PortType type = portTypeFromString(
+        entry.value(QStringLiteral("type")).toString());
+      addPassthrough(name, type);
+    }
+  }
+  return Node::deserialize(json);
 }
 
 } // namespace pipeline

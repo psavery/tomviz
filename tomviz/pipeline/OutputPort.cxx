@@ -4,6 +4,7 @@
 #include "OutputPort.h"
 
 #include "Link.h"
+#include "data/VolumeData.h"
 
 namespace tomviz {
 namespace pipeline {
@@ -55,6 +56,15 @@ void OutputPort::setData(const PortData& data)
 {
   m_data = data;
   m_stale = false;
+  // If a metadata blob arrived via deserialize() before data was
+  // populated, apply it now to the freshly-set payload — e.g. user
+  // edits to a source's colormap / scalar renames that must survive
+  // a state-file save+load+execute cycle.
+  if (!m_pendingData.isEmpty()) {
+    QJsonObject pending = m_pendingData;
+    m_pendingData = {};
+    deserialize(pending);
+  }
   emit dataChanged();
 }
 
@@ -103,6 +113,39 @@ void OutputPort::removeLink(Link* link)
 
 bool OutputPort::canAcceptLink(InputPort* /*to*/) const
 {
+  return true;
+}
+
+QJsonObject OutputPort::serialize() const
+{
+  if (!hasData()) {
+    return {};
+  }
+  // Known round-trippable payloads. Extend as new PortData types
+  // (Molecule, Table, ...) acquire serialize()/deserialize() support.
+  // Use std::any_cast's nothrow pointer form so ports carrying
+  // non-matching payloads (e.g. Molecule, Table) don't throw here.
+  if (auto* volume =
+        std::any_cast<VolumeDataPtr>(&m_data.data())) {
+    return (*volume)->serialize();
+  }
+  return {};
+}
+
+bool OutputPort::deserialize(const QJsonObject& json)
+{
+  if (json.isEmpty()) {
+    return true;
+  }
+  if (auto* volume =
+        std::any_cast<VolumeDataPtr>(&m_data.data())) {
+    return (*volume)->deserialize(json);
+  }
+  // No payload yet — stash so the next setData() can apply this JSON
+  // on top of the freshly-populated data (e.g. source node execute
+  // that produces a fresh VolumeData, to which we then reattach the
+  // user's colormap / scalar renames from the state file).
+  m_pendingData = json;
   return true;
 }
 

@@ -9,6 +9,7 @@
 #include "PortType.h"
 
 #include <QIcon>
+#include <QJsonObject>
 #include <QList>
 #include <QMap>
 #include <QObject>
@@ -40,6 +41,11 @@ public:
   NodeState state() const;
   void markStale();
   void markCurrent();
+  /// Set the node's state without any side effects on neighbors.
+  /// markStale() cascades through the DAG; this is the escape hatch
+  /// for loaders / restorers that already know the full state of the
+  /// graph and don't want to re-cascade.
+  void setStateNoCascade(NodeState state);
 
   NodeExecState execState() const;
 
@@ -129,6 +135,17 @@ public slots:
 
   /// True if any input link is invalid (type-incompatible).
   bool hasInvalidInputLinks() const;
+
+  /// Serialize this node's persistent state to JSON (label, breakpoint,
+  /// properties, typeInferenceSources, output/input port state).
+  /// Subclasses should call the base and then add their own fields.
+  virtual QJsonObject serialize() const;
+
+  /// Apply JSON produced by serialize() to this node. Returns false on
+  /// unrecoverable errors. Subclasses that create dynamic ports should
+  /// create them before calling up to Node::deserialize so per-port
+  /// state can be applied.
+  virtual bool deserialize(const QJsonObject& json);
 
 signals:
   void stateChanged(NodeState state);

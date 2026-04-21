@@ -56,6 +56,20 @@ public:
   static bool loadFromH5(const QString& filename,
                          bool executePipeline = true);
 
+  /// Restore the top-level `views`, `layouts`, and `paletteColor`
+  /// sections of @a state into the running ParaView session. Shared
+  /// between the legacy loader (which calls the private helpers
+  /// directly) and the new-format loader in SaveLoadStateReaction.
+  /// If @a pipeline is non-null, camera state is applied on
+  /// Pipeline::executionFinished so it lands after any
+  /// resetCameraIfFirstSink adjustments.
+  /// @a viewIdMap, if non-null, is populated with the legacy
+  /// view-id → restored-proxy mapping so the caller can bind sinks
+  /// back to their saved views.
+  static void restoreViewsLayoutsAndPalette(
+    const QJsonObject& state, Pipeline* pipeline,
+    QMap<int, vtkSMViewProxy*>* viewIdMap = nullptr);
+
 private:
   struct LoadContext
   {
@@ -70,8 +84,6 @@ private:
     /// pqApplicationCore::loadState() recreates the views.
     QMap<int, vtkSMViewProxy*> viewIdMap;
   };
-
-  static bool clearPipeline(Pipeline* pipeline);
 
   /// Build a SourceNode from a top-level DataSource JSON entry. For .tvsm
   /// this resolves reader.fileNames relative to stateDir; for .tvh5 it

@@ -24,6 +24,17 @@ public:
   void setOutputData(const QString& portName, const PortData& data);
 
   bool execute() override;
+
+  /// Forwards to Node::serialize(). Subclasses call this base and add
+  /// their source-specific fields.
+  QJsonObject serialize() const override;
+
+  /// Creates output ports declared in the serialized "outputPorts" map
+  /// that aren't already present (so the base SourceNode, which adds
+  /// no ports in its constructor, can still round-trip through
+  /// save/load), then forwards to Node::deserialize() which applies
+  /// per-port state including the `metadata` payload.
+  bool deserialize(const QJsonObject& json) override;
 };
 
 } // namespace pipeline

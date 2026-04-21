@@ -5,6 +5,8 @@
 
 #include "OutputPort.h"
 
+#include <QJsonObject>
+
 namespace tomviz {
 namespace pipeline {
 
@@ -43,6 +45,34 @@ bool SourceNode::execute()
     }
   }
   return true;
+}
+
+QJsonObject SourceNode::serialize() const
+{
+  return Node::serialize();
+}
+
+bool SourceNode::deserialize(const QJsonObject& json)
+{
+  // For the base SourceNode (instances created by LoadDataReaction,
+  // MergeImagesReaction, etc.), output ports aren't declared in a
+  // constructor — recreate them from the file's outputPorts map so the
+  // link-resolution pass can find them. Subclasses that pre-declare
+  // their ports in their constructor find matching entries and this
+  // becomes a no-op.
+  if (json.contains(QStringLiteral("outputPorts"))) {
+    auto outputs = json.value(QStringLiteral("outputPorts")).toObject();
+    for (auto it = outputs.constBegin(); it != outputs.constEnd(); ++it) {
+      if (outputPort(it.key())) {
+        continue;
+      }
+      auto entry = it.value().toObject();
+      PortType type =
+        portTypeFromString(entry.value(QStringLiteral("type")).toString());
+      addOutput(it.key(), type);
+    }
+  }
+  return Node::deserialize(json);
 }
 
 } // namespace pipeline

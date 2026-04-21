@@ -38,17 +38,6 @@ namespace py = pybind11;
 namespace tomviz {
 namespace pipeline {
 
-static PortType portTypeFromString(const QString& str)
-{
-  if (str == "TiltSeries")
-    return PortType::TiltSeries;
-  if (str == "Volume")
-    return PortType::Volume;
-  if (str == "ImageData")
-    return PortType::ImageData;
-  return PortType::None;
-}
-
 QMap<QString, CustomWidgetInfo> LegacyPythonTransform::s_customWidgetMap;
 
 void LegacyPythonTransform::registerCustomWidget(const QString& id,

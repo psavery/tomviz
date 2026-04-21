@@ -3,252 +3,223 @@
 
 #include "Tvh5Format.h"
 
-#include "ActiveObjects.h"
-#include "legacy/DataSource.h"
 #include "EmdFormat.h"
-#include "LoadDataReaction.h"
-#include "legacy/modules/ModuleManager.h"
-#include "legacy/operators/Operator.h"
-#include "legacy/Pipeline.h"
 
+#include "pipeline/Node.h"
+#include "pipeline/OutputPort.h"
+#include "pipeline/Pipeline.h"
+#include "pipeline/PipelineStateIO.h"
 #include "pipeline/PortData.h"
-#include "pipeline/PortType.h"
 #include "pipeline/SourceNode.h"
 #include "pipeline/data/VolumeData.h"
 
 #include <h5cpp/h5readwrite.h>
 
-#include <vtkImageData.h>
-#include <vtkNew.h>
-#include <vtkSmartPointer.h>
-
-#include <QDir>
-#include <QFileInfo>
+#include <QByteArray>
+#include <QDebug>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 
-#include <iostream>
-
-using std::cerr;
-using std::endl;
+#include <vtkImageData.h>
 
 namespace tomviz {
 
-bool Tvh5Format::write(const std::string& fileName)
+namespace {
+
+/// For every node with a non-transient output port carrying a valid
+/// VolumeData, write the voxel bytes into @a writer under
+/// `/data/<nodeId>/<portName>` and stamp `dataRef` on the matching
+/// port entry in @a pipelineJson. Transient ports (typically transform
+/// outputs that get consumed and released downstream) are skipped —
+/// the port's "persistent" flag is the contract.
+bool writePersistentPayloads(pipeline::Pipeline* pipeline,
+                             h5::H5ReadWrite& writer,
+                             QJsonObject& pipelineJson)
 {
-  // First, write the standard EMD file
-  // TODO: retrieve DataSource from active node/port
-  DataSource* source = nullptr;
+  writer.createGroup("/data");
 
-  if (!EmdFormat::write(fileName, source)) {
-    cerr << "Failed to write the standard EMD node" << endl;
-    return false;
+  auto nodesArray = pipelineJson.value(QStringLiteral("nodes")).toArray();
+
+  // Build an id -> index map so we can locate the right node entry fast.
+  QHash<int, int> idToIndex;
+  for (int i = 0; i < nodesArray.size(); ++i) {
+    int id = nodesArray[i].toObject().value(QStringLiteral("id")).toInt(-1);
+    if (id >= 0) {
+      idToIndex.insert(id, i);
+    }
   }
 
-  // We will create a soft link to the active id later
-  auto activeId = source->id().toStdString();
-
-  // Now, write the state file string to a dataset
-  QFileInfo info(fileName.c_str());
-  QJsonObject stateObject;
-  auto success =
-    ModuleManager::instance().serialize(stateObject, info.dir(), false);
-  if (!success) {
-    cerr << "Failed to serialize the state of Tomviz" << endl;
-    return false;
-  }
-
-  QByteArray state = QJsonDocument(stateObject).toJson();
-
-  // Write the state file to "tomviz_state"
-  using h5::H5ReadWrite;
-  H5ReadWrite::OpenMode mode = H5ReadWrite::OpenMode::ReadWrite;
-  H5ReadWrite writer(fileName, mode);
-
-  if (!writer.writeData("/", "tomviz_state", { static_cast<int>(state.size()) }, state.data())) {
-    cerr << "Failed to write tomviz_state" << endl;
-    return false;
-  }
-
-  // Now, write all the data sources
-  writer.createGroup("/tomviz_datasources");
-  auto sources = ModuleManager::instance().allDataSources();
-  for (auto* ds : sources) {
-    if (!ds) {
-      // Somehow, invalid data sources ended up in here...
+  for (auto* node : pipeline->nodes()) {
+    int nodeId = pipeline->nodeId(node);
+    auto nodeIt = idToIndex.constFind(nodeId);
+    if (nodeIt == idToIndex.constEnd()) {
       continue;
     }
+    auto nodeEntry = nodesArray[nodeIt.value()].toObject();
+    auto outputs = nodeEntry.value(QStringLiteral("outputPorts")).toObject();
 
-    // Name the group after its id
-    auto id = ds->id().toStdString();
-
-    if (id == activeId) {
-      // Make a soft link rather than writing the data again
-      writer.createSoftLink("/data/tomography", "/tomviz_datasources/" + id);
-      continue;
-    }
-
-    std::string group = "/tomviz_datasources/" + id;
-    writer.createGroup(group);
-
-    // Write the data here
-    if (!EmdFormat::writeNode(writer, group, ds->imageData())) {
-      cerr << "Failed to write data source: " << id << endl;
-      return false;
-    }
-  }
-
-  return true;
-}
-
-bool Tvh5Format::read(const std::string& fileName)
-{
-  // Read the state from "tomviz_state"
-  using h5::H5ReadWrite;
-  H5ReadWrite::OpenMode mode = H5ReadWrite::OpenMode::ReadOnly;
-  H5ReadWrite reader(fileName, mode);
-
-  auto stateVec = reader.readData<char>("tomviz_state");
-  QString stateStr = std::string(stateVec.begin(), stateVec.end()).c_str();
-
-  auto doc = QJsonDocument::fromJson(stateStr.toUtf8());
-  if (doc.isNull()) {
-    cerr << "Failed to read state from: " << fileName << endl;
-    return false;
-  }
-
-  QJsonObject state = doc.object();
-  QFileInfo info(fileName.c_str());
-  auto success =
-    ModuleManager::instance().deserialize(state, info.dir(), false);
-
-  if (!success) {
-    cerr << "Failed to deserialize state from: " << fileName << endl;
-    return false;
-  }
-
-  // Turn off automatic execution of pipelines
-  bool prev = ModuleManager::instance().executePipelinesOnLoad();
-  ModuleManager::instance().executePipelinesOnLoad(false);
-
-  // Get the active data source
-  DataSource* active = nullptr;
-
-  // Now load in the data sources
-  if (state["dataSources"].isArray()) {
-    auto dataSources = state["dataSources"].toArray();
-    foreach (auto ds, dataSources) {
-      loadDataSource(reader, ds.toObject(), &active);
-    }
-  }
-  ModuleManager::instance().executePipelinesOnLoad(prev);
-
-  if (active) {
-    // TODO: set active node/port from restored DataSource
-    // Previously used ActiveObjects::setSelectedDataSource(active)
-    (void)active;
-  }
-
-  // Loading the modules most likely modified the view. Restore
-  // the view to the state given in the state file.
-  ModuleManager::instance().setViews(state["views"].toArray());
-
-  return true;
-}
-
-bool Tvh5Format::loadDataSource(h5::H5ReadWrite& reader,
-                                const QJsonObject& dsObject,
-                                DataSource** active, Operator* parent)
-{
-  auto id = dsObject.value("id").toString().toStdString();
-  if (id.empty()) {
-    cerr << "Failed to obtain id from data source object" << endl;
-    return false;
-  }
-
-  // First, create the image data
-  std::string path = "/tomviz_datasources/" + id;
-  vtkNew<vtkImageData> image;
-  QVariantMap options = { { "askForSubsample", false } };
-  if (!EmdFormat::readNode(reader, path, image, options)) {
-    cerr << "Failed to read data at: " << path << endl;
-    return false;
-  }
-
-  // Next, create the data source
-  DataSource::DataSourceType type = DataSource::hasTiltAngles(image)
-                                      ? DataSource::TiltSeries
-                                      : DataSource::Volume;
-
-  auto* pipeline = parent ? parent->dataSource()->pipeline() : nullptr;
-  auto* dataSource = new DataSource(image, type, pipeline);
-
-  // Save this info in case we write the data source in the future
-  dataSource->setFileName(reader.fileName().c_str());
-  dataSource->setTvh5NodePath(path.c_str());
-
-  if (parent) {
-    // This is a child data source. Hook it up to the operator parent.
-    parent->setChildDataSource(dataSource);
-    // Don't call setHasChildDataSource(true) here. The operator's own
-    // initialization (JSON "children" section or constructor) is the authority
-    // on whether the executor should expect child data in the return dict.
-    parent->newChildDataSource(dataSource);
-    // If it has a parent, it will be deserialized later.
-  } else {
-    // This is a root data source — create a SourceNode for the new pipeline
-    auto* sourceNode = new pipeline::SourceNode();
-    sourceNode->setLabel(dataSource->label());
-    sourceNode->addOutput("volume", pipeline::PortType::ImageData);
-    vtkSmartPointer<vtkImageData> img = dataSource->imageData();
-    auto vol = std::make_shared<pipeline::VolumeData>(img);
-    vol->setLabel(dataSource->label());
-    sourceNode->setOutputData(
-      "volume",
-      pipeline::PortData(vol, pipeline::PortType::ImageData));
-    LoadDataReaction::sourceNodeAdded(sourceNode, false, false);
-    // TODO: dataSource->deserialize(dsObject) skipped — legacy
-    // serialization not yet supported in new pipeline
-  }
-
-  // Set the active data source
-  if (dsObject.value("active").toBool()) {
-    *active = dataSource;
-  }
-
-  // If there are operators, load child data sources too
-  if (dsObject["operators"].isArray()) {
-    auto opPtrs = dataSource->operators();
-    auto operators = dsObject["operators"].toArray();
-    for (int i = 0; i < operators.size() && i < opPtrs.size(); ++i) {
-      auto op = operators.at(i).toObject();
-      if (op["dataSources"].isArray()) {
-        auto sources = op["dataSources"].toArray();
-        foreach (auto s, sources) {
-          loadDataSource(reader, s.toObject(), active, opPtrs[i]);
-        }
+    bool modified = false;
+    for (auto* port : node->outputPorts()) {
+      if (port->isTransient() || !port->hasData()) {
+        continue;
       }
+      auto volume = port->data().value<pipeline::VolumeDataPtr>();
+      if (!volume || !volume->isValid()) {
+        continue;
+      }
+      std::string portName = port->name().toStdString();
+      std::string nodeGroup = "/data/" + std::to_string(nodeId);
+      std::string portGroup = nodeGroup + "/" + portName;
+      if (!writer.isGroup(nodeGroup)) {
+        writer.createGroup(nodeGroup);
+      }
+      writer.createGroup(portGroup);
+      if (!EmdFormat::writeNode(writer, portGroup, volume->imageData())) {
+        qWarning() << "Tvh5Format: failed to write data for node" << nodeId
+                   << "port" << port->name();
+        return false;
+      }
+
+      QJsonObject portEntry = outputs.value(port->name()).toObject();
+      QJsonObject dataRef;
+      dataRef[QStringLiteral("container")] = QStringLiteral("h5");
+      dataRef[QStringLiteral("path")] =
+        QString::fromStdString(portGroup);
+      portEntry[QStringLiteral("dataRef")] = dataRef;
+      outputs[port->name()] = portEntry;
+      modified = true;
+    }
+
+    if (modified) {
+      nodeEntry[QStringLiteral("outputPorts")] = outputs;
+      nodesArray[nodeIt.value()] = nodeEntry;
     }
   }
 
-  // Mark all parent operators as complete
-  for (auto* op : dataSource->operators())
-    op->setComplete();
+  pipelineJson[QStringLiteral("nodes")] = nodesArray;
+  return true;
+}
 
-  // Ensure the pipeline is not paused. DataSource::deserialize() pauses it
-  // but only resumes when executePipelinesOnLoad is true, which is false
-  // during tvh5 loading.
-  auto* p = dataSource->pipeline();
-  if (p) {
-    p->resume();
-    if (parent) {
-      // This will deserialize all children.
-      p->finished();
-    }
+} // namespace
+
+bool Tvh5Format::write(const std::string& fileName,
+                       pipeline::Pipeline* pipeline,
+                       const QJsonObject& extraState)
+{
+  if (!pipeline) {
+    qWarning() << "Tvh5Format::write: null pipeline";
+    return false;
+  }
+
+  QJsonObject state;
+  if (!pipeline::PipelineStateIO::save(pipeline, state)) {
+    qWarning() << "Tvh5Format::write: PipelineStateIO::save failed";
+    return false;
+  }
+
+  // Merge caller-supplied views/layouts/palette. Later keys in
+  // extraState win on conflict, matching the expected caller intent.
+  for (auto it = extraState.constBegin(); it != extraState.constEnd();
+       ++it) {
+    state.insert(it.key(), it.value());
+  }
+
+  // Create the HDF5 container.
+  using h5::H5ReadWrite;
+  H5ReadWrite writer(fileName, H5ReadWrite::OpenMode::WriteOnly);
+
+  // Embed per-port voxels and stamp dataRef entries in the pipeline
+  // section before serializing the final JSON.
+  auto pipelineJson = state.value(QStringLiteral("pipeline")).toObject();
+  if (!writePersistentPayloads(pipeline, writer, pipelineJson)) {
+    return false;
+  }
+  state[QStringLiteral("pipeline")] = pipelineJson;
+
+  // Write the final JSON as a string dataset at /tomviz_state.
+  QByteArray stateBytes = QJsonDocument(state).toJson();
+  if (!writer.writeData("/", "tomviz_state",
+                        { static_cast<int>(stateBytes.size()) },
+                        stateBytes.data())) {
+    qWarning() << "Tvh5Format::write: failed to write /tomviz_state";
+    return false;
   }
 
   return true;
+}
+
+QJsonObject Tvh5Format::readState(const std::string& fileName)
+{
+  using h5::H5ReadWrite;
+  H5ReadWrite reader(fileName, H5ReadWrite::OpenMode::ReadOnly);
+  if (!reader.isDataSet("/tomviz_state")) {
+    return {};
+  }
+  auto bytes = reader.readData<char>("tomviz_state");
+  QJsonDocument doc =
+    QJsonDocument::fromJson(QByteArray(bytes.data(), bytes.size()));
+  if (!doc.isObject()) {
+    return {};
+  }
+  return doc.object();
+}
+
+void Tvh5Format::populatePayloadData(pipeline::Pipeline* pipeline,
+                                     const QJsonObject& pipelineJson,
+                                     const std::string& fileName)
+{
+  if (!pipeline) {
+    return;
+  }
+  using h5::H5ReadWrite;
+  H5ReadWrite reader(fileName, H5ReadWrite::OpenMode::ReadOnly);
+
+  auto nodesJson = pipelineJson.value(QStringLiteral("nodes")).toArray();
+  for (const auto& nv : nodesJson) {
+    auto nodeEntry = nv.toObject();
+    int nodeId = nodeEntry.value(QStringLiteral("id")).toInt(-1);
+    if (nodeId < 0) {
+      continue;
+    }
+    auto* node = pipeline->nodeById(nodeId);
+    if (!node) {
+      continue;
+    }
+    auto outputs =
+      nodeEntry.value(QStringLiteral("outputPorts")).toObject();
+    for (auto it = outputs.constBegin(); it != outputs.constEnd(); ++it) {
+      auto portEntry = it.value().toObject();
+      auto dataRef = portEntry.value(QStringLiteral("dataRef")).toObject();
+      if (dataRef.value(QStringLiteral("container")).toString() !=
+          QLatin1String("h5")) {
+        continue;
+      }
+      std::string path =
+        dataRef.value(QStringLiteral("path")).toString().toStdString();
+      if (path.empty() || !reader.isGroup(path)) {
+        qWarning() << "Tvh5Format::populatePayloadData: missing voxel group"
+                   << QString::fromStdString(path);
+        continue;
+      }
+      auto* port = node->outputPort(it.key());
+      if (!port) {
+        continue;
+      }
+      vtkNew<vtkImageData> image;
+      QVariantMap options = { { "askForSubsample", false } };
+      if (!EmdFormat::readNode(reader, path, image, options)) {
+        qWarning() << "Tvh5Format::populatePayloadData: failed to read"
+                   << QString::fromStdString(path);
+        continue;
+      }
+      auto volume = std::make_shared<pipeline::VolumeData>(image.Get());
+      auto type = port->declaredType();
+      pipeline::PortData pd(std::any(volume), type);
+      port->setData(pd);
+      node->markCurrent();
+    }
+  }
 }
 
 } // namespace tomviz

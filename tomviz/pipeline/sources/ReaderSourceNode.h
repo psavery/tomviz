@@ -4,17 +4,16 @@
 #ifndef tomvizPipelineReaderSourceNode_h
 #define tomvizPipelineReaderSourceNode_h
 
-#include "DataReader.h"
 #include "SourceNode.h"
 
+#include <QJsonObject>
 #include <QStringList>
-
-#include <memory>
 
 namespace tomviz {
 namespace pipeline {
 
-/// A source node that reads files and produces VolumeData on its output port.
+/// A source node that reads file(s) via tomviz::readImageData() and
+/// exposes the resulting VolumeData on its "volume" output port.
 class ReaderSourceNode : public SourceNode
 {
   Q_OBJECT
@@ -23,23 +22,26 @@ public:
   ReaderSourceNode(QObject* parent = nullptr);
   ~ReaderSourceNode() override = default;
 
-  /// Set the file path(s) to read. This also calls createReader()
-  /// internally to select the appropriate reader.
+  /// Set the file path(s) to read. Does not itself touch disk — the
+  /// actual read happens in execute(), via tomviz::readImageData().
   void setFileNames(const QStringList& fileNames);
   QStringList fileNames() const;
 
-  /// Override the auto-detected reader with a specific one.
-  void setReader(std::unique_ptr<DataReader> reader);
-
-  /// Access the current reader (may be null if files not set or unrecognized).
-  DataReader* reader() const;
+  /// Extra options forwarded to readImageData — carries the ParaView
+  /// reader descriptor (for round-tripping), subsampleSettings, and
+  /// a tvh5NodePath when reading a .tvh5 group directly. Optional.
+  void setReaderOptions(const QJsonObject& options);
+  QJsonObject readerOptions() const;
 
   /// Read the file(s) and set the result on the output port.
   bool execute() override;
 
+  QJsonObject serialize() const override;
+  bool deserialize(const QJsonObject& json) override;
+
 private:
   QStringList m_fileNames;
-  std::unique_ptr<DataReader> m_reader;
+  QJsonObject m_readerOptions;
 };
 
 } // namespace pipeline

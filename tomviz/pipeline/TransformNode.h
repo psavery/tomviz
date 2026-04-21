@@ -42,16 +42,15 @@ public:
   /// Create the properties widget. Caller owns the returned widget.
   virtual EditTransformWidget* createPropertiesWidget(QWidget* parent);
 
-  /// Serialize this transform's persistent state to JSON in a shape
-  /// compatible with legacy .tvsm operator entries. Base-class
-  /// implementation writes "label". Subclasses call the base first
-  /// and add their own fields.
-  virtual QJsonObject serialize() const;
+  /// Serialize this transform's persistent state to JSON.
+  /// Forwards to Node::serialize(). Subclasses call this base and add
+  /// their transform-specific fields.
+  QJsonObject serialize() const override;
 
   /// Apply JSON produced by serialize() (or by a legacy
   /// *Operator::serialize()) to this transform. Returns false on
-  /// unrecoverable errors. Base-class implementation reads "label".
-  virtual bool deserialize(const QJsonObject& json);
+  /// unrecoverable errors. Forwards to Node::deserialize().
+  bool deserialize(const QJsonObject& json) override;
 
 signals:
   /// Emitted when the user applies new parameter values via the properties

@@ -7,6 +7,7 @@
 #include "DataExchangeFormat.h"
 #include "EmdFormat.h"
 #include "FileFormatManager.h"
+#include "FileReader.h"
 #include "FxiFormat.h"
 #include "GenericHDF5Format.h"
 #include "ImageStackDialog.h"
@@ -29,6 +30,7 @@
 #include "pipeline/PortUtils.h"
 #include "pipeline/SinkGroupNode.h"
 #include "pipeline/SourceNode.h"
+#include "pipeline/sources/ReaderSourceNode.h"
 #include "pipeline/data/VolumeData.h"
 #include "pipeline/sinks/OutlineSink.h"
 #include "pipeline/sinks/SliceSink.h"
@@ -127,18 +129,36 @@ void LoadDataReaction::onTriggered()
 pipeline::SourceNode* LoadDataReaction::createSourceFromImageData(
   vtkImageData* image, const QString& label, const QStringList& fileNames)
 {
-  auto* source = new pipeline::SourceNode();
   QString nodeLabel = label;
   if (nodeLabel.isEmpty() && !fileNames.isEmpty()) {
     nodeLabel = QFileInfo(fileNames[0]).completeBaseName();
   }
-  source->setLabel(nodeLabel);
+
   auto volumeData = std::make_shared<pipeline::VolumeData>(image);
   volumeData->setLabel(nodeLabel);
   pipeline::PortType dataType = volumeData->hasTiltAngles()
     ? pipeline::PortType::TiltSeries
     : pipeline::PortType::Volume;
-  source->addOutput("volume", dataType);
+
+  // If we have file paths, use a ReaderSourceNode so a future state-file
+  // load can re-run the reader from the saved paths. Otherwise fall back
+  // to a bare SourceNode — the data lives purely in memory and can only
+  // round-trip through a container that embeds voxels (.tvh5).
+  pipeline::SourceNode* source = nullptr;
+  if (!fileNames.isEmpty()) {
+    auto* reader = new pipeline::ReaderSourceNode();
+    reader->setFileNames(fileNames);
+    // Pre-populate the output port with the already-read data so the
+    // caller doesn't have to re-read immediately. ReaderSourceNode's
+    // constructor declares "volume" as ImageData; refine to the
+    // detected effective type (TiltSeries / Volume).
+    reader->outputPort("volume")->setDeclaredType(dataType);
+    source = reader;
+  } else {
+    source = new pipeline::SourceNode();
+    source->addOutput("volume", dataType);
+  }
+  source->setLabel(nodeLabel);
   source->setOutputData("volume", pipeline::PortData(volumeData, dataType));
   return source;
 }
@@ -275,182 +295,83 @@ pipeline::SourceNode* LoadDataReaction::loadData(const QStringList& fileNames,
   bool addToPipeline = options["addToPipeline"].toBool(true);
   bool createCameraOrbit = options["createCameraOrbit"].toBool(true);
   bool child = options["child"].toBool(false);
-  bool loadWithParaview = true;
-  bool loadWithPython = false;
 
-  pipeline::SourceNode* source = nullptr;
   QString fileName;
   if (fileNames.size() > 0) {
     fileName = fileNames[0];
   }
   QFileInfo info(fileName);
-  if (info.suffix().toLower() == "tvh5") {
-    // Need to specify a path inside the tvh5 file to load
-    QString path = options["tvh5NodePath"].toString();
-    if (path.isEmpty()) {
-      qCritical() << "A path is required to read tvh5 as a data file";
-      return nullptr;
-    }
 
-    loadWithParaview = false;
-    // Do not prompt the user for subsample settings
-    QVariantMap emdOptions = { { "askForSubsample", false } };
-    vtkNew<vtkImageData> image;
-    if (EmdFormat::readNode(fileName.toStdString(), path.toStdString(),
-                            image, emdOptions)) {
-      source = createSourceFromImageData(image, info.completeBaseName(),
-                                         fileNames);
-      // Save the node path in case we write the data again in the future
-      source->setProperty("tvh5NodePath", path);
-    }
-  } else if (info.suffix().toLower() == "emd") {
-    // Load the file using our simple EMD class.
-    loadWithParaview = false;
-    QVariantMap emdOptions;
-    vtkNew<vtkImageData> imageData;
-    if (options.contains("subsampleSettings")) {
-      // Before we read into the image data, set subsample settings
-      emdOptions["subsampleStrides"] =
-        options["subsampleSettings"].toObject()["strides"].toVariant();
-      emdOptions["subsampleVolumeBounds"] =
-        options["subsampleSettings"].toObject()["volumeBounds"].toVariant();
-      emdOptions["askForSubsample"] = false;
-    }
-    if (EmdFormat::read(fileName.toLatin1().data(), imageData, emdOptions)) {
-      source = createSourceFromImageData(imageData,
-                                         info.completeBaseName(), fileNames);
-    }
-  } else if (info.suffix().toLower() == "h5") {
-    loadWithParaview = false;
-    QVariantMap hdf5Options;
-    if (options.contains("subsampleSettings")) {
-      hdf5Options["subsampleStrides"] =
-        options["subsampleSettings"].toObject()["strides"].toVariant();
-      hdf5Options["subsampleVolumeBounds"] =
-        options["subsampleSettings"].toObject()["volumeBounds"].toVariant();
-      hdf5Options["askForSubsample"] = false;
-    }
-    // Check if it looks like data exchange
-    if (GenericHDF5Format::isDataExchange(fileName.toStdString())) {
-      DataExchangeFormat format;
-      auto result = format.readAll(fileName.toLatin1().data(), hdf5Options);
-      if (!result.imageData) {
-        return nullptr;
-      }
-      source = createSourceFromImageData(result.imageData,
-                                         info.completeBaseName(), fileNames);
-      auto vol =
-        pipeline::getOutputData<pipeline::VolumeDataPtr>(source);
-      if (vol && !result.tiltAngles.isEmpty()) {
-        vol->setTiltAngles(result.tiltAngles);
-        source->outputPort("volume")->setDeclaredType(
-          pipeline::PortType::TiltSeries);
-        source->setProperty("dataType", "tiltSeries");
-      }
-      // Store dark/white data as node properties for later use
-      if (result.darkData) {
-        source->setProperty(
-          "darkData",
-          QVariant::fromValue(
-            static_cast<void*>(result.darkData.GetPointer())));
-      }
-      if (result.whiteData) {
-        source->setProperty(
-          "whiteData",
-          QVariant::fromValue(
-            static_cast<void*>(result.whiteData.GetPointer())));
-      }
-    } else if (GenericHDF5Format::isFxi(fileName.toStdString())) {
-      FxiFormat format;
-      auto result = format.readAll(fileName.toLatin1().data(), hdf5Options);
-      if (!result.imageData) {
-        return nullptr;
-      }
-      source = createSourceFromImageData(result.imageData,
-                                         info.completeBaseName(), fileNames);
-      auto vol =
-        pipeline::getOutputData<pipeline::VolumeDataPtr>(source);
-      if (vol && !result.tiltAngles.isEmpty()) {
-        vol->setTiltAngles(result.tiltAngles);
-        source->outputPort("volume")->setDeclaredType(
-          pipeline::PortType::TiltSeries);
-        source->setProperty("dataType", "tiltSeries");
-      }
-      if (result.darkData) {
-        source->setProperty(
-          "darkData",
-          QVariant::fromValue(
-            static_cast<void*>(result.darkData.GetPointer())));
-      }
-      if (result.whiteData) {
-        source->setProperty(
-          "whiteData",
-          QVariant::fromValue(
-            static_cast<void*>(result.whiteData.GetPointer())));
-      }
-    } else {
-      vtkNew<vtkImageData> imageData;
-      GenericHDF5Format hdf5Format;
-      if (!hdf5Format.read(fileName.toLatin1().data(), imageData,
-                           hdf5Options)) {
-        return nullptr;
-      }
-      source = createSourceFromImageData(imageData,
-                                         info.completeBaseName(), fileNames);
-    }
-  } else if (info.completeSuffix().endsWith("ome.tif")) {
-    loadWithParaview = false;
-    vtkNew<vtkOMETiffReader> reader;
-    reader->SetFileName(fileName.toLocal8Bit().constData());
-    reader->Update();
-    auto* imageData = reader->GetOutput();
+  // Try the headless helper first. It handles every format we can read
+  // without UI (tvh5, emd, h5, ome.tif, tif/png/jpg/vti/mrc, registered
+  // Python readers, and ParaView readers when a descriptor is supplied
+  // in options["reader"]).
+  ReadResult result = readImageData(fileNames, options);
 
-    source =
-      createSourceFromImageData(imageData, info.completeBaseName(), fileNames);
-    QJsonObject rprops;
-    rprops["name"] = "OMETIFFReader";
-    source->setProperty("readerProperties",
-                        QVariant::fromValue(rprops.toVariantMap()));
-  } else if (FileFormatManager::instance().pythonReaderFactory(
-               info.suffix().toLower()) != nullptr) {
-    loadWithParaview = false;
-    loadWithPython = true;
-  } else if (options.contains("reader")) {
-    loadWithParaview = false;
-    // Create the ParaView reader and set its properties using the JSON
-    // configuration.
-    auto props = options["reader"].toObject();
-    auto name = props["name"].toString();
-
-    auto pxm = ActiveObjects::instance().proxyManager();
-    vtkSmartPointer<vtkSMProxy> reader;
-    reader.TakeReference(pxm->NewProxy("sources", name.toLatin1().data()));
-
-    setProperties(props, reader);
-    setFileNameProperties(props, reader);
-    reader->UpdateVTKObjects();
-    vtkSMSourceProxy::SafeDownCast(reader)->UpdatePipelineInformation();
-
-    // We'll add it to the pipeline on our own later, if needed
-    bool addToThePipeline = false;
-    source = LoadDataReaction::createFromParaViewReader(
-      reader, defaultModules, child, addToThePipeline);
+  pipeline::SourceNode* source = nullptr;
+  if (result.imageData) {
+    source = createSourceFromImageData(result.imageData,
+                                       info.completeBaseName(), fileNames);
     if (!source) {
       return nullptr;
     }
-
-    source->setProperty("readerProperties",
-                        QVariant::fromValue(props.toVariantMap()));
-  }
-
-  if (loadWithParaview) {
-    // Use ParaView's file load infrastructure.
+    // Tilt angles — copy onto the VolumeData and promote port type.
+    if (!result.tiltAngles.isEmpty()) {
+      auto vol = pipeline::getOutputData<pipeline::VolumeDataPtr>(source);
+      if (vol) {
+        vol->setTiltAngles(result.tiltAngles);
+        source->outputPort("volume")->setDeclaredType(
+          pipeline::PortType::TiltSeries);
+        source->setProperty("dataType", "tiltSeries");
+      }
+    }
+    // DataExchange / FXI auxiliary frames.
+    if (result.darkData) {
+      source->setProperty(
+        "darkData", QVariant::fromValue(
+                      static_cast<void*>(result.darkData.GetPointer())));
+    }
+    if (result.whiteData) {
+      source->setProperty(
+        "whiteData",
+        QVariant::fromValue(
+          static_cast<void*>(result.whiteData.GetPointer())));
+    }
+    if (!result.readerProperties.isEmpty()) {
+      source->setProperty(
+        "readerProperties",
+        QVariant::fromValue(result.readerProperties.toVariantMap()));
+    }
+    if (!result.tvh5NodePath.isEmpty()) {
+      source->setProperty("tvh5NodePath", result.tvh5NodePath);
+    }
+    // If the node is a ReaderSourceNode, stash the reader descriptor and
+    // subsample settings so a re-execute after a state-file load can
+    // invoke readImageData with the same configuration.
+    if (auto* reader = qobject_cast<pipeline::ReaderSourceNode*>(source)) {
+      QJsonObject readerOpts;
+      if (!result.readerProperties.isEmpty()) {
+        readerOpts["reader"] = result.readerProperties;
+      }
+      if (options.contains("subsampleSettings")) {
+        readerOpts["subsampleSettings"] = options.value("subsampleSettings");
+      }
+      if (!result.tvh5NodePath.isEmpty()) {
+        readerOpts["tvh5NodePath"] = result.tvh5NodePath;
+      }
+      if (!readerOpts.isEmpty()) {
+        reader->setReaderOptions(readerOpts);
+      }
+    }
+  } else if (!options.contains("reader")) {
+    // Fallback path — let ParaView's interactive file loader run (this
+    // may pop a reader-config dialog). Only reached when nothing else
+    // claimed the extension AND the caller didn't provide a reader
+    // descriptor (state-file loads / re-executions always do).
     pqPipelineSource* reader = pqLoadDataReaction::loadData(fileNames);
     if (!reader) {
       return nullptr;
     }
-
-    // We'll add it to the pipeline on our own later, if needed
     bool addToThePipeline = false;
     source = createFromParaViewReader(reader->getProxy(), defaultModules,
                                       child, addToThePipeline);
@@ -460,27 +381,21 @@ pipeline::SourceNode* LoadDataReaction::loadData(const QStringList& fileNames,
 
     QJsonObject props = readerProperties(reader->getProxy());
     props["name"] = reader->getProxy()->GetXMLName();
-
     source->setProperty("readerProperties",
                         QVariant::fromValue(props.toVariantMap()));
+    // Propagate to ReaderSourceNode so re-executes after a state-file
+    // load can rebuild the ParaView reader headlessly.
+    if (auto* readerNode =
+          qobject_cast<pipeline::ReaderSourceNode*>(source)) {
+      QJsonObject readerOpts;
+      readerOpts["reader"] = props;
+      readerNode->setReaderOptions(readerOpts);
+    }
 
     vtkNew<vtkSMParaViewPipelineController> controller;
     controller->UnRegisterProxy(reader->getProxy());
-  } else if (loadWithPython) {
-    QString ext = info.suffix().toLower();
-    auto factory = FileFormatManager::instance().pythonReaderFactory(ext);
-    Q_ASSERT(factory != nullptr);
-    auto reader = factory->createReader();
-    auto imageData = reader.read(fileNames[0]);
-    if (imageData == nullptr) {
-      return nullptr;
-    }
-    source =
-      createSourceFromImageData(imageData, info.completeBaseName(), fileNames);
   }
 
-  // It is possible that the source will be null if, for example, loading
-  // a VTI is cancelled in the array selection dialog. Guard against this.
   if (!source) {
     return nullptr;
   }
@@ -489,7 +404,6 @@ pipeline::SourceNode* LoadDataReaction::loadData(const QStringList& fileNames,
   source->setProperty("fileNames", fileNames);
 
   if (addToPipeline) {
-    // Add to the pipeline if needed...
     LoadDataReaction::sourceNodeAdded(source, defaultModules, child,
                                       createCameraOrbit);
   }

@@ -7,8 +7,40 @@
 #include "Link.h"
 #include "OutputPort.h"
 
+#include <QJsonArray>
+
 namespace tomviz {
 namespace pipeline {
+
+namespace {
+
+QJsonArray portTypesToJson(PortTypes types)
+{
+  QJsonArray arr;
+  for (PortType t : { PortType::ImageData, PortType::TiltSeries,
+                      PortType::Volume, PortType::Image, PortType::Scalar,
+                      PortType::Array, PortType::Table, PortType::Molecule }) {
+    if (types.testFlag(t)) {
+      arr.append(portTypeToString(t));
+    }
+  }
+  return arr;
+}
+
+QString nodeStateToString(NodeState state)
+{
+  switch (state) {
+    case NodeState::New:
+      return QStringLiteral("New");
+    case NodeState::Stale:
+      return QStringLiteral("Stale");
+    case NodeState::Current:
+      return QStringLiteral("Current");
+  }
+  return QStringLiteral("New");
+}
+
+} // namespace
 
 Node::Node(QObject* parent) : QObject(parent) {}
 
@@ -55,6 +87,14 @@ void Node::markCurrent()
 {
   m_state = NodeState::Current;
   emit stateChanged(m_state);
+}
+
+void Node::setStateNoCascade(NodeState state)
+{
+  if (m_state != state) {
+    m_state = state;
+    emit stateChanged(m_state);
+  }
 }
 
 NodeExecState Node::execState() const
@@ -370,6 +410,124 @@ void Node::addOutputPort(OutputPort* port)
 {
   port->setParent(this);
   m_outputPorts.append(port);
+}
+
+QJsonObject Node::serialize() const
+{
+  QJsonObject json;
+  json[QStringLiteral("label")] = m_label;
+  if (m_state != NodeState::New) {
+    // Defaults to New on load; only persist when different.
+    json[QStringLiteral("state")] = nodeStateToString(m_state);
+  }
+  if (m_breakpoint) {
+    json[QStringLiteral("breakpoint")] = true;
+  }
+  if (!m_properties.isEmpty()) {
+    json[QStringLiteral("properties")] =
+      QJsonObject::fromVariantMap(m_properties);
+  }
+  if (!m_typeInferenceSources.isEmpty()) {
+    QJsonObject tis;
+    for (auto it = m_typeInferenceSources.constBegin();
+         it != m_typeInferenceSources.constEnd(); ++it) {
+      tis[it.key()] = it.value();
+    }
+    json[QStringLiteral("typeInferenceSources")] = tis;
+  }
+  if (!m_outputPorts.isEmpty()) {
+    QJsonObject outputs;
+    for (auto* port : m_outputPorts) {
+      QJsonObject entry;
+      entry[QStringLiteral("type")] =
+        portTypeToString(port->declaredType());
+      entry[QStringLiteral("persistent")] = !port->isTransient();
+      // Delegate payload serialization to the port itself; base OutputPort
+      // dispatches on PortData's payload type. Node stays agnostic.
+      auto metadata = port->serialize();
+      if (!metadata.isEmpty()) {
+        entry[QStringLiteral("metadata")] = metadata;
+      }
+      outputs[port->name()] = entry;
+    }
+    json[QStringLiteral("outputPorts")] = outputs;
+  }
+  if (!m_inputPorts.isEmpty()) {
+    QJsonObject inputs;
+    for (auto* port : m_inputPorts) {
+      QJsonObject entry;
+      entry[QStringLiteral("type")] =
+        portTypesToJson(port->acceptedTypes());
+      inputs[port->name()] = entry;
+    }
+    json[QStringLiteral("inputPorts")] = inputs;
+  }
+  return json;
+}
+
+bool Node::deserialize(const QJsonObject& json)
+{
+  if (json.contains(QStringLiteral("label"))) {
+    setLabel(json.value(QStringLiteral("label")).toString());
+  }
+  if (json.contains(QStringLiteral("state"))) {
+    auto s = json.value(QStringLiteral("state")).toString();
+    if (s == QLatin1String("Stale")) {
+      markStale();
+    } else if (s == QLatin1String("Current")) {
+      markCurrent();
+    }
+    // "New" is the default; nothing to do.
+  }
+  if (json.contains(QStringLiteral("breakpoint"))) {
+    setBreakpoint(json.value(QStringLiteral("breakpoint")).toBool());
+  }
+  if (json.contains(QStringLiteral("properties"))) {
+    m_properties =
+      json.value(QStringLiteral("properties")).toObject().toVariantMap();
+  }
+  if (json.contains(QStringLiteral("typeInferenceSources"))) {
+    m_typeInferenceSources.clear();
+    auto tis =
+      json.value(QStringLiteral("typeInferenceSources")).toObject();
+    for (auto it = tis.constBegin(); it != tis.constEnd(); ++it) {
+      m_typeInferenceSources[it.key()] = it.value().toString();
+    }
+  }
+  if (json.contains(QStringLiteral("outputPorts"))) {
+    auto outputs = json.value(QStringLiteral("outputPorts")).toObject();
+    for (auto it = outputs.constBegin(); it != outputs.constEnd(); ++it) {
+      auto* port = outputPort(it.key());
+      if (!port) {
+        continue;
+      }
+      auto entry = it.value().toObject();
+      // Restore declaredType so a reader-style source whose effective
+      // type was promoted at execute time (e.g. ImageData → TiltSeries)
+      // lands on the saved type *before* links are resolved, letting
+      // downstream inference pick it up.
+      if (entry.contains(QStringLiteral("type"))) {
+        PortType t =
+          portTypeFromString(entry.value(QStringLiteral("type")).toString());
+        if (t != PortType::None && t != port->declaredType()) {
+          port->setDeclaredType(t);
+        }
+      }
+      if (entry.contains(QStringLiteral("persistent"))) {
+        port->setTransient(
+          !entry.value(QStringLiteral("persistent")).toBool());
+      }
+      if (entry.contains(QStringLiteral("metadata"))) {
+        port->deserialize(
+          entry.value(QStringLiteral("metadata")).toObject());
+      }
+    }
+  }
+  // inputPorts: types are intrinsic to the Node subclass, so we do not
+  // restore acceptedTypes here. Subclasses with dynamic inputs (e.g.
+  // SinkGroupNode) are expected to create their ports before calling
+  // Node::deserialize so per-port state can apply.
+  return true;
 }
 
 } // namespace pipeline

@@ -1811,17 +1811,20 @@ void MainWindow::updateColorMapDisplay()
   auto* tipPort = ActiveObjects::instance().activeTipOutputPort();
   if (!tipPort || !pipeline::isVolumeType(tipPort->type()) ||
       !tipPort->hasData()) {
+    // Nothing valid to display — clear the histogram + gradient
+    // opacity widgets so a Reset (or any state-clear) doesn't leave
+    // stale curves from the previous pipeline on screen.
+    m_ui->centralWidget->setActiveVolumeData(nullptr);
     return;
   }
   pipeline::VolumeDataPtr vol;
   try {
     vol = tipPort->data().value<pipeline::VolumeDataPtr>();
   } catch (const std::bad_any_cast&) {
+    m_ui->centralWidget->setActiveVolumeData(nullptr);
     return;
   }
-  if (vol) {
-    m_ui->centralWidget->setActiveVolumeData(vol);
-  }
+  m_ui->centralWidget->setActiveVolumeData(vol);
 }
 
 } // namespace tomviz

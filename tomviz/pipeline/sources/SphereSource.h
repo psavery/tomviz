@@ -30,6 +30,9 @@ public:
   /// Generate the volume data and set it on the output port
   bool execute() override;
 
+  QJsonObject serialize() const override;
+  bool deserialize(const QJsonObject& json) override;
+
 private:
   int m_dimensions[3] = { 32, 32, 32 };
   double m_radiusFraction = 0.4;

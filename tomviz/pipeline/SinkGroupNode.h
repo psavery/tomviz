@@ -38,6 +38,10 @@ public:
 
   /// All sink nodes currently connected to this group's output ports.
   QList<SinkNode*> sinks() const;
+
+  /// Recreates passthrough port pairs from the serialized outputPorts
+  /// map before forwarding to Node::deserialize for label / properties.
+  bool deserialize(const QJsonObject& json) override;
 };
 
 } // namespace pipeline
