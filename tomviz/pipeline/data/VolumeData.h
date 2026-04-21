@@ -4,12 +4,14 @@
 #ifndef tomvizPipelineVolumeData_h
 #define tomvizPipelineVolumeData_h
 
+#include <QJsonObject>
 #include <QString>
 
 #include <vtkNew.h>
 #include <vtkSmartPointer.h>
 
 #include <QList>
+#include <QMap>
 #include <QVector>
 
 #include <array>
@@ -79,6 +81,17 @@ public:
 
   /// Get the active scalars array
   vtkDataArray* scalars() const;
+
+  /// Rename a scalar array. No-op if @a oldName doesn't exist, @a newName
+  /// is already taken, or the two names are equal. Preserves rename
+  /// history so state files can round-trip user-applied renames.
+  /// Keeps the array as the active scalars if it was active before.
+  void renameScalarArray(const QString& oldName, const QString& newName);
+
+  /// Return the name a scalar array had at load time. For arrays that
+  /// have never been renamed this equals @a currentName. Returns the
+  /// empty string if no array with @a currentName exists in our map.
+  QString originalScalarName(const QString& currentName) const;
 
   /// Get the number of scalar components
   int numberOfComponents() const;
@@ -160,6 +173,16 @@ public:
   int currentTimeStepIndex() const;
   void switchTimeStep(int index);
 
+  // -- Serialization --
+
+  /// Emit a JSON object capturing the state a state file needs to
+  /// round-trip this VolumeData: label, units, vtkImageData geometry
+  /// (spacing, origin), display transform (position, orientation),
+  /// color map, and gradient opacity. Does NOT serialize the underlying
+  /// voxel data — that lives in the file format (EMD / HDF5 group).
+  QJsonObject serialize() const;
+  bool deserialize(const QJsonObject& json);
+
 private:
   vtkSmartPointer<vtkImageData> m_imageData;
   vtkSmartPointer<vtkSMProxy> m_colorMap;
@@ -173,6 +196,11 @@ private:
   std::array<double, 3> m_displayOrientation = { 0.0, 0.0, 0.0 };
   QList<TimeStep> m_timeSteps;
   int m_currentTimeStep = 0;
+  /// Maps the current display name of each scalar array to the name it
+  /// had when the array was first added (usually the on-disk name from
+  /// the file or the name assigned by a Python operator). renameScalarArray
+  /// keeps this in sync; serialize emits it as {originalName: currentName}.
+  QMap<QString, QString> m_currentToOriginal;
 };
 
 /// Convenience type for sharing VolumeData through ports via std::any

@@ -298,19 +298,25 @@ bool deserialize(vtkDiscretizableColorTransferFunction* func,
     auto opacityFunc = func->GetScalarOpacityFunction();
     deserialize(opacityFunc, json);
     auto colors = json["colors"].toArray();
-    double* values = new double[colors.size()];
+    std::vector<double> values(colors.size());
     for (int i = 0; i < colors.size(); ++i) {
       values[i] = colors[i].toDouble();
     }
-    func->FillFromDataPointer(colors.size(), values);
+    // FillFromDataPointer's first argument is the number of control
+    // points, not the number of doubles in the buffer. Each control
+    // point contributes 4 doubles (x, r, g, b).
+    func->FillFromDataPointer(static_cast<int>(colors.size() / 4),
+                              values.data());
 
     if (json.contains("colorSpace")) {
-      QMap<QString, int> colorSpaceToIntMap = {
-        { "RGB", 0 },       { "HSV", 1 },  { "CIELAB", 2 },
-        { "CIEDE2000", 4 }, { "Step", 5 },
+      static const QMap<QString, int> colorSpaceToIntMap = {
+        { "RGB", 0 },        { "HSV", 1 },       { "CIELAB", 2 },
+        { "Lab", 2 },        { "Diverging", 3 }, { "CIEDE2000", 4 },
+        { "Step", 5 },
       };
-      if (colorSpaceToIntMap.contains(json["colorSpace"].toString())) {
-        func->SetColorSpace(colorSpaceToIntMap[json["colorSpace"].toString()]);
+      auto name = json["colorSpace"].toString();
+      if (colorSpaceToIntMap.contains(name)) {
+        func->SetColorSpace(colorSpaceToIntMap.value(name));
       }
     }
     return true;

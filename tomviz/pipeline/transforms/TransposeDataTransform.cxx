@@ -119,6 +119,29 @@ EditTransformWidget* TransposeDataTransform::createPropertiesWidget(
   return new TransposeDataWidget(this, parent);
 }
 
+QJsonObject TransposeDataTransform::serialize() const
+{
+  auto json = TransformNode::serialize();
+  json["transposeType"] = (m_transposeType == TransposeType::Fortran)
+                            ? QStringLiteral("Fortran")
+                            : QStringLiteral("C");
+  return json;
+}
+
+bool TransposeDataTransform::deserialize(const QJsonObject& json)
+{
+  if (!TransformNode::deserialize(json)) {
+    return false;
+  }
+  if (json.contains("transposeType")) {
+    setTransposeType(json.value("transposeType").toString() ==
+                         QStringLiteral("Fortran")
+                       ? TransposeType::Fortran
+                       : TransposeType::C);
+  }
+  return true;
+}
+
 QMap<QString, PortData> TransposeDataTransform::transform(
   const QMap<QString, PortData>& inputs)
 {

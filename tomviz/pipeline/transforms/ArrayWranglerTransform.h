@@ -35,6 +35,9 @@ public:
   bool propertiesWidgetNeedsInput() const override;
   EditTransformWidget* createPropertiesWidget(QWidget* parent) override;
 
+  QJsonObject serialize() const override;
+  bool deserialize(const QJsonObject& json) override;
+
 protected:
   QMap<QString, PortData> transform(
     const QMap<QString, PortData>& inputs) override;

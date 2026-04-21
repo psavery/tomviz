@@ -42,6 +42,28 @@ QString ConvertToVolumeTransform::outputLabel() const
   return m_outputLabel;
 }
 
+QJsonObject ConvertToVolumeTransform::serialize() const
+{
+  auto json = TransformNode::serialize();
+  json["outputType"] = static_cast<int>(m_outputType);
+  json["outputLabel"] = m_outputLabel;
+  return json;
+}
+
+bool ConvertToVolumeTransform::deserialize(const QJsonObject& json)
+{
+  if (!TransformNode::deserialize(json)) {
+    return false;
+  }
+  if (json.contains("outputType")) {
+    setOutputType(static_cast<PortType>(json.value("outputType").toInt()));
+  }
+  if (json.contains("outputLabel")) {
+    setOutputLabel(json.value("outputLabel").toString());
+  }
+  return true;
+}
+
 QMap<QString, PortData> ConvertToVolumeTransform::transform(
   const QMap<QString, PortData>& inputs)
 {

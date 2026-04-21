@@ -271,6 +271,8 @@ set(SOURCES
   pipeline/SinkGroupNode.h
   pipeline/PassthroughOutputPort.cxx
   pipeline/PassthroughOutputPort.h
+  pipeline/LegacyStateLoader.cxx
+  pipeline/LegacyStateLoader.h
   pipeline/Pipeline.cxx
   pipeline/Pipeline.h
   pipeline/PipelineExecutor.cxx

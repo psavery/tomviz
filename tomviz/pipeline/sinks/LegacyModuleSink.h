@@ -110,6 +110,26 @@ protected:
   bool validateInput(const QMap<QString, PortData>& inputs,
                      const QString& portName) const;
 
+  /// Serialize @a activeScalarsIdx as a scalar-array name (legacy
+  /// shape). Writes "tomviz::DefaultScalars" for -1; otherwise looks
+  /// up the Nth array on the sink's current VolumeData. Falls back to
+  /// the sentinel if the VolumeData isn't available.
+  QString activeScalarsToName(int activeScalarsIdx) const;
+
+  /// Read "activeScalars" from @a json (legacy saved a scalar-array
+  /// name string, newer saves may use an int index) and set the
+  /// sink's int index accordingly. Names that can't be resolved yet
+  /// (because the sink hasn't consumed data) are stashed in
+  /// m_pendingActiveScalarsName for the subclass's applyActiveScalars
+  /// to pick up on the next consume; call resolvePendingActiveScalar()
+  /// at apply time.
+  void readActiveScalars(const QJsonObject& json, int& activeScalarsIdx);
+
+  /// Resolve any pending scalar-array name against the sink's current
+  /// VolumeData. If the name matches an array, update @a activeScalarsIdx
+  /// and clear the pending name. No-op when no pending name is set.
+  void resolvePendingActiveScalar(int& activeScalarsIdx);
+
 private:
   /// Reset camera on first consume if no other sink has rendered to this view.
   void resetCameraIfFirstSink();
@@ -125,6 +145,12 @@ private:
   vtkSmartPointer<vtkSMProxy> m_detachedColorMap;
   vtkNew<vtkPiecewiseFunction> m_detachedGradientOpacity;
   std::weak_ptr<VolumeData> m_volumeData;
+
+protected:
+  /// Pending scalar-array name waiting to be resolved against the
+  /// sink's VolumeData (populated by readActiveScalars when the saved
+  /// state is a name the VolumeData doesn't carry yet).
+  QString m_pendingActiveScalarsName;
 };
 
 } // namespace pipeline

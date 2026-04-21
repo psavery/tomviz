@@ -377,6 +377,8 @@ bool ContourSink::applyActiveScalars()
     return false;
   }
 
+  resolvePendingActiveScalar(m_activeScalars);
+
   auto* pointData = vol->imageData()->GetPointData();
   QString arrayName;
   int idx = m_activeScalars;
@@ -571,7 +573,7 @@ void ContourSink::removeClippingPlane(vtkPlane* plane)
 QJsonObject ContourSink::serialize() const
 {
   auto json = LegacyModuleSink::serialize();
-  json["isoValue"] = m_isoValue;
+  json["contourValue"] = m_isoValue;
   json["opacity"] = m_property->GetOpacity();
   json["ambient"] = m_property->GetAmbient();
   json["diffuse"] = m_property->GetDiffuse();
@@ -582,7 +584,7 @@ QJsonObject ContourSink::serialize() const
   json["useSolidColor"] = m_useSolidColor;
   json["colorByArray"] = m_colorByArray;
   json["colorByArrayName"] = m_colorByArrayName;
-  json["activeScalars"] = m_activeScalars;
+  json["activeScalars"] = activeScalarsToName(m_activeScalars);
 
   auto c = qcolor();
   json["color"] = c.name();
@@ -630,13 +632,13 @@ bool ContourSink::deserialize(const QJsonObject& json)
     setColorByArrayName(json["colorByArrayName"].toString());
   }
   if (json.contains("activeScalars")) {
-    m_activeScalars = json["activeScalars"].toInt(-1);
+    readActiveScalars(json, m_activeScalars);
   }
 
   // Some of the above operations modify the contour value.
   // Set this at the end.
-  if (json.contains("isoValue")) {
-    setIsoValue(json["isoValue"].toDouble());
+  if (json.contains("contourValue")) {
+    setIsoValue(json["contourValue"].toDouble());
   }
 
   updatePanel();

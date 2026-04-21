@@ -13,6 +13,7 @@
 #include <vtkNew.h>
 
 #include <QHBoxLayout>
+#include <QJsonArray>
 #include <QPointer>
 
 #include <limits>
@@ -88,6 +89,28 @@ void CropTransform::setCropBounds(const int bounds[6])
   for (int i = 0; i < 6; ++i) {
     m_bounds[i] = bounds[i];
   }
+}
+
+QJsonObject CropTransform::serialize() const
+{
+  auto json = TransformNode::serialize();
+  json["bounds"] = QJsonArray{ m_bounds[0], m_bounds[1], m_bounds[2],
+                               m_bounds[3], m_bounds[4], m_bounds[5] };
+  return json;
+}
+
+bool CropTransform::deserialize(const QJsonObject& json)
+{
+  if (!TransformNode::deserialize(json)) {
+    return false;
+  }
+  auto arr = json.value("bounds").toArray();
+  if (arr.size() == 6) {
+    int b[6] = { arr.at(0).toInt(), arr.at(1).toInt(), arr.at(2).toInt(),
+                 arr.at(3).toInt(), arr.at(4).toInt(), arr.at(5).toInt() };
+    setCropBounds(b);
+  }
+  return true;
 }
 
 bool CropTransform::hasPropertiesWidget() const

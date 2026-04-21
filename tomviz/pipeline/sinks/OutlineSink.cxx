@@ -8,6 +8,7 @@
 #include <QCheckBox>
 #include <QGroupBox>
 #include <QHBoxLayout>
+#include <QJsonArray>
 #include <QLabel>
 #include <QLineEdit>
 #include <QVBoxLayout>
@@ -381,15 +382,13 @@ QJsonObject OutlineSink::serialize() const
   auto json = LegacyModuleSink::serialize();
   double rgb[3];
   m_property->GetColor(rgb);
-  json["colorR"] = rgb[0];
-  json["colorG"] = rgb[1];
-  json["colorB"] = rgb[2];
-  json["showGridAxes"] = m_showGridAxes;
-  json["generateGrid"] = m_generateGrid;
+  json["gridColor"] = QJsonArray{ rgb[0], rgb[1], rgb[2] };
+  json["gridVisibility"] = m_showGridAxes;
+  json["gridLines"] = m_generateGrid;
   json["useCustomAxesTitles"] = m_useCustomAxesTitles;
-  json["xTitle"] = m_xTitle;
-  json["yTitle"] = m_yTitle;
-  json["zTitle"] = m_zTitle;
+  json["customXTitle"] = m_xTitle;
+  json["customYTitle"] = m_yTitle;
+  json["customZTitle"] = m_zTitle;
   return json;
 }
 
@@ -398,27 +397,30 @@ bool OutlineSink::deserialize(const QJsonObject& json)
   if (!LegacyModuleSink::deserialize(json)) {
     return false;
   }
-  if (json.contains("colorR")) {
-    setColor(json["colorR"].toDouble(), json["colorG"].toDouble(),
-             json["colorB"].toDouble());
+  if (json.value("gridColor").isArray()) {
+    auto arr = json.value("gridColor").toArray();
+    if (arr.size() == 3) {
+      setColor(arr.at(0).toDouble(), arr.at(1).toDouble(),
+               arr.at(2).toDouble());
+    }
   }
-  if (json.contains("showGridAxes")) {
-    setShowGridAxes(json["showGridAxes"].toBool());
+  if (json.contains("gridVisibility")) {
+    setShowGridAxes(json["gridVisibility"].toBool());
   }
-  if (json.contains("generateGrid")) {
-    setGenerateGrid(json["generateGrid"].toBool());
+  if (json.contains("gridLines")) {
+    setGenerateGrid(json["gridLines"].toBool());
   }
   if (json.contains("useCustomAxesTitles")) {
     setUseCustomAxesTitles(json["useCustomAxesTitles"].toBool());
   }
-  if (json.contains("xTitle")) {
-    setXTitle(json["xTitle"].toString());
+  if (json.contains("customXTitle")) {
+    setXTitle(json["customXTitle"].toString());
   }
-  if (json.contains("yTitle")) {
-    setYTitle(json["yTitle"].toString());
+  if (json.contains("customYTitle")) {
+    setYTitle(json["customYTitle"].toString());
   }
-  if (json.contains("zTitle")) {
-    setZTitle(json["zTitle"].toString());
+  if (json.contains("customZTitle")) {
+    setZTitle(json["customZTitle"].toString());
   }
   return true;
 }

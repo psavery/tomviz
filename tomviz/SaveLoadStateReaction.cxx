@@ -3,7 +3,10 @@
 
 #include "SaveLoadStateReaction.h"
 
+#include "ActiveObjects.h"
 #include "legacy/modules/ModuleManager.h"
+#include "pipeline/LegacyStateLoader.h"
+#include "pipeline/Pipeline.h"
 #include "RecentFilesMenu.h"
 #include "Tvh5Format.h"
 #include "Utilities.h"
@@ -93,7 +96,10 @@ bool SaveLoadStateReaction::loadState()
 
 bool SaveLoadStateReaction::loadState(const QString& filename)
 {
-  if (ModuleManager::instance().hasDataSources()) {
+  auto* pip = ActiveObjects::instance().pipeline();
+  bool hasExistingWork =
+    ModuleManager::instance().hasDataSources() || (pip && !pip->nodes().isEmpty());
+  if (hasExistingWork) {
     if (QMessageBox::Yes !=
         QMessageBox::warning(tomviz::mainWidget(), "Load State Warning",
                              "Current data and operators will be cleared when "
@@ -104,11 +110,17 @@ bool SaveLoadStateReaction::loadState(const QString& filename)
     }
   }
 
+  // Ask whether to run the saved pipeline after loading (matches the
+  // legacy prompt; the choice is remembered via
+  // PipelineSettings.AutoExecuteOnStateLoad when the user ticks
+  // "Don't ask again").
+  bool executePipelines = automaticallyExecutePipelines();
+
   bool success = false;
   if (filename.endsWith(".tvh5")) {
-    success = loadTvh5(filename);
+    success = loadTvh5(filename, executePipelines);
   } else if (filename.endsWith(".tvsm")) {
-    success = loadTvsm(filename);
+    success = loadTvsm(filename, executePipelines);
   } else {
     qCritical() << "Unknown state format for file: " << filename;
     return false;
@@ -124,12 +136,14 @@ bool SaveLoadStateReaction::loadState(const QString& filename)
   return success;
 }
 
-bool SaveLoadStateReaction::loadTvh5(const QString& filename)
+bool SaveLoadStateReaction::loadTvh5(const QString& filename,
+                                     bool executePipelines)
 {
-  return Tvh5Format::read(filename.toStdString());
+  return pipeline::LegacyStateLoader::loadFromH5(filename, executePipelines);
 }
 
-bool SaveLoadStateReaction::loadTvsm(const QString& filename)
+bool SaveLoadStateReaction::loadTvsm(const QString& filename,
+                                     bool executePipelines)
 {
   QFile openFile(filename);
   if (!openFile.open(QIODevice::ReadOnly)) {
@@ -153,28 +167,9 @@ bool SaveLoadStateReaction::loadTvsm(const QString& filename)
     }
   }
 
-  auto executeOnLoad = automaticallyExecutePipelines();
-  ModuleManager::instance().executePipelinesOnLoad(executeOnLoad);
-
   if (doc.isObject()) {
-    // This needs to run here, but needs to run after the dialog is connected
-    // and execed.  Otherwise we miss signals fired from within deserialize.
-    // So put it on a timer.
-    QTimer::singleShot(0, [doc, filename]() {
-      ModuleManager::instance().deserialize(doc.object(),
-                                            QFileInfo(filename).dir());
-    });
-    QDialog dialog(tomviz::mainWidget(), Qt::WindowStaysOnTopHint);
-    QHBoxLayout* layout = new QHBoxLayout();
-    QLabel* label = new QLabel("Please wait... loading state file");
-    layout->addWidget(label);
-    dialog.setLayout(layout);
-    connect(&ModuleManager::instance(), &ModuleManager::stateDoneLoading,
-            &dialog, &QDialog::accept);
-    dialog.exec();
-    if (ModuleManager::instance().lastLoadStateSucceeded()) {
-      return true;
-    } // else continue to error message
+    return pipeline::LegacyStateLoader::load(
+      doc.object(), QFileInfo(filename).dir(), executePipelines);
   }
 
   if (!legacyStateFile) {

@@ -150,14 +150,18 @@ void VolumeSink::updateColorMap()
     m_volumeProperty->SetScalarOpacity(opacity);
   }
 
-  // Gradient opacity: only set it if the function actually has control points.
-  // An empty vtkPiecewiseFunction evaluates to 0 everywhere, which would make
-  // the entire volume transparent. The legacy ModuleVolume set gradient opacity
-  // to nullptr in SCALAR transfer mode (the default), disabling it.
-  auto* gradOp = gradientOpacity();
-  if (gradOp && gradOp->GetSize() > 0) {
-    m_volumeProperty->SetGradientOpacity(gradOp);
-  } else if (m_gradientOpacity->GetSize() > 0) {
+  // Gradient opacity: legacy ModuleVolume only applied the stored
+  // gradient-opacity PWF in GRADIENT_1D / GRADIENT_2D transfer modes;
+  // SCALAR mode (the default) used a no-op fallback (constant 1.0 PWF)
+  // only as a workaround for a vtkMultiVolume shader-compile bug.
+  // VolumeSink doesn't expose transfer mode yet, so we always run in
+  // the SCALAR equivalent: ignore the shared/detached gradient PWF and
+  // use the no-op fallback. Otherwise state files that round-trip a
+  // GRADIENT_1D PWF with a range calibrated for some other data (and
+  // never applied at load time in legacy) would make the volume appear
+  // invisible here.  TODO: apply gradientOpacity() when a transfer
+  // mode selector is added to VolumeSink.
+  if (m_gradientOpacity->GetSize() > 0) {
     m_volumeProperty->SetGradientOpacity(m_gradientOpacity);
   } else {
     m_volumeProperty->SetGradientOpacity(nullptr);
@@ -298,6 +302,11 @@ void VolumeSink::applyActiveScalars()
     return;
   }
 
+  // A name-based selection saved by legacy (or a previous deserialize
+  // that fired before data was available) gets resolved here now that
+  // we have the VolumeData in hand.
+  resolvePendingActiveScalar(m_activeScalars);
+
   auto* pointData = vol->imageData()->GetPointData();
   int idx = m_activeScalars;
   if (idx < 0) {
@@ -432,7 +441,7 @@ QJsonObject VolumeSink::serialize() const
   json["blendingMode"] = blendingMode();
   json["rayJittering"] = jittering();
   json["solidity"] = solidity();
-  json["activeScalars"] = m_activeScalars;
+  json["activeScalars"] = activeScalarsToName(m_activeScalars);
 
   QJsonObject light;
   light["enabled"] = lighting();
@@ -471,7 +480,7 @@ bool VolumeSink::deserialize(const QJsonObject& json)
     setSpecularPower(light["specularPower"].toDouble());
   }
   if (json.contains("activeScalars")) {
-    m_activeScalars = json["activeScalars"].toInt(-1);
+    readActiveScalars(json, m_activeScalars);
   }
   return true;
 }

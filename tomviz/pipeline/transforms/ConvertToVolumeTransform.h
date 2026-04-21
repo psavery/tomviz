@@ -24,6 +24,9 @@ public:
   void setOutputLabel(const QString& label);
   QString outputLabel() const;
 
+  QJsonObject serialize() const override;
+  bool deserialize(const QJsonObject& json) override;
+
 protected:
   QMap<QString, PortData> transform(
     const QMap<QString, PortData>& inputs) override;

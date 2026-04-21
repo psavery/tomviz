@@ -20,6 +20,7 @@
 #include <QDoubleValidator>
 #include <QFormLayout>
 #include <QHBoxLayout>
+#include <QJsonArray>
 #include <QLabel>
 #include <QLineEdit>
 #include <QSignalBlocker>
@@ -382,23 +383,17 @@ QJsonObject ScaleCubeSink::serialize() const
   auto json = LegacyModuleSink::serialize();
   json["adaptiveScaling"] = adaptiveScaling();
   json["sideLength"] = sideLength();
-  json["showAnnotation"] = m_annotationVisibility;
+  json["annotation"] = m_annotationVisibility;
   json["lengthUnit"] = m_lengthUnit;
   double pos[3];
   m_cubeRep->GetWorldPosition(pos);
-  json["positionX"] = pos[0];
-  json["positionY"] = pos[1];
-  json["positionZ"] = pos[2];
+  json["position"] = QJsonArray{ pos[0], pos[1], pos[2] };
   double rgb[3];
   m_cubeRep->GetProperty()->GetDiffuseColor(rgb);
-  json["colorR"] = rgb[0];
-  json["colorG"] = rgb[1];
-  json["colorB"] = rgb[2];
+  json["color"] = QJsonArray{ rgb[0], rgb[1], rgb[2] };
   double tc[3];
   m_cubeRep->GetLabelText()->GetTextProperty()->GetColor(tc);
-  json["textColorR"] = tc[0];
-  json["textColorG"] = tc[1];
-  json["textColorB"] = tc[2];
+  json["textColor"] = QJsonArray{ tc[0], tc[1], tc[2] };
   return json;
 }
 
@@ -413,25 +408,32 @@ bool ScaleCubeSink::deserialize(const QJsonObject& json)
   if (json.contains("sideLength")) {
     setSideLength(json["sideLength"].toDouble());
   }
-  if (json.contains("showAnnotation")) {
-    setShowAnnotation(json["showAnnotation"].toBool());
+  if (json.contains("annotation")) {
+    setShowAnnotation(json["annotation"].toBool());
   }
   if (json.contains("lengthUnit")) {
     setLengthUnit(json["lengthUnit"].toString());
   }
-  if (json.contains("positionX")) {
-    setPosition(json["positionX"].toDouble(),
-                json["positionY"].toDouble(),
-                json["positionZ"].toDouble());
+  if (json.value("position").isArray()) {
+    auto arr = json.value("position").toArray();
+    if (arr.size() == 3) {
+      setPosition(arr.at(0).toDouble(), arr.at(1).toDouble(),
+                  arr.at(2).toDouble());
+    }
   }
-  if (json.contains("colorR")) {
-    setColor(json["colorR"].toDouble(), json["colorG"].toDouble(),
-             json["colorB"].toDouble());
+  if (json.value("color").isArray()) {
+    auto arr = json.value("color").toArray();
+    if (arr.size() == 3) {
+      setColor(arr.at(0).toDouble(), arr.at(1).toDouble(),
+               arr.at(2).toDouble());
+    }
   }
-  if (json.contains("textColorR")) {
-    setTextColor(json["textColorR"].toDouble(),
-                 json["textColorG"].toDouble(),
-                 json["textColorB"].toDouble());
+  if (json.value("textColor").isArray()) {
+    auto arr = json.value("textColor").toArray();
+    if (arr.size() == 3) {
+      setTextColor(arr.at(0).toDouble(), arr.at(1).toDouble(),
+                   arr.at(2).toDouble());
+    }
   }
   return true;
 }

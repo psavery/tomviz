@@ -138,7 +138,7 @@ QJsonObject MoleculeSink::serialize() const
 {
   auto json = LegacyModuleSink::serialize();
   json["ballRadius"] = m_moleculeMapper->GetAtomicRadiusScaleFactor();
-  json["bondRadius"] = m_moleculeMapper->GetBondRadius();
+  json["stickRadius"] = m_moleculeMapper->GetBondRadius();
   return json;
 }
 
@@ -150,8 +150,8 @@ bool MoleculeSink::deserialize(const QJsonObject& json)
   if (json.contains("ballRadius")) {
     setBallRadius(json["ballRadius"].toDouble());
   }
-  if (json.contains("bondRadius")) {
-    setBondRadius(json["bondRadius"].toDouble());
+  if (json.contains("stickRadius")) {
+    setBondRadius(json["stickRadius"].toDouble());
   }
   return true;
 }

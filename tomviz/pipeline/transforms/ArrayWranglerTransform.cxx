@@ -185,6 +185,33 @@ EditTransformWidget* ArrayWranglerTransform::createPropertiesWidget(
   return new ArrayWranglerWidget(this, vol, parent);
 }
 
+QJsonObject ArrayWranglerTransform::serialize() const
+{
+  auto json = TransformNode::serialize();
+  json["outputType"] = (m_outputType == OutputType::UInt16)
+                         ? QStringLiteral("UInt16")
+                         : QStringLiteral("UInt8");
+  json["componentToKeep"] = m_componentToKeep;
+  return json;
+}
+
+bool ArrayWranglerTransform::deserialize(const QJsonObject& json)
+{
+  if (!TransformNode::deserialize(json)) {
+    return false;
+  }
+  if (json.contains("outputType")) {
+    setOutputType(json.value("outputType").toString() ==
+                      QStringLiteral("UInt16")
+                    ? OutputType::UInt16
+                    : OutputType::UInt8);
+  }
+  if (json.contains("componentToKeep")) {
+    setComponentToKeep(json.value("componentToKeep").toInt());
+  }
+  return true;
+}
+
 QMap<QString, PortData> ArrayWranglerTransform::transform(
   const QMap<QString, PortData>& inputs)
 {

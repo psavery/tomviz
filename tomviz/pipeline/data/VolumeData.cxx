@@ -3,8 +3,11 @@
 
 #include "VolumeData.h"
 
+#include "Utilities.h"
+
 #include <vtkColorTransferFunction.h>
 #include <vtkDataArray.h>
+#include <vtkDiscretizableColorTransferFunction.h>
 #include <vtkDoubleArray.h>
 #include <vtkFieldData.h>
 #include <vtkImageData.h>
@@ -17,6 +20,8 @@
 #include <vtkSMSessionProxyManager.h>
 #include <vtkSMTransferFunctionManager.h>
 #include <vtkSMTransferFunctionProxy.h>
+
+#include <QJsonArray>
 
 #include <array>
 
@@ -38,6 +43,19 @@ VolumeData::VolumeData(vtkSmartPointer<vtkImageData> imageData)
         vtkStringArray::SafeDownCast(fd->GetAbstractArray("units"));
       if (arr && arr->GetNumberOfValues() > 0) {
         m_units = QString::fromStdString(arr->GetValue(0));
+      }
+    }
+
+    // Seed the rename-history map with identity entries for each scalar
+    // array. renameScalarArray() transfers entries as names change; the
+    // serialize path then emits the {originalName: currentName} inverse.
+    if (auto* pd = m_imageData->GetPointData()) {
+      for (int i = 0; i < pd->GetNumberOfArrays(); ++i) {
+        auto* arr = pd->GetArray(i);
+        if (arr && arr->GetName()) {
+          QString name = QString::fromUtf8(arr->GetName());
+          m_currentToOriginal.insert(name, name);
+        }
       }
     }
   }
@@ -147,6 +165,47 @@ vtkDataArray* VolumeData::scalars() const
   return nullptr;
 }
 
+void VolumeData::renameScalarArray(const QString& oldName,
+                                    const QString& newName)
+{
+  if (oldName.isEmpty() || newName.isEmpty() || oldName == newName ||
+      !m_imageData) {
+    return;
+  }
+  auto* pd = m_imageData->GetPointData();
+  if (!pd) {
+    return;
+  }
+  if (pd->HasArray(newName.toUtf8().constData())) {
+    return; // target name already in use
+  }
+  auto* arr = pd->GetArray(oldName.toUtf8().constData());
+  if (!arr) {
+    return; // nothing named oldName
+  }
+
+  const bool wasActive =
+    pd->GetScalars() == arr; // keep active-state across rename
+
+  // Preserve the original name so subsequent serializes still emit the
+  // correct {originalName: currentName} entry.
+  const QString original =
+    m_currentToOriginal.value(oldName, oldName);
+
+  arr->SetName(newName.toUtf8().constData());
+  m_currentToOriginal.remove(oldName);
+  m_currentToOriginal.insert(newName, original);
+
+  if (wasActive) {
+    pd->SetActiveScalars(newName.toUtf8().constData());
+  }
+}
+
+QString VolumeData::originalScalarName(const QString& currentName) const
+{
+  return m_currentToOriginal.value(currentName, currentName);
+}
+
 int VolumeData::numberOfComponents() const
 {
   auto* s = scalars();
@@ -252,28 +311,33 @@ void VolumeData::syncColorMapToProxy()
     return;
   }
 
-  // Push CTF control points to the proxy's RGBPoints property
+  // Push CTF control points to the proxy's RGBPoints property.
   if (m_ctf && m_ctf->GetSize() > 0) {
-    auto* prop = m_colorMap->GetProperty("RGBPoints");
-    auto numNodes = m_ctf->GetSize();
-    auto* data = m_ctf->GetDataPointer();
-    vtkSMPropertyHelper(prop).Set(data, numNodes * 4);
+    if (auto* prop = m_colorMap->GetProperty("RGBPoints")) {
+      vtkSMPropertyHelper(prop).Set(m_ctf->GetDataPointer(),
+                                    m_ctf->GetSize() * 4);
+    }
   }
+  m_colorMap->UpdateVTKObjects();
 
-  // Push opacity control points to the proxy's Points property
+  // Push opacity control points to the ScalarOpacityFunction sub-proxy's
+  // Points property. Use a bulk Set() with a contiguous 4*N buffer to
+  // match what RGBPoints does on the CTF side. Per-element Set() via
+  // SetNumberOfElements + individual Set(i, v) calls leaves the proxy's
+  // property out of sync, which means a subsequent
+  // vtkSMTransferFunctionProxy::RescaleTransferFunction(omap, ...)
+  // rescales stale/zero values and, on UpdateVTKObjects, wipes out the
+  // client-side PWF.
   auto* omap =
     vtkSMPropertyHelper(m_colorMap, "ScalarOpacityFunction").GetAsProxy();
   if (omap && m_opacity && m_opacity->GetSize() > 0) {
-    vtkSMPropertyHelper pointsHelper(omap, "Points");
-    pointsHelper.SetNumberOfElements(4 * m_opacity->GetSize());
-    for (int i = 0; i < m_opacity->GetSize(); ++i) {
-      double val[4];
-      m_opacity->GetNodeValue(i, val);
-      pointsHelper.Set(4 * i + 0, val[0]);
-      pointsHelper.Set(4 * i + 1, val[1]);
-      pointsHelper.Set(4 * i + 2, val[2]);
-      pointsHelper.Set(4 * i + 3, val[3]);
+    const int n = m_opacity->GetSize();
+    std::vector<double> buffer(4 * n);
+    for (int i = 0; i < n; ++i) {
+      m_opacity->GetNodeValue(i, buffer.data() + 4 * i);
     }
+    vtkSMPropertyHelper(omap, "Points").Set(buffer.data(), buffer.size());
+    omap->UpdateVTKObjects();
   }
 }
 
@@ -443,6 +507,149 @@ void VolumeData::switchTimeStep(int index)
   }
   m_currentTimeStep = index;
   m_imageData = m_timeSteps[index].image;
+}
+
+namespace {
+
+QJsonArray toJsonArray(const std::array<double, 3>& a)
+{
+  return QJsonArray{ a[0], a[1], a[2] };
+}
+
+} // namespace
+
+QJsonObject VolumeData::serialize() const
+{
+  QJsonObject json;
+  if (!m_label.isEmpty()) {
+    json["label"] = m_label;
+  }
+  if (!m_units.isEmpty()) {
+    json["units"] = m_units;
+  }
+  if (m_imageData) {
+    json["spacing"] = toJsonArray(spacing());
+  }
+  // "origin" carries the display-side translation (what legacy called
+  // "origin" in .tvsm). vtkImageData's intrinsic Origin isn't persisted
+  // because tomviz never modifies it — it's a property of the file and
+  // is restored on reload.
+  json["origin"] = toJsonArray(m_displayPosition);
+  json["orientation"] = toJsonArray(m_displayOrientation);
+
+  // Active-scalar name and rename history, mirroring legacy DataSource.
+  // scalarsRename is emitted as {originalName: currentName} pairs.
+  if (m_imageData) {
+    if (auto* scalars = m_imageData->GetPointData()
+                          ? m_imageData->GetPointData()->GetScalars()
+                          : nullptr) {
+      if (scalars->GetName()) {
+        json["activeScalars"] = QString::fromUtf8(scalars->GetName());
+      }
+    }
+  }
+  if (!m_currentToOriginal.isEmpty()) {
+    QJsonObject rename;
+    for (auto it = m_currentToOriginal.constBegin();
+         it != m_currentToOriginal.constEnd(); ++it) {
+      // key: currentName  value: originalName  →  inverse on disk
+      rename[it.value()] = it.key();
+    }
+    json["scalarsRename"] = rename;
+  }
+
+  if (m_colorMap) {
+    json["colorOpacityMap"] = tomviz::serialize(m_colorMap);
+  }
+  if (m_gradientOpacity && m_gradientOpacity->GetSize() > 0) {
+    json["gradientOpacityMap"] = tomviz::serialize(m_gradientOpacity.Get());
+  }
+  return json;
+}
+
+bool VolumeData::deserialize(const QJsonObject& json)
+{
+  if (json.contains("label")) {
+    m_label = json.value("label").toString();
+  }
+  if (json.contains("units")) {
+    setUnits(json.value("units").toString());
+  }
+  if (json.contains("spacing")) {
+    auto arr = json.value("spacing").toArray();
+    if (arr.size() == 3) {
+      setSpacing(arr.at(0).toDouble(), arr.at(1).toDouble(),
+                 arr.at(2).toDouble());
+    }
+  }
+  // "origin" is the display-side translation (what legacy DataSource
+  // called "origin" in its .tvsm output). Nothing in tomviz mutates
+  // vtkImageData's intrinsic origin after load, so we don't touch it.
+  if (json.contains("origin")) {
+    auto arr = json.value("origin").toArray();
+    if (arr.size() == 3) {
+      setDisplayPosition(arr.at(0).toDouble(), arr.at(1).toDouble(),
+                         arr.at(2).toDouble());
+    }
+  }
+  if (json.contains("orientation")) {
+    auto arr = json.value("orientation").toArray();
+    if (arr.size() == 3) {
+      setDisplayOrientation(arr.at(0).toDouble(), arr.at(1).toDouble(),
+                            arr.at(2).toDouble());
+    }
+  }
+
+  // Rename scalar arrays back to the names they had when the state was
+  // saved. Legacy serialized this as {originalName: currentName} pairs;
+  // we replay the rename so the freshly-loaded array ends up with the
+  // saved display name. Routed through renameScalarArray() so the
+  // rename-history map stays in sync.
+  if (m_imageData && json.contains("scalarsRename")) {
+    auto renames = json.value("scalarsRename").toObject();
+    for (auto it = renames.constBegin(); it != renames.constEnd(); ++it) {
+      renameScalarArray(it.key(), it.value().toString());
+    }
+  }
+
+  // DataSource-level "activeScalars" is a scalar array name (string).
+  // Per-sink "activeScalars" is an index (int) and is handled in each
+  // sink's deserialize — deliberately not applied here.
+  if (m_imageData && json.value("activeScalars").isString()) {
+    auto name = json.value("activeScalars").toString();
+    if (auto* pd = m_imageData->GetPointData()) {
+      if (pd->HasArray(name.toUtf8().constData())) {
+        pd->SetActiveScalars(name.toUtf8().constData());
+      }
+    }
+  }
+
+  if (json.contains("colorOpacityMap")) {
+    // Ensure the SM proxy and our cached client-side VTK pointers exist.
+    colorMap();
+    auto cmap = json.value("colorOpacityMap").toObject();
+
+    // The discretizable-CTF overload applies colors + colorSpace, and
+    // its own internal ScalarOpacityFunction, but that may be a
+    // different PWF than the one the ScalarOpacityFunction sub-proxy
+    // exposes (which is what the sinks read via opacityMap()), so we
+    // also apply the opacity points to m_opacity directly.
+    if (auto* disc =
+          vtkDiscretizableColorTransferFunction::SafeDownCast(m_ctf)) {
+      tomviz::deserialize(disc, cmap);
+    }
+    if (m_opacity) {
+      tomviz::deserialize(m_opacity, cmap);
+    }
+    // Client-side edits don't automatically update the proxy's cached
+    // property state — push them up so proxy consumers see them.
+    syncColorMapToProxy();
+  }
+  if (json.contains("gradientOpacityMap")) {
+    tomviz::deserialize(m_gradientOpacity.Get(),
+                        json.value("gradientOpacityMap").toObject());
+  }
+  return true;
 }
 
 } // namespace pipeline

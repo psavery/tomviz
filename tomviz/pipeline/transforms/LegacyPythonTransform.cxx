@@ -216,6 +216,43 @@ EditTransformWidget* LegacyPythonTransform::createPropertiesWidget(
   return widget;
 }
 
+QJsonObject LegacyPythonTransform::serialize() const
+{
+  auto json = TransformNode::serialize();
+  json["description"] = m_jsonDescription;
+  json["script"] = m_script;
+  if (!m_parameters.isEmpty()) {
+    json["arguments"] = QJsonObject::fromVariantMap(m_parameters);
+  }
+  return json;
+}
+
+bool LegacyPythonTransform::deserialize(const QJsonObject& json)
+{
+  // setJSONDescription / setScript have side effects (parseJSON,
+  // detecting CancelableOperator etc.), so we call the setters rather
+  // than assigning members directly. Order: description first so
+  // parseJSON can rename the output port and set up result ports,
+  // then script, then arguments.
+  if (json.contains("description")) {
+    setJSONDescription(json.value("description").toString());
+  }
+  if (json.contains("script")) {
+    setScript(json.value("script").toString());
+  }
+  // TransformNode::deserialize applies label last — call it after
+  // parseJSON, which may have set a label from the JSON description's
+  // "label" field, so the explicitly-saved label wins.
+  if (!TransformNode::deserialize(json)) {
+    return false;
+  }
+  auto args = json.value("arguments").toObject();
+  for (auto it = args.constBegin(); it != args.constEnd(); ++it) {
+    setParameter(it.key(), it.value().toVariant());
+  }
+  return true;
+}
+
 void LegacyPythonTransform::parseJSON()
 {
   QJsonDocument doc = QJsonDocument::fromJson(m_jsonDescription.toUtf8());

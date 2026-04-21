@@ -465,6 +465,33 @@ EditTransformWidget* SetTiltAnglesTransform::createPropertiesWidget(
   return new SetTiltAnglesWidget(this, vol, parent);
 }
 
+QJsonObject SetTiltAnglesTransform::serialize() const
+{
+  auto json = TransformNode::serialize();
+  QJsonObject angles;
+  for (auto it = m_tiltAngles.constBegin(); it != m_tiltAngles.constEnd();
+       ++it) {
+    angles[QString::number(static_cast<qulonglong>(it.key()))] = it.value();
+  }
+  json["angles"] = angles;
+  return json;
+}
+
+bool SetTiltAnglesTransform::deserialize(const QJsonObject& json)
+{
+  if (!TransformNode::deserialize(json)) {
+    return false;
+  }
+  QMap<size_t, double> angles;
+  auto obj = json.value("angles").toObject();
+  for (auto it = obj.constBegin(); it != obj.constEnd(); ++it) {
+    angles[static_cast<size_t>(it.key().toULongLong())] =
+      it.value().toDouble();
+  }
+  setTiltAngles(angles);
+  return true;
+}
+
 QMap<QString, PortData> SetTiltAnglesTransform::transform(
   const QMap<QString, PortData>& inputs)
 {

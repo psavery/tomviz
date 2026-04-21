@@ -20,6 +20,7 @@
 #include <QDoubleValidator>
 #include <QFormLayout>
 #include <QHBoxLayout>
+#include <QJsonArray>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -463,29 +464,22 @@ QJsonObject ClipSink::serialize() const
 {
   auto json = LegacyModuleSink::serialize();
   json["direction"] = static_cast<int>(m_direction);
-  json["slice"] = m_slice;
+  json["plane"] = m_slice;
   json["opacity"] = m_opacity;
   json["showPlane"] = m_showPlane;
   json["showArrow"] = m_showArrow;
   json["invertPlane"] = m_invertPlane;
-  json["planeColorR"] = m_planeColor[0];
-  json["planeColorG"] = m_planeColor[1];
-  json["planeColorB"] = m_planeColor[2];
+  json["selectedColor"] = QJsonArray{ m_planeColor[0], m_planeColor[1],
+                                      m_planeColor[2] };
 
   if (m_widget) {
     double origin[3], point1[3], point2[3];
     m_widget->GetOrigin(origin);
     m_widget->GetPoint1(point1);
     m_widget->GetPoint2(point2);
-    json["originX"] = origin[0];
-    json["originY"] = origin[1];
-    json["originZ"] = origin[2];
-    json["point1X"] = point1[0];
-    json["point1Y"] = point1[1];
-    json["point1Z"] = point1[2];
-    json["point2X"] = point2[0];
-    json["point2Y"] = point2[1];
-    json["point2Z"] = point2[2];
+    json["origin"] = QJsonArray{ origin[0], origin[1], origin[2] };
+    json["point1"] = QJsonArray{ point1[0], point1[1], point1[2] };
+    json["point2"] = QJsonArray{ point2[0], point2[1], point2[2] };
   }
 
   return json;
@@ -499,8 +493,8 @@ bool ClipSink::deserialize(const QJsonObject& json)
   if (json.contains("direction")) {
     m_direction = static_cast<Direction>(json["direction"].toInt());
   }
-  if (json.contains("slice")) {
-    m_slice = json["slice"].toInt();
+  if (json.contains("plane")) {
+    m_slice = json["plane"].toInt();
   }
   if (json.contains("opacity")) {
     setOpacity(json["opacity"].toDouble());
@@ -511,25 +505,30 @@ bool ClipSink::deserialize(const QJsonObject& json)
   if (json.contains("showArrow")) {
     setShowArrow(json["showArrow"].toBool());
   }
-  if (json.contains("planeColorR")) {
-    setPlaneColor(json["planeColorR"].toDouble(),
-                  json["planeColorG"].toDouble(),
-                  json["planeColorB"].toDouble());
+  if (json.value("selectedColor").isArray()) {
+    auto arr = json.value("selectedColor").toArray();
+    if (arr.size() == 3) {
+      setPlaneColor(arr.at(0).toDouble(), arr.at(1).toDouble(),
+                    arr.at(2).toDouble());
+    }
   }
   if (json.contains("invertPlane")) {
     setInvertPlane(json["invertPlane"].toBool());
   }
-  if (json.contains("originX") && m_widget) {
-    m_widget->SetOrigin(json["originX"].toDouble(),
-                        json["originY"].toDouble(),
-                        json["originZ"].toDouble());
-    m_widget->SetPoint1(json["point1X"].toDouble(),
-                        json["point1Y"].toDouble(),
-                        json["point1Z"].toDouble());
-    m_widget->SetPoint2(json["point2X"].toDouble(),
-                        json["point2Y"].toDouble(),
-                        json["point2Z"].toDouble());
-    m_widget->UpdatePlacement();
+  if (m_widget && json.value("origin").isArray() &&
+      json.value("point1").isArray() && json.value("point2").isArray()) {
+    auto o = json.value("origin").toArray();
+    auto p1 = json.value("point1").toArray();
+    auto p2 = json.value("point2").toArray();
+    if (o.size() == 3 && p1.size() == 3 && p2.size() == 3) {
+      m_widget->SetOrigin(o.at(0).toDouble(), o.at(1).toDouble(),
+                          o.at(2).toDouble());
+      m_widget->SetPoint1(p1.at(0).toDouble(), p1.at(1).toDouble(),
+                          p1.at(2).toDouble());
+      m_widget->SetPoint2(p2.at(0).toDouble(), p2.at(1).toDouble(),
+                          p2.at(2).toDouble());
+      m_widget->UpdatePlacement();
+    }
   }
   return true;
 }

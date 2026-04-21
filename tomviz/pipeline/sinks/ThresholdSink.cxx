@@ -547,6 +547,8 @@ void ThresholdSink::applyActiveScalars()
     return;
   }
 
+  resolvePendingActiveScalar(m_activeScalars);
+
   auto* pointData = vol->imageData()->GetPointData();
   QString arrayName;
   int idx = m_activeScalars;
@@ -654,11 +656,11 @@ void ThresholdSink::updateScalarArrayOptions()
 QJsonObject ThresholdSink::serialize() const
 {
   auto json = LegacyModuleSink::serialize();
-  json["activeScalars"] = m_activeScalars;
+  json["scalarArray"] = m_activeScalars;
   json["colorByArray"] = m_colorByArray;
   json["colorByArrayName"] = m_colorByArrayName;
-  json["lowerThreshold"] = m_lower;
-  json["upperThreshold"] = m_upper;
+  json["minimum"] = m_lower;
+  json["maximum"] = m_upper;
   json["opacity"] = opacity();
   json["specular"] = specular();
   json["representation"] = representationString();
@@ -671,8 +673,8 @@ bool ThresholdSink::deserialize(const QJsonObject& json)
   if (!LegacyModuleSink::deserialize(json)) {
     return false;
   }
-  if (json.contains("activeScalars")) {
-    m_activeScalars = json["activeScalars"].toInt(-1);
+  if (json.contains("scalarArray")) {
+    m_activeScalars = json["scalarArray"].toInt(-1);
   }
   if (json.contains("colorByArray")) {
     m_colorByArray = json["colorByArray"].toBool();
@@ -680,9 +682,9 @@ bool ThresholdSink::deserialize(const QJsonObject& json)
   if (json.contains("colorByArrayName")) {
     m_colorByArrayName = json["colorByArrayName"].toString();
   }
-  if (json.contains("lowerThreshold")) {
-    setThresholdRange(json["lowerThreshold"].toDouble(),
-                      json["upperThreshold"].toDouble());
+  if (json.contains("minimum") && json.contains("maximum")) {
+    setThresholdRange(json["minimum"].toDouble(),
+                      json["maximum"].toDouble());
   }
   if (json.contains("opacity")) {
     setOpacity(json["opacity"].toDouble());

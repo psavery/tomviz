@@ -812,14 +812,7 @@ void VolumePropertiesWidget::onScalarsRenamed(const QString& oldName,
     return;
   }
 
-  auto* pointData = vol->imageData()->GetPointData();
-  for (int i = 0; i < pointData->GetNumberOfArrays(); ++i) {
-    auto* array = pointData->GetArray(i);
-    if (array && QString(array->GetName()) == oldName) {
-      array->SetName(newName.toUtf8().constData());
-      break;
-    }
-  }
+  vol->renameScalarArray(oldName, newName);
 
   updateData();
   if (m_port) {

@@ -7,6 +7,7 @@
 #include "Node.h"
 #include "PortData.h"
 
+#include <QJsonObject>
 #include <QMap>
 #include <QString>
 
@@ -40,6 +41,17 @@ public:
 
   /// Create the properties widget. Caller owns the returned widget.
   virtual EditTransformWidget* createPropertiesWidget(QWidget* parent);
+
+  /// Serialize this transform's persistent state to JSON in a shape
+  /// compatible with legacy .tvsm operator entries. Base-class
+  /// implementation writes "label". Subclasses call the base first
+  /// and add their own fields.
+  virtual QJsonObject serialize() const;
+
+  /// Apply JSON produced by serialize() (or by a legacy
+  /// *Operator::serialize()) to this transform. Returns false on
+  /// unrecoverable errors. Base-class implementation reads "label".
+  virtual bool deserialize(const QJsonObject& json);
 
 signals:
   /// Emitted when the user applies new parameter values via the properties

@@ -65,7 +65,11 @@ void SliceSink::setVisibility(bool visible)
   if (m_widget) {
     m_widget->SetEnabled(visible ? 1 : 0);
     if (visible) {
+      // Widget methods that mutate arrow / interaction state warn when
+      // the widget isn't enabled; re-push the cached values now that
+      // we've just enabled it.
       m_widget->SetInteraction(m_showArrow ? 1 : 0);
+      m_widget->SetArrowVisibility(m_showArrow ? 1 : 0);
     }
   }
   LegacyModuleSink::setVisibility(visible);
@@ -369,7 +373,10 @@ bool SliceSink::showArrow() const
 void SliceSink::setShowArrow(bool show)
 {
   m_showArrow = show;
-  if (m_widget) {
+  // SetArrowVisibility / SetInteraction warn if called on a disabled
+  // widget. Defer them to the next setVisibility(true), which re-pushes
+  // m_showArrow to the widget.
+  if (m_widget && m_widget->GetEnabled()) {
     m_widget->SetArrowVisibility(show ? 1 : 0);
     // Interaction follows arrow visibility
     if (visibility()) {
@@ -411,6 +418,8 @@ void SliceSink::applyActiveScalars()
   if (!vol || !vol->isValid()) {
     return;
   }
+
+  resolvePendingActiveScalar(m_activeScalars);
 
   auto* pointData = vol->imageData()->GetPointData();
   QString arrayName;
@@ -888,7 +897,7 @@ QJsonObject SliceSink::serialize() const
   json["interpolate"] = m_interpolate;
   json["showArrow"] = m_showArrow;
   json["mapScalars"] = m_mapScalars;
-  json["activeScalars"] = m_activeScalars;
+  json["activeScalars"] = activeScalarsToName(m_activeScalars);
 
   // Serialize plane geometry from widget if available
   double point[3];
@@ -948,11 +957,19 @@ bool SliceSink::deserialize(const QJsonObject& json)
     setMapScalars(json["mapScalars"].toBool());
   }
   if (json.contains("activeScalars")) {
-    m_activeScalars = json["activeScalars"].toInt(-1);
+    readActiveScalars(json, m_activeScalars);
   }
-  // Restore plane geometry
-  if (m_widget && json.contains("origin") && json.contains("point1") &&
-      json.contains("point2")) {
+  // Restore plane geometry — but only for Custom (non-orthogonal)
+  // slices. For orthogonal directions (XY / YZ / XZ), the plane is
+  // uniquely determined by direction + slice index + data bounds, and
+  // applyDirection() sets it via SetPlaneOrientation + SetSliceIndex.
+  // Overwriting origin/point1/point2 after that puts the widget into a
+  // hybrid state where the orientation member still says "orthogonal"
+  // but the plane coords were imposed externally; subsequent
+  // SetSliceIndex(N) from the slider then fails with "Bad plane
+  // coordinate system" in vtkPlaneSource.
+  if (m_widget && m_direction == Custom && json.contains("origin") &&
+      json.contains("point1") && json.contains("point2")) {
     auto o = json["origin"].toArray();
     auto p1 = json["point1"].toArray();
     auto p2 = json["point2"].toArray();
@@ -976,6 +993,16 @@ bool SliceSink::deserialize(const QJsonObject& json)
     m_planeNormal[0] = n[0].toDouble();
     m_planeNormal[1] = n[1].toDouble();
     m_planeNormal[2] = n[2].toDouble();
+  }
+
+  // If the sink has already consumed (m_dims populated), the widget's
+  // plane was set up by an earlier applyDirection() using the default
+  // direction — re-apply now that we know the saved direction + slice
+  // so the dropdown, plane geometry, and slice index all match. If
+  // consume() hasn't run yet, applyDirection() will be called as part
+  // of its normal flow with the saved values in place.
+  if (m_widget && m_dims[0] > 0 && m_dims[1] > 0 && m_dims[2] > 0) {
+    applyDirection();
   }
 
   return true;

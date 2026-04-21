@@ -12,6 +12,8 @@
 #include <vtkNew.h>
 #include <vtkPointData.h>
 
+#include <QJsonArray>
+
 namespace {
 
 // We are assuming an image that begins at 0, 0, 0.
@@ -125,6 +127,57 @@ void TranslateAlignTransform::setDraftAlignOffsets(
 {
   m_draftOffsets.resize(newOffsets.size());
   std::copy(newOffsets.begin(), newOffsets.end(), m_draftOffsets.begin());
+}
+
+namespace {
+
+QJsonArray offsetsToJson(const QVector<vtkVector2i>& offsets)
+{
+  QJsonArray arr;
+  for (const auto& v : offsets) {
+    arr.append(v.GetX());
+    arr.append(v.GetY());
+  }
+  return arr;
+}
+
+QVector<vtkVector2i> jsonToOffsets(const QJsonArray& arr)
+{
+  QVector<vtkVector2i> out;
+  const int pairs = arr.size() / 2;
+  out.reserve(pairs);
+  for (int i = 0; i < pairs; ++i) {
+    out.append(
+      vtkVector2i(arr.at(2 * i).toInt(), arr.at(2 * i + 1).toInt()));
+  }
+  return out;
+}
+
+} // namespace
+
+QJsonObject TranslateAlignTransform::serialize() const
+{
+  auto json = TransformNode::serialize();
+  json["offsets"] = offsetsToJson(m_offsets);
+  if (!m_draftOffsets.isEmpty()) {
+    json["draftOffsets"] = offsetsToJson(m_draftOffsets);
+  }
+  return json;
+}
+
+bool TranslateAlignTransform::deserialize(const QJsonObject& json)
+{
+  if (!TransformNode::deserialize(json)) {
+    return false;
+  }
+  if (json.contains("offsets")) {
+    setAlignOffsets(jsonToOffsets(json.value("offsets").toArray()));
+  }
+  if (json.contains("draftOffsets")) {
+    setDraftAlignOffsets(
+      jsonToOffsets(json.value("draftOffsets").toArray()));
+  }
+  return true;
 }
 
 QMap<QString, PortData> TranslateAlignTransform::transform(

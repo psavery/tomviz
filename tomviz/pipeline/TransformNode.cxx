@@ -48,6 +48,27 @@ EditTransformWidget* TransformNode::createPropertiesWidget(
   return nullptr;
 }
 
+QJsonObject TransformNode::serialize() const
+{
+  QJsonObject json;
+  json["label"] = label();
+  if (hasBreakpoint()) {
+    json["breakpoint"] = true;
+  }
+  return json;
+}
+
+bool TransformNode::deserialize(const QJsonObject& json)
+{
+  if (json.contains("label")) {
+    setLabel(json["label"].toString());
+  }
+  if (json.contains("breakpoint")) {
+    setBreakpoint(json["breakpoint"].toBool());
+  }
+  return true;
+}
+
 bool TransformNode::execute()
 {
   resetExecutionFlags();
