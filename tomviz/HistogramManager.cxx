@@ -231,6 +231,16 @@ void HistogramManager::finalize()
   m_histogram2DCache.clear();
 }
 
+void HistogramManager::clearCaches()
+{
+  // Don't touch the in-progress lists: the background thread still holds
+  // vtkSmartPointer refs to those inputs, and the ready-slot will repopulate
+  // the cache when it fires. That late insert is harmless — the next reset
+  // (or app exit) will drop it.
+  m_histogramCache.clear();
+  m_histogram2DCache.clear();
+}
+
 HistogramManager& HistogramManager::instance()
 {
   static HistogramManager theInstance;

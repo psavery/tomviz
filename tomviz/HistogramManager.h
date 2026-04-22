@@ -28,6 +28,13 @@ public:
 
   void finalize();
 
+  /// Drop all cached 1D/2D histograms. The caches are keyed by raw
+  /// vtkImageData* and grow monotonically until app exit; call this
+  /// when the data those pointers belonged to has been torn down
+  /// (e.g. a pipeline reset) so freed addresses can't collide with
+  /// future allocations and stale entries don't accumulate.
+  void clearCaches();
+
   vtkSmartPointer<vtkTable> getHistogram(vtkSmartPointer<vtkImageData> image);
   vtkSmartPointer<vtkImageData> getHistogram2D(
     vtkSmartPointer<vtkImageData> image);

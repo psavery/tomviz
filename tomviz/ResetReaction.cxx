@@ -4,6 +4,7 @@
 #include "ResetReaction.h"
 
 #include "ActiveObjects.h"
+#include "HistogramManager.h"
 #include "legacy/modules/ModuleManager.h"
 #include "pipeline/Pipeline.h"
 #include "Utilities.h"
@@ -37,5 +38,6 @@ void ResetReaction::reset()
   if (pipeline) {
     pipeline->clear();
   }
+  HistogramManager::instance().clearCaches();
 }
 } // namespace tomviz

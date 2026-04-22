@@ -11,9 +11,10 @@
 #include <vtkDoubleArray.h>
 #include <vtkFieldData.h>
 #include <vtkImageData.h>
+#include <vtkPointData.h>
 #include <vtkStringArray.h>
 #include <vtkPiecewiseFunction.h>
-#include <vtkPointData.h>
+#include <vtkSMParaViewPipelineController.h>
 #include <vtkSMPropertyHelper.h>
 #include <vtkSMProxy.h>
 #include <vtkSMProxyManager.h>
@@ -61,7 +62,17 @@ VolumeData::VolumeData(vtkSmartPointer<vtkImageData> imageData)
   }
 }
 
-VolumeData::~VolumeData() = default;
+VolumeData::~VolumeData()
+{
+  // initColorMap() registers the CTF in the session proxy manager under a
+  // unique, counter-based name. The proxy manager holds its own reference,
+  // so dropping our vtkSmartPointer isn't enough — without this unregister
+  // the proxy lives until app exit and every load/reset cycle adds another.
+  if (m_colorMap) {
+    vtkNew<vtkSMParaViewPipelineController> controller;
+    controller->UnRegisterProxy(m_colorMap);
+  }
+}
 
 vtkImageData* VolumeData::imageData() const
 {

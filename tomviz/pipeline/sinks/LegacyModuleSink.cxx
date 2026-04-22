@@ -21,6 +21,7 @@
 #include <vtkPointData.h>
 #include <vtkPVRenderView.h>
 #include <vtkPiecewiseFunction.h>
+#include <vtkSMParaViewPipelineController.h>
 #include <vtkSMPropertyHelper.h>
 #include <vtkSMProxy.h>
 #include <vtkSMProxyManager.h>
@@ -137,6 +138,14 @@ bool LegacyModuleSink::finalize()
 {
   m_renderView = nullptr;
   m_viewProxy = nullptr;
+  // The detached CTF (if the user enabled "Separate Color Map") is
+  // registered in the session proxy manager by name. Drop its registration
+  // so it doesn't outlive this sink across pipeline reset cycles.
+  if (m_detachedColorMap) {
+    vtkNew<vtkSMParaViewPipelineController> controller;
+    controller->UnRegisterProxy(m_detachedColorMap);
+    m_detachedColorMap = nullptr;
+  }
   return true;
 }
 

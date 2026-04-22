@@ -40,7 +40,12 @@ public:
   /// inference.  Only meaningful when declaredType() is ImageData.
   void setEffectiveType(PortType type);
 
-  bool isTransient() const;
+  /// Virtual so subclasses whose transient-ness is intrinsic to the type
+  /// (e.g. PassthroughOutputPort — a pure forwarder with no data of its
+  /// own) can pin the answer regardless of the m_transient flag, so an
+  /// old state file's `persistent: true` can't reintroduce spurious
+  /// data-serialization for them.
+  virtual bool isTransient() const;
   void setTransient(bool transient);
 
   virtual PortData data() const;

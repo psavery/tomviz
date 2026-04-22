@@ -124,6 +124,9 @@ void ActiveObjects::setPipeline(pipeline::Pipeline* p)
             if (m_activeNode == node) {
               setActiveNode(nullptr);
             }
+            if (m_activePort && m_activePort->node() == node) {
+              setActivePort(nullptr);
+            }
             if (m_activeTipOutputPort &&
                 m_activeTipOutputPort->node() == node) {
               setActiveTipOutputPort(
