@@ -830,11 +830,14 @@ def test_run_output_format_state_round_trip(tmp_path):
             load_dataset(repro_file).active_scalars)
 
 
-def test_run_output_format_state_skips_non_volume_payloads(tmp_path,
-                                                           caplog):
-    """A LegacyPythonTransform that returns a vtkTable result has
-    nothing to persist via the tvh5 writer — it should warn rather
-    than crash."""
+def test_run_output_format_state_persists_table_payloads(tmp_path):
+    """A LegacyPythonTransform that returns a vtkTable result is
+    persisted column-by-column under /data/<id>/<port>/c<i>, mirroring
+    C++ Tvh5Format::writeTablePayload. The dataRef on the port entry
+    must point at the group, and on reload (via load_state) the port
+    must carry an equivalent vtkTable."""
+    from tomviz.pipeline.state_io import load_state
+
     arr = (np.arange(24, dtype=np.uint8) + 1).reshape((2, 3, 4))
     input_emd = tmp_path / 'input.emd'
     _write_simple_emd(input_emd, arr)
@@ -846,9 +849,16 @@ def transform(dataset):
     t = vtk.vtkTable()
     radius = vtk.vtkFloatArray()
     radius.SetName("radius")
-    radius.SetNumberOfTuples(1)
+    radius.SetNumberOfTuples(2)
     radius.SetValue(0, 1.0)
+    radius.SetValue(1, 2.5)
     t.AddColumn(radius)
+    labels = vtk.vtkStringArray()
+    labels.SetName("labels")
+    labels.SetNumberOfValues(2)
+    labels.SetValue(0, "first")
+    labels.SetValue(1, "second")
+    t.AddColumn(labels)
     return {"stats": t}
 '''
     description = json.dumps({
@@ -876,12 +886,43 @@ def transform(dataset):
     state_path = tmp_path / 'state.tvsm'
     state_path.write_text(json.dumps(state))
 
-    with caplog.at_level('WARNING', logger='tomviz'):
-        run_dirs = run(state_path, tmp_path / 'out',
-                       output_format='state')
+    run_dirs = run(state_path, tmp_path / 'out', output_format='state')
+    tvh5 = run_dirs[0] / 'output_state.tvh5'
+    assert tvh5.is_file()
 
-    assert (run_dirs[0] / 'output_state.tvh5').is_file()
-    assert any('non-volume port' in r.message for r in caplog.records)
+    with h5py.File(tvh5, 'r') as f:
+        port_group = f['/data/2/stats']
+        assert port_group.attrs['kind'] == 'table' or \
+            port_group.attrs['kind'] == b'table'
+        assert int(port_group.attrs['numColumns']) == 2
+        assert int(port_group.attrs['numRows']) == 2
+        # Numeric column round-trips dtype + values exactly.
+        c0 = port_group['c0']
+        assert int(c0.attrs['vtkDataType']) == 10  # VTK_FLOAT
+        np.testing.assert_allclose(c0[()], np.array([1.0, 2.5],
+                                                    dtype=np.float32))
+        # String column is JSON-encoded int8.
+        c1 = port_group['c1']
+        assert int(c1.attrs['vtkDataType']) == 13  # VTK_STRING
+        text = c1[()].tobytes().decode('utf-8')
+        assert json.loads(text) == ['first', 'second']
+
+    # Round-trip the tvh5 back through the loader and check the
+    # transform's stats port carries an equivalent vtkTable.
+    pipeline = load_state(tvh5)
+    transform_node = next(n for n in pipeline.nodes if n.id == 2)
+    stats_port = transform_node.output_port('stats')
+    table = stats_port.data().payload
+    assert table.GetNumberOfColumns() == 2
+    assert table.GetNumberOfRows() == 2
+    radius = table.GetColumn(0)
+    assert radius.GetName() == 'radius'
+    assert radius.GetValue(0) == 1.0
+    assert radius.GetValue(1) == 2.5
+    labels = table.GetColumn(1)
+    assert labels.GetName() == 'labels'
+    assert labels.GetValue(0) == 'first'
+    assert labels.GetValue(1) == 'second'
 
 
 def test_cli_output_format_flag(tmp_path):

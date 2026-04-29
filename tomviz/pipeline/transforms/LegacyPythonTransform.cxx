@@ -38,6 +38,55 @@ namespace py = pybind11;
 namespace tomviz {
 namespace pipeline {
 
+namespace {
+
+/// Coerce @a value into a QVariant whose Qt type matches the operator
+/// JSON description's declared @a type for a parameter. Returns a valid
+/// QVariant for the scalar types operators care about (``int``,
+/// ``double``, ``bool``, ``string``-family, ``enumeration``) and for
+/// arrays of int/double; returns an invalid QVariant for any other
+/// declared type so the caller can decide on a site-appropriate
+/// fallback (typically ``QJsonValue::toVariant()`` for already-saved
+/// runtime values, or skipping for missing defaults).
+///
+/// Needed because Qt6's ``QJsonValue::toVariant()`` collapses every
+/// JSON number into ``QVariant<double>`` regardless of whether the
+/// source was an int — which lets ``axis: 2`` reach Python operators
+/// as ``2.0`` and break tuple/list indexing.
+QVariant coerceJsonByDeclaredType(const QJsonValue& value,
+                                  const QString& type)
+{
+  if (value.isArray()) {
+    QVariantList list;
+    for (const auto& item : value.toArray()) {
+      if (type == "int" || type == "integer") {
+        list.append(item.toInt());
+      } else if (type == "double") {
+        list.append(item.toDouble());
+      } else {
+        list.append(item.toVariant());
+      }
+    }
+    return list;
+  }
+  if (type == "int" || type == "integer" || type == "enumeration") {
+    return QVariant(value.toInt());
+  }
+  if (type == "double") {
+    return QVariant(value.toDouble());
+  }
+  if (type == "bool" || type == "boolean") {
+    return QVariant(value.toBool());
+  }
+  if (type == "string" || type == "file" || type == "save_file" ||
+      type == "directory") {
+    return QVariant(value.toString());
+  }
+  return QVariant(); // caller handles complex / unknown types
+}
+
+} // namespace
+
 QMap<QString, CustomWidgetInfo> LegacyPythonTransform::s_customWidgetMap;
 
 void LegacyPythonTransform::registerCustomWidget(const QString& id,
@@ -237,7 +286,15 @@ bool LegacyPythonTransform::deserialize(const QJsonObject& json)
   }
   auto args = json.value("arguments").toObject();
   for (auto it = args.constBegin(); it != args.constEnd(); ++it) {
-    setParameter(it.key(), it.value().toVariant());
+    const QString& key = it.key();
+    QVariant qv = coerceJsonByDeclaredType(
+      it.value(), m_parameterTypes.value(key));
+    if (!qv.isValid()) {
+      // Unknown / complex declared type (select_scalars, xyz_header, …):
+      // fall back to QJsonValue's own conversion.
+      qv = it.value().toVariant();
+    }
+    setParameter(key, qv);
   }
   return true;
 }
@@ -264,6 +321,7 @@ void LegacyPythonTransform::parseJSON()
 
   // Parse parameters with defaults
   m_datasetInputNames.clear();
+  m_parameterTypes.clear();
   if (obj.contains("parameters")) {
     QJsonArray params = obj.value("parameters").toArray();
     for (const auto& paramVal : params) {
@@ -279,38 +337,26 @@ void LegacyPythonTransform::parseJSON()
         continue;
       }
 
-      QVariant value;
+      // Record the declared type so deserialize can coerce saved
+      // arguments correctly (Qt6 JSON parses every number into a
+      // QVariant<double>, regardless of whether it was an int).
+      if (!name.isEmpty()) {
+        m_parameterTypes[name] = type;
+      }
 
-      // Array defaults (e.g. [0.0, 0.0, 0.0]) → QVariantList,
-      // regardless of the declared scalar type.
-      if (defaultVal.isArray()) {
-        QVariantList list;
-        for (const auto& item : defaultVal.toArray()) {
-          if (type == "int" || type == "integer") {
-            list.append(item.toInt());
-          } else {
-            list.append(item.toDouble());
-          }
-        }
-        value = list;
-      } else if (type == "double") {
-        value = QVariant(defaultVal.toDouble());
-      } else if (type == "int" || type == "integer" ||
-                 type == "enumeration") {
-        value = QVariant(defaultVal.toInt());
-      } else if (type == "bool" || type == "boolean") {
-        value = QVariant(defaultVal.toBool());
-      } else if (type == "string" || type == "file" ||
-                 type == "save_file" || type == "directory") {
-        value = QVariant(defaultVal.toString());
-      } else {
-        // Types like select_scalars, xyz_header, label_map,
-        // reconstruction — skip unless there's an explicit default.
-        // This lets the Python function's own default (usually None) work.
+      QVariant value = coerceJsonByDeclaredType(defaultVal, type);
+      if (!value.isValid()) {
+        // Complex / unknown declared type (select_scalars, xyz_header,
+        // label_map, reconstruction, …): with no explicit default, let
+        // the operator's own Python default (usually None) win. With
+        // an explicit default we fall back to QJsonValue::toVariant()
+        // — historically this branch coerced via toDouble(), but that
+        // produced 0.0 for non-numeric defaults; toVariant() preserves
+        // the JSON-native type (string, list, …) instead.
         if (defaultVal.isUndefined() || defaultVal.isNull()) {
           continue;
         }
-        value = QVariant(defaultVal.toDouble());
+        value = defaultVal.toVariant();
       }
 
       m_parameters[name] = value;

@@ -5,7 +5,6 @@ import math
 import numpy as np
 
 from tomviz._internal import in_application
-from tomviz._internal import require_internal_mode
 from tomviz.internal_utils import _minmax
 if in_application():
     from vtk import vtkTable
@@ -279,7 +278,6 @@ def make_spreadsheet(column_names: list[str], table: np.ndarray,
     # column_names is a list of strings
     # table is a 2D numpy.ndarray
     # returns a vtkTable object that stores the table content
-    require_internal_mode()
 
     # Create a vtkTable to store the output.
     rows = table.shape[0]

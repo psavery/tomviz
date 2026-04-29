@@ -60,9 +60,13 @@
 
 #include <vector>
 
+#include <vtkDoubleArray.h>
 #include <vtkFloatArray.h>
 #include <vtkImageData.h>
 #include <vtkPointData.h>
+#include <vtkSmartPointer.h>
+#include <vtkStringArray.h>
+#include <vtkTable.h>
 #include <vtkXMLImageDataWriter.h>
 
 namespace py = pybind11;
@@ -1074,6 +1078,70 @@ TEST_F(PipelinePythonTest, JSONParameterDefaults)
   delete transform;
 }
 
+TEST_F(PipelinePythonTest, IntArgumentsRoundTripAsInt)
+{
+  // Regression: Qt6 collapses every JSON number into QVariant<double>,
+  // so deserialize used to box ``int``/``enumeration`` arguments as
+  // doubles, which then reached Python as a float — breaking operators
+  // that index sequences with the parameter.  The fix coerces saved
+  // arguments using each parameter's declared type from the operator
+  // JSON description.
+  QString jsonStr = R"({
+    "name": "AxisOp",
+    "label": "Axis Op",
+    "parameters": [
+      { "name": "axis", "type": "enumeration", "default": 2 },
+      { "name": "iterations", "type": "int", "default": 1 }
+    ]
+  })";
+
+  // Minimal script: stash the runtime types of the two int-typed
+  // parameters in module-level globals so the test can inspect them.
+  QString script =
+    "import builtins\n"
+    "_axis_type = None\n"
+    "_iterations_type = None\n"
+    "def transform(dataset, axis=0, iterations=0):\n"
+    "    builtins._axis_type = type(axis).__name__\n"
+    "    builtins._iterations_type = type(iterations).__name__\n";
+
+  // Round-trip through deserialize so we exercise the saved-argument
+  // path (where the Qt6 double-coercion bug used to live).
+  QJsonObject saved;
+  saved["description"] = jsonStr;
+  saved["script"] = script;
+  QJsonObject args;
+  args["axis"] = 1;
+  args["iterations"] = 5;
+  saved["arguments"] = args;
+
+  auto* transform = new LegacyPythonTransform();
+  ASSERT_TRUE(transform->deserialize(saved));
+  EXPECT_EQ(transform->parameter("axis").typeId(),
+            static_cast<int>(QMetaType::Int));
+  EXPECT_EQ(transform->parameter("iterations").typeId(),
+            static_cast<int>(QMetaType::Int));
+  EXPECT_EQ(transform->parameter("axis").toInt(), 1);
+  EXPECT_EQ(transform->parameter("iterations").toInt(), 5);
+
+  // End-to-end: drive the transform and verify Python received int.
+  auto* source = new SphereSource();
+  source->setDimensions(4, 4, 4);
+  pipeline->addNode(source);
+  ASSERT_TRUE(source->execute());
+  pipeline->addNode(transform);
+  pipeline->createLink(source->outputPort("volume"),
+                       transform->inputPort("volume"));
+
+  auto* future = pipeline->execute();
+  EXPECT_TRUE(future->isFinished());
+  EXPECT_EQ(transform->state(), NodeState::Current);
+
+  py::module_ builtins = py::module_::import("builtins");
+  EXPECT_EQ(builtins.attr("_axis_type").cast<std::string>(), "int");
+  EXPECT_EQ(builtins.attr("_iterations_type").cast<std::string>(), "int");
+}
+
 TEST_F(PipelinePythonTest, JSONResultsPorts)
 {
   QString jsonStr = R"({
@@ -1797,6 +1865,77 @@ TEST_F(PipelineLibTest, Tvh5FormatRoundTripSourceDataFromHdf5)
   EXPECT_EQ(reloadedDims[0], originalDims[0]);
   EXPECT_EQ(reloadedDims[1], originalDims[1]);
   EXPECT_EQ(reloadedDims[2], originalDims[2]);
+}
+
+TEST_F(PipelineLibTest, Tvh5FormatRoundTripTablePort)
+{
+  // Stand up a SourceNode with a Table output port and stuff a small
+  // vtkTable (one numeric column, one string column) onto it so the
+  // writer has something to persist.  Then save → load → verify the
+  // restored port carries an equivalent table.
+  auto* src = new SourceNode();
+  src->setLabel("TableSource");
+  src->addOutput("table", PortType::Table);
+  pipeline->addNode(src);
+
+  auto table = vtkSmartPointer<vtkTable>::New();
+  auto numericCol = vtkSmartPointer<vtkDoubleArray>::New();
+  numericCol->SetName("values");
+  numericCol->InsertNextValue(1.5);
+  numericCol->InsertNextValue(2.5);
+  numericCol->InsertNextValue(3.5);
+  table->AddColumn(numericCol);
+  auto stringCol = vtkSmartPointer<vtkStringArray>::New();
+  stringCol->SetName("labels");
+  stringCol->InsertNextValue("alpha");
+  stringCol->InsertNextValue("beta");
+  stringCol->InsertNextValue("gamma");
+  table->AddColumn(stringCol);
+
+  src->outputPort("table")->setData(
+    PortData(std::any(vtkSmartPointer<vtkTable>(table)), PortType::Table));
+  src->markCurrent();
+
+  QTemporaryFile tmpFile("XXXXXX.tvh5");
+  tmpFile.setAutoRemove(true);
+  ASSERT_TRUE(tmpFile.open());
+  QString path = tmpFile.fileName();
+  tmpFile.close();
+
+  ASSERT_TRUE(tomviz::Tvh5Format::write(path.toStdString(), pipeline));
+
+  auto state = tomviz::Tvh5Format::readState(path.toStdString());
+  EXPECT_EQ(state.value("schemaVersion").toInt(), 2);
+
+  Pipeline restored;
+  std::string fileStd = path.toStdString();
+  auto hook = [fileStd](Pipeline* p, const QJsonObject& pipelineJson) {
+    tomviz::Tvh5Format::populatePayloadData(p, pipelineJson, fileStd);
+  };
+  ASSERT_TRUE(PipelineStateIO::load(&restored, state, {}, hook));
+  ASSERT_EQ(restored.nodes().size(), 1u);
+
+  auto* restoredSrc = restored.nodes()[0];
+  ASSERT_NE(restoredSrc, nullptr);
+  auto reloaded =
+    restoredSrc->outputPort("table")->data().value<vtkSmartPointer<vtkTable>>();
+  ASSERT_TRUE(reloaded != nullptr);
+  ASSERT_EQ(reloaded->GetNumberOfColumns(), 2);
+  ASSERT_EQ(reloaded->GetNumberOfRows(), 3);
+
+  auto* col0 = vtkDoubleArray::SafeDownCast(reloaded->GetColumn(0));
+  ASSERT_NE(col0, nullptr);
+  EXPECT_STREQ(col0->GetName(), "values");
+  EXPECT_DOUBLE_EQ(col0->GetValue(0), 1.5);
+  EXPECT_DOUBLE_EQ(col0->GetValue(1), 2.5);
+  EXPECT_DOUBLE_EQ(col0->GetValue(2), 3.5);
+
+  auto* col1 = vtkStringArray::SafeDownCast(reloaded->GetColumn(1));
+  ASSERT_NE(col1, nullptr);
+  EXPECT_STREQ(col1->GetName(), "labels");
+  EXPECT_EQ(col1->GetValue(0), "alpha");
+  EXPECT_EQ(col1->GetValue(1), "beta");
+  EXPECT_EQ(col1->GetValue(2), "gamma");
 }
 
 TEST_F(PipelineLibTest, PipelineStateIOCurrentWithoutDataDowngradesToStale)

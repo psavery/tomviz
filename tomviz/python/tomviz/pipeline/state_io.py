@@ -164,9 +164,11 @@ def _read_tvh5_state(path: Path):
 def _populate_tvh5_payloads(pipeline, raw_state, tvh5_path: Path,
                             id_to_node, nodes_json_by_id):
     """For every output port that carries a dataRef pointing into the
-    .tvh5 file, read the EMD-format voxel group and stash a Dataset on
-    the port. The owning node is marked Current so the executor skips
-    its execute() — voxels are already there."""
+    .tvh5 file, read the payload group and stash it on the port. Volume
+    ports get a Dataset (via :func:`_read_emd_group`); Table ports get a
+    vtkTable (via :func:`_read_table_group`). The owning node is marked
+    Current so the executor skips its execute() — payloads are already
+    there."""
     with h5py.File(tvh5_path, 'r') as f:
         for node_id, node in id_to_node.items():
             entry = nodes_json_by_id.get(node_id, {})
@@ -185,11 +187,14 @@ def _populate_tvh5_payloads(pipeline, raw_state, tvh5_path: Path,
                 if port is None:
                     continue
                 try:
-                    dataset = _read_emd_group(f[ref_path])
+                    if port.port_type == 'Table':
+                        payload = _read_table_group(f[ref_path])
+                    else:
+                        payload = _read_emd_group(f[ref_path])
                 except Exception:
                     logger.exception('Failed to read dataRef %s', ref_path)
                     continue
-                port.set_data(PortData(dataset, port.port_type))
+                port.set_data(PortData(payload, port.port_type))
                 populated_any = True
             if populated_any:
                 node.state = NodeState.Current
@@ -255,3 +260,61 @@ def _read_emd_group(group) -> Dataset:
                        if len(d.values) > 1 else 1.0 for d in dims]
     dataset.dims = dims
     return dataset
+
+
+# Mirrors VTK's vtkType.h. Used as the ``vtkDataType`` attribute on each
+# column dataset to pick the matching vtkAbstractArray subclass on read.
+_VTK_STRING = 13
+
+
+def _read_table_group(group) -> 'vtk.vtkTable':
+    """Reverse of :func:`tomviz.pipeline.state_writer._write_table_into`.
+    Each ``c<i>`` sub-dataset rebuilds one column; ``vtkDataType`` picks
+    the array subclass (``vtkStringArray`` for string columns,
+    everything else routed through ``numpy_to_vtk`` with the original
+    VTK array type so the dtype round-trips losslessly)."""
+    from vtk import vtkStringArray, vtkTable
+    from vtk.util.numpy_support import numpy_to_vtk
+
+    def attr_str(value):
+        if isinstance(value, (bytes, bytearray, np.bytes_)):
+            return value.decode('utf-8')
+        return str(value) if value is not None else ''
+
+    table = vtkTable()
+    num_columns = int(group.attrs.get('numColumns', 0))
+    for i in range(num_columns):
+        dataset_name = f'c{i}'
+        if dataset_name not in group:
+            logger.warning('Table column dataset missing: %s/%s',
+                           group.name, dataset_name)
+            continue
+        ds = group[dataset_name]
+        vtk_data_type = int(ds.attrs.get('vtkDataType', 0))
+        name = attr_str(ds.attrs.get('name', ''))
+        if vtk_data_type == _VTK_STRING:
+            blob = ds[()]
+            if isinstance(blob, np.ndarray):
+                blob = blob.tobytes()
+            text = blob.decode('utf-8') if isinstance(
+                blob, (bytes, bytearray)) else str(blob)
+            values = json.loads(text)
+            column = vtkStringArray()
+            column.SetNumberOfValues(len(values))
+            for j, v in enumerate(values):
+                column.SetValue(j, str(v))
+        else:
+            np_array = ds[()]
+            # numpy_to_vtk copies the buffer and returns a vtkDataArray
+            # whose subclass is dictated by ``array_type`` — so writing
+            # a vtkIntArray and reading back with array_type=VTK_INT
+            # yields another vtkIntArray.
+            number_of_components = int(ds.attrs.get('numberOfComponents', 1))
+            if np_array.ndim == 1 and number_of_components > 1:
+                np_array = np_array.reshape(-1, number_of_components)
+            column = numpy_to_vtk(num_array=np_array, deep=True,
+                                  array_type=vtk_data_type)
+        if name:
+            column.SetName(name)
+        table.AddColumn(column)
+    return table

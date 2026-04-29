@@ -92,6 +92,12 @@ private:
   QString m_script;
   QString m_operatorName;
   QMap<QString, QVariant> m_parameters;
+  // Declared parameter type (per the operator JSON description's
+  // `parameters[*].type`) — needed at deserialize time because Qt6
+  // collapses every JSON number into QVariant<double>, so we'd
+  // otherwise pass `axis: 2` to Python as 2.0 and break operators that
+  // index with it.
+  QMap<QString, QString> m_parameterTypes;
   QString m_customWidgetID;
   QStringList m_resultNames;
   QStringList m_resultTypes;
