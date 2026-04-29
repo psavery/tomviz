@@ -166,9 +166,10 @@ def _populate_tvh5_payloads(pipeline, raw_state, tvh5_path: Path,
     """For every output port that carries a dataRef pointing into the
     .tvh5 file, read the payload group and stash it on the port. Volume
     ports get a Dataset (via :func:`_read_emd_group`); Table ports get a
-    vtkTable (via :func:`_read_table_group`). The owning node is marked
-    Current so the executor skips its execute() — payloads are already
-    there."""
+    vtkTable (via :func:`_read_table_group`); Molecule ports a
+    vtkMolecule (via :func:`_read_molecule_group`). The owning node is
+    marked Current so the executor skips its execute() — payloads are
+    already there."""
     with h5py.File(tvh5_path, 'r') as f:
         for node_id, node in id_to_node.items():
             entry = nodes_json_by_id.get(node_id, {})
@@ -189,6 +190,8 @@ def _populate_tvh5_payloads(pipeline, raw_state, tvh5_path: Path,
                 try:
                     if port.port_type == 'Table':
                         payload = _read_table_group(f[ref_path])
+                    elif port.port_type == 'Molecule':
+                        payload = _read_molecule_group(f[ref_path])
                     else:
                         payload = _read_emd_group(f[ref_path])
                 except Exception:
@@ -265,6 +268,49 @@ def _read_emd_group(group) -> Dataset:
 # Mirrors VTK's vtkType.h. Used as the ``vtkDataType`` attribute on each
 # column dataset to pick the matching vtkAbstractArray subclass on read.
 _VTK_STRING = 13
+
+
+def _read_molecule_group(group) -> 'vtk.vtkMolecule':
+    """Reverse of
+    :func:`tomviz.pipeline.state_writer._write_molecule_into`. Rebuilds
+    a vtkMolecule from the ``atomicNumbers`` / ``atomPositions`` /
+    ``bondAtoms`` / ``bondOrders`` datasets. Mirrors C++
+    ``Tvh5Format::readMoleculePayload`` so the layout is identical
+    across writers."""
+    from vtk import vtkMolecule
+
+    molecule = vtkMolecule()
+    num_atoms = int(group.attrs.get('numAtoms', 0))
+    num_bonds = int(group.attrs.get('numBonds', 0))
+
+    if num_atoms > 0:
+        if 'atomicNumbers' not in group or 'atomPositions' not in group:
+            logger.warning('Molecule group missing atom datasets: %s',
+                           group.name)
+            return molecule
+        atomic_numbers = np.asarray(group['atomicNumbers'][()])
+        positions = np.asarray(group['atomPositions'][()]).reshape(-1, 3)
+        for i in range(num_atoms):
+            molecule.AppendAtom(int(atomic_numbers[i]),
+                                float(positions[i, 0]),
+                                float(positions[i, 1]),
+                                float(positions[i, 2]))
+
+    if num_bonds > 0:
+        if 'bondAtoms' not in group:
+            logger.warning('Molecule group missing bondAtoms: %s',
+                           group.name)
+            return molecule
+        bond_atoms = np.asarray(group['bondAtoms'][()]).reshape(-1, 2)
+        if 'bondOrders' in group:
+            bond_orders = np.asarray(group['bondOrders'][()])
+        else:
+            bond_orders = np.ones(num_bonds, dtype=np.uint16)
+        for i in range(num_bonds):
+            molecule.AppendBond(int(bond_atoms[i, 0]),
+                                int(bond_atoms[i, 1]),
+                                int(bond_orders[i]))
+    return molecule
 
 
 def _read_table_group(group) -> 'vtk.vtkTable':

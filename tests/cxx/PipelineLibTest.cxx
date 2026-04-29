@@ -63,6 +63,7 @@
 #include <vtkDoubleArray.h>
 #include <vtkFloatArray.h>
 #include <vtkImageData.h>
+#include <vtkMolecule.h>
 #include <vtkPointData.h>
 #include <vtkSmartPointer.h>
 #include <vtkStringArray.h>
@@ -1936,6 +1937,74 @@ TEST_F(PipelineLibTest, Tvh5FormatRoundTripTablePort)
   EXPECT_EQ(col1->GetValue(0), "alpha");
   EXPECT_EQ(col1->GetValue(1), "beta");
   EXPECT_EQ(col1->GetValue(2), "gamma");
+}
+
+TEST_F(PipelineLibTest, Tvh5FormatRoundTripMoleculePort)
+{
+  // Mirror Tvh5FormatRoundTripTablePort but for a Molecule output.
+  // Atoms (atomic numbers + positions) and bonds (atom-id pairs +
+  // bond orders) must round-trip through write → read.
+  auto* src = new SourceNode();
+  src->setLabel("MoleculeSource");
+  src->addOutput("molecule", PortType::Molecule);
+  pipeline->addNode(src);
+
+  auto molecule = vtkSmartPointer<vtkMolecule>::New();
+  molecule->AppendAtom(1, 0.0, 0.0, 0.0);    // H
+  molecule->AppendAtom(8, 0.96, 0.0, 0.0);   // O
+  molecule->AppendAtom(1, 1.20, 0.93, 0.0);  // H
+  molecule->AppendBond(0, 1, 1);
+  molecule->AppendBond(1, 2, 2);
+
+  src->outputPort("molecule")->setData(PortData(
+    std::any(vtkSmartPointer<vtkMolecule>(molecule)), PortType::Molecule));
+  src->markCurrent();
+
+  QTemporaryFile tmpFile("XXXXXX.tvh5");
+  tmpFile.setAutoRemove(true);
+  ASSERT_TRUE(tmpFile.open());
+  QString path = tmpFile.fileName();
+  tmpFile.close();
+
+  ASSERT_TRUE(tomviz::Tvh5Format::write(path.toStdString(), pipeline));
+
+  auto state = tomviz::Tvh5Format::readState(path.toStdString());
+  EXPECT_EQ(state.value("schemaVersion").toInt(), 2);
+
+  Pipeline restored;
+  std::string fileStd = path.toStdString();
+  auto hook = [fileStd](Pipeline* p, const QJsonObject& pipelineJson) {
+    tomviz::Tvh5Format::populatePayloadData(p, pipelineJson, fileStd);
+  };
+  ASSERT_TRUE(PipelineStateIO::load(&restored, state, {}, hook));
+  ASSERT_EQ(restored.nodes().size(), 1u);
+
+  auto* restoredSrc = restored.nodes()[0];
+  ASSERT_NE(restoredSrc, nullptr);
+  auto reloaded = restoredSrc->outputPort("molecule")
+                    ->data()
+                    .value<vtkSmartPointer<vtkMolecule>>();
+  ASSERT_TRUE(reloaded != nullptr);
+  ASSERT_EQ(reloaded->GetNumberOfAtoms(), 3);
+  ASSERT_EQ(reloaded->GetNumberOfBonds(), 2);
+
+  EXPECT_EQ(reloaded->GetAtom(0).GetAtomicNumber(), 1);
+  EXPECT_EQ(reloaded->GetAtom(1).GetAtomicNumber(), 8);
+  EXPECT_EQ(reloaded->GetAtom(2).GetAtomicNumber(), 1);
+
+  auto pos1 = reloaded->GetAtom(1).GetPosition();
+  EXPECT_FLOAT_EQ(pos1[0], 0.96f);
+  EXPECT_FLOAT_EQ(pos1[1], 0.0f);
+  EXPECT_FLOAT_EQ(pos1[2], 0.0f);
+
+  auto bond0 = reloaded->GetBond(0);
+  EXPECT_EQ(bond0.GetBeginAtomId(), 0);
+  EXPECT_EQ(bond0.GetEndAtomId(), 1);
+  EXPECT_EQ(reloaded->GetBondOrder(0), 1);
+  auto bond1 = reloaded->GetBond(1);
+  EXPECT_EQ(bond1.GetBeginAtomId(), 1);
+  EXPECT_EQ(bond1.GetEndAtomId(), 2);
+  EXPECT_EQ(reloaded->GetBondOrder(1), 2);
 }
 
 TEST_F(PipelineLibTest, PipelineStateIOCurrentWithoutDataDowngradesToStale)

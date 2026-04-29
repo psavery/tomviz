@@ -925,6 +925,101 @@ def transform(dataset):
     assert labels.GetValue(1) == 'second'
 
 
+def test_run_output_format_state_persists_molecule_payloads(tmp_path):
+    """A LegacyPythonTransform that returns a vtkMolecule result is
+    persisted as atomic-numbers / positions / bond datasets under
+    /data/<id>/<port>/. On reload (via load_state) the port carries an
+    equivalent vtkMolecule. Mirrors the table case below."""
+    from tomviz.pipeline.state_io import load_state
+
+    arr = (np.arange(24, dtype=np.uint8) + 1).reshape((2, 3, 4))
+    input_emd = tmp_path / 'input.emd'
+    _write_simple_emd(input_emd, arr)
+
+    script = '''
+import vtk
+
+def transform(dataset):
+    m = vtk.vtkMolecule()
+    m.AppendAtom(1, 0.0, 0.0, 0.0)
+    m.AppendAtom(8, 0.96, 0.0, 0.0)
+    m.AppendAtom(1, 1.20, 0.93, 0.0)
+    m.AppendBond(0, 1, 1)
+    m.AppendBond(1, 2, 2)
+    return {"mol": m}
+'''
+    description = json.dumps({
+        'name': 'MoleculeEmitter',
+        'label': 'Molecule',
+        'apply_to_each_array': False,
+        'results': [{'name': 'mol', 'type': 'molecule'}],
+    })
+    state = {
+        'schemaVersion': 2,
+        'pipeline': {
+            'nodes': [
+                {'id': 1, 'type': 'source.reader', 'label': 'Reader',
+                 'fileNames': [str(input_emd)]},
+                {'id': 2, 'type': 'transform.legacyPython',
+                 'label': 'MolOp',
+                 'description': description, 'script': script},
+            ],
+            'links': [
+                {'from': {'node': 1, 'port': 'volume'},
+                 'to':   {'node': 2, 'port': 'volume'}},
+            ],
+        },
+    }
+    state_path = tmp_path / 'state.tvsm'
+    state_path.write_text(json.dumps(state))
+
+    run_dirs = run(state_path, tmp_path / 'out', output_format='state')
+    tvh5 = run_dirs[0] / 'output_state.tvh5'
+    assert tvh5.is_file()
+
+    with h5py.File(tvh5, 'r') as f:
+        port_group = f['/data/2/mol']
+        assert (port_group.attrs['kind'] in ('molecule', b'molecule'))
+        assert int(port_group.attrs['numAtoms']) == 3
+        assert int(port_group.attrs['numBonds']) == 2
+        np.testing.assert_array_equal(
+            np.asarray(port_group['atomicNumbers'][()]),
+            np.array([1, 8, 1], dtype=np.uint16))
+        np.testing.assert_allclose(
+            np.asarray(port_group['atomPositions'][()]).reshape(-1, 3),
+            np.array([[0.0, 0.0, 0.0],
+                      [0.96, 0.0, 0.0],
+                      [1.20, 0.93, 0.0]], dtype=np.float32))
+        np.testing.assert_array_equal(
+            np.asarray(port_group['bondAtoms'][()]).reshape(-1, 2),
+            np.array([[0, 1], [1, 2]], dtype=np.int64))
+        np.testing.assert_array_equal(
+            np.asarray(port_group['bondOrders'][()]),
+            np.array([1, 2], dtype=np.uint16))
+
+    pipeline = load_state(tvh5)
+    transform_node = next(n for n in pipeline.nodes if n.id == 2)
+    mol_port = transform_node.output_port('mol')
+    molecule = mol_port.data().payload
+    assert molecule.GetNumberOfAtoms() == 3
+    assert molecule.GetNumberOfBonds() == 2
+    assert molecule.GetAtom(0).GetAtomicNumber() == 1
+    assert molecule.GetAtom(1).GetAtomicNumber() == 8
+    assert molecule.GetAtom(2).GetAtomicNumber() == 1
+    pos1 = molecule.GetAtom(1).GetPosition()
+    assert pytest.approx(pos1[0]) == 0.96
+    assert pytest.approx(pos1[1]) == 0.0
+    assert pytest.approx(pos1[2]) == 0.0
+    bond0 = molecule.GetBond(0)
+    assert bond0.GetBeginAtomId() == 0
+    assert bond0.GetEndAtomId() == 1
+    assert molecule.GetBondOrder(0) == 1
+    bond1 = molecule.GetBond(1)
+    assert bond1.GetBeginAtomId() == 1
+    assert bond1.GetEndAtomId() == 2
+    assert molecule.GetBondOrder(1) == 2
+
+
 def test_cli_output_format_flag(tmp_path):
     a = _make_inputs(tmp_path, [('a', 1)])[0]
     state_path = _single_source_state(tmp_path, a)

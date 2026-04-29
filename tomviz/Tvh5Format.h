@@ -42,10 +42,11 @@ public:
   /// `dataRef` points at an HDF5 group inside @a fileName, read the
   /// payload from that group and attach it to the matching port on
   /// @a pipeline.  Volume-typed ports are restored as VolumeData (via
-  /// EmdFormat::readNode); Table-typed ports are restored as
-  /// vtkTable.  Covers source nodes (their saved input), transforms
-  /// whose outputs the user persisted (so downstream doesn't need to
-  /// re-run), and any other node with a `persistent` port.
+  /// EmdFormat::readNode); Table-typed ports as vtkTable;
+  /// Molecule-typed ports as vtkMolecule.  Covers source nodes (their
+  /// saved input), transforms whose outputs the user persisted (so
+  /// downstream doesn't need to re-run), and any other node with a
+  /// `persistent` port.
   /// Suitable as a PipelineStateIO::PreExecuteHook closure.
   static void populatePayloadData(pipeline::Pipeline* pipeline,
                                   const QJsonObject& pipelineJson,

@@ -38,6 +38,15 @@ def _is_vtk_table(payload) -> bool:
             and hasattr(payload, 'GetColumn'))
 
 
+def _is_vtk_molecule(payload) -> bool:
+    """Duck-type check for a vtkMolecule. Same rationale as
+    :func:`_is_vtk_table`: avoid pulling vtk in until we actually need to
+    serialize one."""
+    return (hasattr(payload, 'GetNumberOfAtoms')
+            and hasattr(payload, 'GetNumberOfBonds')
+            and hasattr(payload, 'GetAtomicNumberArray'))
+
+
 def _write_table_into(group: 'h5py.Group', table) -> None:
     """Serialize ``table`` (a vtkTable) under ``group`` using the same
     layout as C++ ``Tvh5Format::writeTablePayload``: each column becomes
@@ -80,6 +89,53 @@ def _write_table_into(group: 'h5py.Group', table) -> None:
         ds.attrs['numberOfComponents'] = np.int32(number_of_components)
 
 
+def _write_molecule_into(group: 'h5py.Group', molecule) -> None:
+    """Serialize ``molecule`` (a vtkMolecule) under ``group`` using the
+    same layout as C++ ``Tvh5Format::writeMoleculePayload``:
+
+    - Group attrs ``kind=molecule``, ``numAtoms``, ``numBonds``.
+    - ``atomicNumbers`` — uint16 dataset of length numAtoms.
+    - ``atomPositions`` — float32 dataset shaped (numAtoms, 3).
+    - ``bondAtoms`` — int64 dataset shaped (numBonds, 2), each row is
+      a ``(beginAtomId, endAtomId)`` pair.
+    - ``bondOrders`` — uint16 dataset of length numBonds (omitted when
+      there are no bonds; reader defaults to 1)."""
+    from vtk.util.numpy_support import vtk_to_numpy
+
+    num_atoms = int(molecule.GetNumberOfAtoms())
+    num_bonds = int(molecule.GetNumberOfBonds())
+    group.attrs['kind'] = 'molecule'
+    group.attrs['numAtoms'] = np.int64(num_atoms)
+    group.attrs['numBonds'] = np.int64(num_bonds)
+
+    if num_atoms > 0:
+        atomic_numbers_arr = molecule.GetAtomicNumberArray()
+        atomic_numbers = vtk_to_numpy(atomic_numbers_arr).astype(
+            np.uint16, copy=False)
+        group.create_dataset('atomicNumbers', data=atomic_numbers)
+        positions = np.empty((num_atoms, 3), dtype=np.float32)
+        for i in range(num_atoms):
+            atom = molecule.GetAtom(i)
+            pos = atom.GetPosition()
+            positions[i, 0] = pos[0]
+            positions[i, 1] = pos[1]
+            positions[i, 2] = pos[2]
+        group.create_dataset('atomPositions', data=positions)
+
+    if num_bonds > 0:
+        bond_atoms = np.empty((num_bonds, 2), dtype=np.int64)
+        for i in range(num_bonds):
+            bond = molecule.GetBond(i)
+            bond_atoms[i, 0] = bond.GetBeginAtomId()
+            bond_atoms[i, 1] = bond.GetEndAtomId()
+        group.create_dataset('bondAtoms', data=bond_atoms)
+        orders_arr = molecule.GetBondOrdersArray()
+        if orders_arr is not None:
+            orders = vtk_to_numpy(orders_arr).astype(np.uint16, copy=False)
+            if orders.shape[0] == num_bonds:
+                group.create_dataset('bondOrders', data=orders)
+
+
 def write_state_tvh5(target_path, state_json: dict, pipeline) -> None:
     """Write ``state_json`` plus every populated, non-sink output port
     into ``target_path`` as a ``.tvh5`` HDF5 container.
@@ -87,16 +143,18 @@ def write_state_tvh5(target_path, state_json: dict, pipeline) -> None:
     For every node N with output port P that carries a Dataset payload
     (volume data), the voxels are written under ``/data/<N>/<P>/`` in
     the same EMD layout as a stand-alone ``.emd`` file. ``Table`` ports
-    are written column-by-column under ``/data/<N>/<P>/c<i>``, mirroring
-    C++ ``Tvh5Format::writeTablePayload``. Either way, a ``dataRef``
-    entry pointing at the group is stamped onto the matching port entry
-    in the JSON before serialization.
+    are written column-by-column under ``/data/<N>/<P>/c<i>`` and
+    ``Molecule`` ports as ``atomicNumbers`` / ``atomPositions`` /
+    ``bondAtoms`` / ``bondOrders`` datasets, mirroring C++
+    ``Tvh5Format::writeTablePayload`` and ``writeMoleculePayload``.
+    Either way, a ``dataRef`` entry pointing at the group is stamped
+    onto the matching port entry in the JSON before serialization.
 
-    Other payload types (molecules, raw scalars, etc.) are skipped with
-    a warning — they aren't persisted in the tvh5 container today. The
-    caller that wants those leaves on disk should request
-    ``output_format='state+port'`` so the per-port writers (CSV/XYZ)
-    run alongside the tvh5 writer."""
+    Other payload types (raw scalars, etc.) are skipped with a warning
+    — they aren't persisted in the tvh5 container today. The caller
+    that wants those leaves on disk should request
+    ``output_format='state+port'`` so the per-port writers run
+    alongside the tvh5 writer."""
     snapshot = copy.deepcopy(state_json)
     nodes_by_id = {entry['id']: entry for entry in
                    snapshot.get('pipeline', {}).get('nodes') or []
@@ -118,11 +176,12 @@ def write_state_tvh5(target_path, state_json: dict, pipeline) -> None:
                 payload = port.data().payload
                 is_volume = hasattr(payload, 'arrays')
                 is_table = _is_vtk_table(payload)
-                if not is_volume and not is_table:
+                is_molecule = _is_vtk_molecule(payload)
+                if not (is_volume or is_table or is_molecule):
                     logger.warning(
                         'tvh5 writer: skipping unsupported port %s.%s '
-                        '(port type %r) — only volume and table '
-                        'payloads are persisted.',
+                        '(port type %r) — only volume, table and '
+                        'molecule payloads are persisted.',
                         node.label or type(node).__name__, port.name,
                         port.port_type)
                     continue
@@ -133,8 +192,10 @@ def write_state_tvh5(target_path, state_json: dict, pipeline) -> None:
                 port_group = f.create_group(port_group_path)
                 if is_volume:
                     _write_emd_node_into(port_group, payload)
-                else:
+                elif is_table:
                     _write_table_into(port_group, payload)
+                else:
+                    _write_molecule_into(port_group, payload)
                 outputs.setdefault(port.name, {})['dataRef'] = {
                     'container': 'h5',
                     'path': port_group_path,

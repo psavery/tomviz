@@ -25,10 +25,14 @@
 #include <vtkAbstractArray.h>
 #include <vtkDataArray.h>
 #include <vtkImageData.h>
+#include <vtkMolecule.h>
+#include <vtkPoints.h>
 #include <vtkSmartPointer.h>
 #include <vtkStringArray.h>
 #include <vtkTable.h>
 #include <vtkType.h>
+#include <vtkUnsignedShortArray.h>
+#include <vtkVector.h>
 
 namespace tomviz {
 
@@ -181,13 +185,94 @@ bool writeVolumePayload(h5::H5ReadWrite& writer, const std::string& portGroup,
   return EmdFormat::writeNode(writer, portGroup, volume->imageData());
 }
 
+/// Serialize @a molecule under @a portGroup.  Atom positions are
+/// written as a flat float dataset of length 3*numAtoms (xyz triples),
+/// atomic numbers as uint16, bonds as a pair of (from, to) atom-id
+/// arrays plus a uint16 bond-orders array.  Mirrors the layout the
+/// Python state writer emits, so files round-trip across the C++/CLI
+/// boundary.
+bool writeMoleculePayload(h5::H5ReadWrite& writer,
+                          const std::string& portGroup, vtkMolecule* molecule)
+{
+  if (!molecule) {
+    return false;
+  }
+  writer.setAttribute(portGroup, "kind", "molecule");
+
+  vtkIdType numAtoms = molecule->GetNumberOfAtoms();
+  vtkIdType numBonds = molecule->GetNumberOfBonds();
+  writer.setAttribute(portGroup, "numAtoms",
+                      static_cast<long long>(numAtoms));
+  writer.setAttribute(portGroup, "numBonds",
+                      static_cast<long long>(numBonds));
+
+  if (numAtoms > 0) {
+    auto* nums = molecule->GetAtomicNumberArray();
+    if (!nums) {
+      return false;
+    }
+    std::vector<int> atomDims = { static_cast<int>(numAtoms) };
+    if (!writer.writeData(portGroup, "atomicNumbers", atomDims,
+                          static_cast<const unsigned short*>(
+                            nums->GetVoidPointer(0)))) {
+      return false;
+    }
+    // Flatten atom positions into a 1-D float dataset of length 3*N
+    // — vtkPoints stores them as a vtkDataArray (typically vtkFloatArray)
+    // but we copy out via GetPoint() to be agnostic to the underlying
+    // storage type.
+    std::vector<float> positions(static_cast<size_t>(numAtoms) * 3u);
+    for (vtkIdType i = 0; i < numAtoms; ++i) {
+      double pos[3];
+      molecule->GetAtomPosition(i, pos);
+      positions[3 * i + 0] = static_cast<float>(pos[0]);
+      positions[3 * i + 1] = static_cast<float>(pos[1]);
+      positions[3 * i + 2] = static_cast<float>(pos[2]);
+    }
+    std::vector<int> posDims = { static_cast<int>(numAtoms), 3 };
+    if (!writer.writeData(portGroup, "atomPositions", posDims,
+                          positions.data())) {
+      return false;
+    }
+  }
+
+  if (numBonds > 0) {
+    // Two parallel int64 arrays of length numBonds: the from / to atom
+    // ids per bond.  vtkMolecule exposes them via vtkBond accessors —
+    // there's no direct array view, so we materialize them.
+    std::vector<long long> bondAtoms(static_cast<size_t>(numBonds) * 2u);
+    for (vtkIdType i = 0; i < numBonds; ++i) {
+      vtkBond bond = molecule->GetBond(i);
+      bondAtoms[2 * i + 0] =
+        static_cast<long long>(bond.GetBeginAtomId());
+      bondAtoms[2 * i + 1] =
+        static_cast<long long>(bond.GetEndAtomId());
+    }
+    std::vector<int> bondDims = { static_cast<int>(numBonds), 2 };
+    if (!writer.writeData(portGroup, "bondAtoms", bondDims,
+                          bondAtoms.data())) {
+      return false;
+    }
+    auto* orders = molecule->GetBondOrdersArray();
+    if (orders && orders->GetNumberOfTuples() == numBonds) {
+      std::vector<int> orderDims = { static_cast<int>(numBonds) };
+      if (!writer.writeData(portGroup, "bondOrders", orderDims,
+                            static_cast<const unsigned short*>(
+                              orders->GetVoidPointer(0)))) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 /// For every node with a non-transient output port carrying serializable
 /// data, write the payload into @a writer under `/data/<nodeId>/<portName>`
 /// and stamp `dataRef` on the matching port entry in @a pipelineJson.
 /// Transient ports (typically transform outputs that get consumed and
 /// released downstream) are skipped — the port's "persistent" flag is the
-/// contract.  Volume-typed and Table-typed ports are persisted; other
-/// types fall through silently and are simply re-executed on load.
+/// contract.  Volume-, Table- and Molecule-typed ports are persisted;
+/// other types fall through silently and are simply re-executed on load.
 bool writePersistentPayloads(pipeline::Pipeline* pipeline,
                              h5::H5ReadWrite& writer,
                              QJsonObject& pipelineJson)
@@ -222,7 +307,8 @@ bool writePersistentPayloads(pipeline::Pipeline* pipeline,
       pipeline::PortType declared = port->declaredType();
       bool isVolume = pipeline::isVolumeType(declared);
       bool isTable = (declared == pipeline::PortType::Table);
-      if (!isVolume && !isTable) {
+      bool isMolecule = (declared == pipeline::PortType::Molecule);
+      if (!isVolume && !isTable && !isMolecule) {
         continue;
       }
 
@@ -240,6 +326,11 @@ bool writePersistentPayloads(pipeline::Pipeline* pipeline,
       } else if (isTable) {
         auto table = port->data().value<vtkSmartPointer<vtkTable>>();
         wrote = writeTablePayload(writer, portGroup, table.GetPointer());
+      } else if (isMolecule) {
+        auto molecule =
+          port->data().value<vtkSmartPointer<vtkMolecule>>();
+        wrote =
+          writeMoleculePayload(writer, portGroup, molecule.GetPointer());
       }
       if (!wrote) {
         qWarning() << "Tvh5Format: failed to write data for node" << nodeId
@@ -434,6 +525,73 @@ vtkSmartPointer<vtkStringArray> readStringColumn(h5::H5ReadWrite& reader,
   return array;
 }
 
+vtkSmartPointer<vtkMolecule> readMoleculePayload(h5::H5ReadWrite& reader,
+                                                 const std::string& portGroup)
+{
+  bool ok = false;
+  auto numAtoms = reader.attribute<long long>(portGroup, "numAtoms", &ok);
+  if (!ok) {
+    numAtoms = 0;
+  }
+  auto numBonds = reader.attribute<long long>(portGroup, "numBonds", &ok);
+  if (!ok) {
+    numBonds = 0;
+  }
+
+  auto molecule = vtkSmartPointer<vtkMolecule>::New();
+
+  if (numAtoms > 0) {
+    std::string atomsPath = portGroup + "/atomicNumbers";
+    std::string posPath = portGroup + "/atomPositions";
+    if (!reader.isDataSet(atomsPath) || !reader.isDataSet(posPath)) {
+      qWarning() << "Tvh5Format: missing atom datasets at"
+                 << QString::fromStdString(portGroup);
+      return nullptr;
+    }
+    std::vector<unsigned short> atomicNumbers(
+      static_cast<size_t>(numAtoms));
+    if (!reader.readData(atomsPath, atomicNumbers.data())) {
+      return nullptr;
+    }
+    std::vector<float> positions(static_cast<size_t>(numAtoms) * 3u);
+    if (!reader.readData(posPath, positions.data())) {
+      return nullptr;
+    }
+    for (long long i = 0; i < numAtoms; ++i) {
+      molecule->AppendAtom(atomicNumbers[i], positions[3 * i + 0],
+                           positions[3 * i + 1], positions[3 * i + 2]);
+    }
+  }
+
+  if (numBonds > 0) {
+    std::string bondAtomsPath = portGroup + "/bondAtoms";
+    if (!reader.isDataSet(bondAtomsPath)) {
+      qWarning() << "Tvh5Format: missing bondAtoms dataset at"
+                 << QString::fromStdString(portGroup);
+      return molecule;
+    }
+    std::vector<long long> bondAtoms(static_cast<size_t>(numBonds) * 2u);
+    if (!reader.readData(bondAtomsPath, bondAtoms.data())) {
+      return molecule;
+    }
+    std::vector<unsigned short> bondOrders(static_cast<size_t>(numBonds), 1);
+    std::string bondOrdersPath = portGroup + "/bondOrders";
+    if (reader.isDataSet(bondOrdersPath)) {
+      if (!reader.readData(bondOrdersPath, bondOrders.data())) {
+        // Bad bond-orders dataset: fall back to all single bonds
+        // rather than dropping the whole molecule.
+        std::fill(bondOrders.begin(), bondOrders.end(), 1);
+      }
+    }
+    for (long long i = 0; i < numBonds; ++i) {
+      molecule->AppendBond(static_cast<vtkIdType>(bondAtoms[2 * i + 0]),
+                           static_cast<vtkIdType>(bondAtoms[2 * i + 1]),
+                           bondOrders[i]);
+    }
+  }
+  return molecule;
+}
+
 vtkSmartPointer<vtkTable> readTablePayload(h5::H5ReadWrite& reader,
                                            const std::string& portGroup)
 {
@@ -553,6 +711,16 @@ void Tvh5Format::populatePayloadData(pipeline::Pipeline* pipeline,
           continue;
         }
         port->setData(pipeline::PortData(std::any(table), type));
+        node->markCurrent();
+      } else if (type == pipeline::PortType::Molecule) {
+        auto molecule = readMoleculePayload(reader, path);
+        if (!molecule) {
+          qWarning()
+            << "Tvh5Format::populatePayloadData: failed to read molecule"
+            << QString::fromStdString(path);
+          continue;
+        }
+        port->setData(pipeline::PortData(std::any(molecule), type));
         node->markCurrent();
       } else {
         qWarning() << "Tvh5Format::populatePayloadData: unsupported port type"
