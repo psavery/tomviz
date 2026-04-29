@@ -404,6 +404,10 @@ QMap<QString, PortData> LegacyPythonTransform::transform(
     py::module_ datasetMod =
       py::module_::import("tomviz.pipeline_dataset");
 
+    // Some operator scripts reference tomviz.utils.* without
+    // importing it; preload it as legacy/OperatorPython.cxx does.
+    py::module_::import("tomviz.utils");
+
     // Create PipelineDataset wrapping the copied vtkImageData
     py::object datasetCls = datasetMod.attr("PipelineDataset");
     py::object dataset =

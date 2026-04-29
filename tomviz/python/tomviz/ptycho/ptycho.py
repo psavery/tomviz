@@ -7,7 +7,7 @@ from scipy.ndimage.interpolation import rotate
 from scipy.optimize import leastsq
 from tqdm import tqdm
 
-from tomviz.executor import _write_emd
+from tomviz.io_emd import _write_emd
 from tomviz.external_dataset import Dataset
 
 PathLike = Path | str

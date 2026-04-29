@@ -3,7 +3,7 @@ from pathlib import Path
 
 from scipy.ndimage.interpolation import rotate
 
-from tomviz.executor import _write_emd
+from tomviz.io_emd import _write_emd
 from tomviz.external_dataset import Dataset
 
 

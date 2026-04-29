@@ -7,9 +7,8 @@ import shutil
 import urllib.request
 import zipfile
 
-from tomviz.executor import OperatorWrapper
 from tomviz.operators import Operator
-from tomviz._internal import add_transform_decorators
+from tomviz._internal import OperatorWrapper, add_transform_decorators
 
 OPERATOR_PATH = Path(__file__).parent.parent.parent / 'tomviz/python'
 

@@ -42,6 +42,15 @@ def delete_module(name):
         del sys.modules[name]
 
 
+class OperatorWrapper(object):
+    """Stub used outside the Qt application to provide the `canceled` /
+    `completed` attributes that operators read on `self._operator_wrapper`.
+    Migrated from tomviz.executor (legacy CLI) so the new pipeline runtime
+    can keep using it."""
+    canceled = False
+    completed = False
+
+
 def find_operator_class(transform_module):
     operator_class = None
     classes = inspect.getmembers(transform_module, inspect.isclass)
@@ -215,7 +224,7 @@ def transform_method_wrapper(transform_method: Callable,
 
 def transform_single_external_operator(transform_method: Callable,
                                        operator_serialized: str, *args, **kwargs):
-    from tomviz.executor import load_dataset, _write_emd
+    from tomviz.io_emd import load_dataset, _write_emd
 
     operator_dict = json.loads(operator_serialized)
     description_dict = json.loads(operator_dict['description'])
