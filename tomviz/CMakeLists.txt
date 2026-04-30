@@ -140,6 +140,8 @@ set(SOURCES
   MergeImagesReaction.h
   MoleculeSource.cxx
   MoleculeSource.h
+  OperatorSearchDialog.cxx
+  OperatorSearchDialog.h
   MoleculeProperties.cxx
   MoleculeProperties.h
   MoleculePropertiesPanel.cxx

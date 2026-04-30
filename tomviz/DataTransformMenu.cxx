@@ -35,60 +35,76 @@ void DataTransformMenu::buildTransforms()
   QMenu* menu = m_transformMenu;
   menu->clear();
 
-  // Build the Data Transforms menu
-  auto customPythonAction = menu->addAction("Custom Transform");
-
-  auto cropDataAction = menu->addAction("Crop");
-  auto convertDataAction = menu->addAction("Convert to Float");
-  auto arrayWranglerAction = menu->addAction("Convert Type");
-  auto transposeDataAction = menu->addAction("Transpose Data");
-  auto removeArraysAction = menu->addAction("Remove Arrays");
+  // === Data Management submenu ===
+  QMenu* dataManagement = menu->addMenu("Data Management");
+  auto customPythonAction = dataManagement->addAction("Custom Transform");
+  auto cropDataAction = dataManagement->addAction("Crop");
+  auto convertDataAction = dataManagement->addAction("Convert to Float");
+  auto arrayWranglerAction = dataManagement->addAction("Convert Type");
+  auto transposeDataAction = dataManagement->addAction("Transpose Data");
+  auto removeArraysAction = dataManagement->addAction("Remove Arrays");
   auto reinterpretSignedToUnignedAction =
-    menu->addAction("Reinterpret Signed to Unsigned");
-  menu->addSeparator();
-  auto manualManipulationAction = menu->addAction("Manual Manipulation");
-  auto shiftUniformAction = menu->addAction("Shift Volume");
-  auto deleteSliceAction = menu->addAction("Delete Slices");
-  auto padVolumeAction = menu->addAction("Pad Volume");
-  auto downsampleByTwoAction = menu->addAction("Bin Volume x2");
-  auto resampleAction = menu->addAction("Resample");
-  auto rotateAction = menu->addAction("Rotate");
-  auto clearAction = menu->addAction("Clear Subvolume");
-  auto swapAction = menu->addAction("Swap Axes");
-  auto registrationAction = menu->addAction("Registration");
-  menu->addSeparator();
-  auto setNegativeVoxelsToZeroAction =
-    menu->addAction("Set Negative Voxels To Zero");
-  auto addConstantAction = menu->addAction("Add Constant");
-  auto invertDataAction = menu->addAction("Invert Data");
-  auto squareRootAction = menu->addAction("Square Root Data");
-  auto cropEdgesAction = menu->addAction("Clip Edges");
-  auto hannWindowAction = menu->addAction("Hann Window");
-  auto fftAbsLogAction = menu->addAction("FFT (abs log)");
-  auto gradientMagnitudeSobelAction = menu->addAction("Gradient Magnitude");
-  auto unsharpMaskAction = menu->addAction("Unsharp Mask");
-  auto laplaceFilterAction = menu->addAction("Laplace Sharpen");
-  auto gaussianFilterAction = menu->addAction("Gaussian Blur");
-  auto wienerAction = menu->addAction("Wiener Filter");
-  auto TVminAction = menu->addAction("Remove Stripes, Curtaining, Scratches");
-  auto peronaMalikeAnisotropicDiffusionAction =
-    menu->addAction("Perona-Malik Anisotropic Diffusion");
-  auto medianFilterAction = menu->addAction("Median Filter");
-  auto circleMaskAction = menu->addAction("Circle Mask");
-  auto moleculeAction = menu->addAction("Add Molecule");
-  menu->addSeparator();
-  auto tortuosityAction = menu->addAction("Tortuosity");
-  auto poreSizeAction = menu->addAction("Pore Size Distribution");
-  menu->addSeparator();
-  auto psdAction = menu->addAction("Power Spectrum Density");
-  auto fscAction = menu->addAction("Fourier Shell Correlation");
-  auto deconvolutionDenoiseAction = menu->addAction("Deconvolution Denoise");
-  auto similarityMetricsAction = menu->addAction("Similarity Metrics");
-  menu->addSeparator();
-  auto cloneAction = menu->addAction("Clone");
-  auto deleteDataAction = menu->addAction(
+    dataManagement->addAction("Reinterpret Signed to Unsigned");
+  dataManagement->addSeparator();
+  auto cloneAction = dataManagement->addAction("Clone");
+  auto deleteDataAction = dataManagement->addAction(
     QIcon(":/QtWidgets/Icons/pqDelete.svg"), "Delete Data and Modules");
   deleteDataAction->setToolTip("Delete Data");
+
+  // === Volume Manipulation submenu ===
+  QMenu* volumeManip = menu->addMenu("Volume Manipulation");
+  auto manualManipulationAction =
+    volumeManip->addAction("Manual Manipulation");
+  auto shiftUniformAction = volumeManip->addAction("Shift Volume");
+  auto deleteSliceAction = volumeManip->addAction("Delete Slices");
+  auto padVolumeAction = volumeManip->addAction("Pad Volume");
+  auto downsampleByTwoAction = volumeManip->addAction("Bin Volume x2");
+  auto resampleAction = volumeManip->addAction("Resample");
+  auto rotateAction = volumeManip->addAction("Rotate");
+  auto clearAction = volumeManip->addAction("Clear Subvolume");
+  auto swapAction = volumeManip->addAction("Swap Axes");
+  auto registrationAction = volumeManip->addAction("Registration");
+
+  // === Math Operations submenu ===
+  QMenu* mathOps = menu->addMenu("Math Operations");
+  auto setNegativeVoxelsToZeroAction =
+    mathOps->addAction("Set Negative Voxels To Zero");
+  auto addConstantAction = mathOps->addAction("Add Constant");
+  auto invertDataAction = mathOps->addAction("Invert Data");
+  auto squareRootAction = mathOps->addAction("Square Root Data");
+  auto cropEdgesAction = mathOps->addAction("Clip Edges");
+  auto hannWindowAction = mathOps->addAction("Hann Window");
+  auto fftAbsLogAction = mathOps->addAction("FFT (abs log)");
+
+  // === Filters & Smoothing submenu ===
+  QMenu* filters = menu->addMenu("Filters && Smoothing");
+  auto gradientMagnitudeSobelAction =
+    filters->addAction("Gradient Magnitude");
+  auto unsharpMaskAction = filters->addAction("Unsharp Mask");
+  auto laplaceFilterAction = filters->addAction("Laplace Sharpen");
+  auto gaussianFilterAction = filters->addAction("Gaussian Blur");
+  auto wienerAction = filters->addAction("Wiener Filter");
+  auto TVminAction =
+    filters->addAction("Remove Stripes, Curtaining, Scratches");
+  auto peronaMalikeAnisotropicDiffusionAction =
+    filters->addAction("Perona-Malik Anisotropic Diffusion");
+  auto medianFilterAction = filters->addAction("Median Filter");
+  auto circleMaskAction = filters->addAction("Circle Mask");
+
+  // === Material Analysis submenu ===
+  QMenu* materialAnalysis = menu->addMenu("Material Analysis");
+  auto tortuosityAction = materialAnalysis->addAction("Tortuosity");
+  auto poreSizeAction =
+    materialAnalysis->addAction("Pore Size Distribution");
+  auto moleculeAction = materialAnalysis->addAction("Add Molecule");
+
+  // === Metrics & Spectral submenu ===
+  QMenu* metrics = menu->addMenu("Metrics && Spectral");
+  auto psdAction = metrics->addAction("Power Spectrum Density");
+  auto fscAction = metrics->addAction("Fourier Shell Correlation");
+  auto deconvolutionDenoiseAction =
+    metrics->addAction("Deconvolution Denoise");
+  auto similarityMetricsAction = metrics->addAction("Similarity Metrics");
 
   // Add our Python script reactions, these compose Python into menu entries.
   new AddExpressionReaction(customPythonAction);
@@ -219,26 +235,37 @@ void DataTransformMenu::buildSegmentation()
   menu->clear();
 
   auto customPythonITKAction = menu->addAction("Custom ITK Transform");
-  menu->addSeparator();
-  auto binaryThresholdAction = menu->addAction("Binary Threshold");
-  auto otsuMultipleThresholdAction = menu->addAction("Otsu Multiple Threshold");
-  auto connectedComponentsAction = menu->addAction("Connected Components");
-  menu->addSeparator();
-  auto binaryDilateAction = menu->addAction("Binary Dilate");
-  auto binaryErodeAction = menu->addAction("Binary Erode");
-  auto binaryOpenAction = menu->addAction("Binary Open");
-  auto binaryCloseAction = menu->addAction("Binary Close");
+
+  // === Thresholding submenu ===
+  QMenu* thresholding = menu->addMenu("Thresholding");
+  auto binaryThresholdAction = thresholding->addAction("Binary Threshold");
+  auto otsuMultipleThresholdAction =
+    thresholding->addAction("Otsu Multiple Threshold");
+  auto connectedComponentsAction =
+    thresholding->addAction("Connected Components");
+
+  // === Morphology submenu ===
+  QMenu* morphology = menu->addMenu("Morphology");
+  auto binaryDilateAction = morphology->addAction("Binary Dilate");
+  auto binaryErodeAction = morphology->addAction("Binary Erode");
+  auto binaryOpenAction = morphology->addAction("Binary Open");
+  auto binaryCloseAction = morphology->addAction("Binary Close");
   auto binaryMinMaxCurvatureFlowAction =
-    menu->addAction("Binary MinMax Curvature Flow");
-  menu->addSeparator();
-  auto labelObjectAttributesAction = menu->addAction("Label Object Attributes");
+    morphology->addAction("Binary MinMax Curvature Flow");
+
+  // === Label Analysis submenu ===
+  QMenu* labelAnalysis = menu->addMenu("Label Analysis");
+  auto labelObjectAttributesAction =
+    labelAnalysis->addAction("Label Object Attributes");
   auto labelObjectPrincipalAxesAction =
-    menu->addAction("Label Object Principal Axes");
+    labelAnalysis->addAction("Label Object Principal Axes");
   auto distanceFromAxisAction =
-    menu->addAction("Label Object Distance From Principal Axis");
-  menu->addSeparator();
-  auto segmentParticlesAction = menu->addAction("Segment Particles");
-  auto segmentPoresAction = menu->addAction("Segment Pores");
+    labelAnalysis->addAction("Label Object Distance From Principal Axis");
+
+  // === Segmentation Workflows submenu ===
+  QMenu* segWorkflows = menu->addMenu("Segmentation Workflows");
+  auto segmentParticlesAction = segWorkflows->addAction("Segment Particles");
+  auto segmentPoresAction = segWorkflows->addAction("Segment Pores");
 
   new AddExpressionReaction(customPythonITKAction);
   new AddPythonTransformReaction(binaryThresholdAction, "Binary Threshold",

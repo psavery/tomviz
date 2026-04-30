@@ -27,6 +27,7 @@ class Module;
 class Operator;
 struct OperatorDescription;
 class OperatorResult;
+class OperatorSearchDialog;
 class ProgressDialogManager;
 
 namespace pipeline {
@@ -114,6 +115,7 @@ private:
   QScopedPointer<Ui::MainWindow> m_ui;
   QMenu* m_customTransformsMenu = nullptr;
   QMenu* m_pipelineTemplates = nullptr;
+  OperatorSearchDialog* m_operatorSearchDialog = nullptr;
   QTimer* m_timer = nullptr;
   bool m_isFirstShow = true;
 
