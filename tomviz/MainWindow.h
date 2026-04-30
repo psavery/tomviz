@@ -50,6 +50,8 @@ public:
   ~MainWindow() override;
   void openFiles(int argc, char** argv);
 
+  static MainWindow* instance();
+
   pipeline::Pipeline* pipeline() const;
 
 protected:

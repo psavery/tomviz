@@ -36,12 +36,11 @@ DataSource* CloneDataReaction::clone(DataSource* toClone)
   Q_UNUSED(toClone);
 
   // Get the VolumeData from the active pipeline (via MainWindow)
-  auto* mainWindow = qobject_cast<MainWindow*>(QApplication::activeWindow());
+  auto* mainWindow = MainWindow::instance();
   if (!mainWindow) {
     return nullptr;
   }
 
-  // For now, try to find the first source node in the pipeline
   auto* pip = mainWindow->pipeline();
   if (!pip) {
     return nullptr;
