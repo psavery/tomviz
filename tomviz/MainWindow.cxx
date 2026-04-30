@@ -133,6 +133,16 @@ class Connection;
 
 namespace tomviz {
 
+MainWindow* MainWindow::instance()
+{
+  for (auto* w : QApplication::topLevelWidgets()) {
+    auto* mw = qobject_cast<MainWindow*>(w);
+    if (mw)
+      return mw;
+  }
+  return nullptr;
+}
+
 MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   : QMainWindow(parent, flags), m_ui(new Ui::MainWindow)
 {

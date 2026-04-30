@@ -270,7 +270,7 @@ void PipelineModuleMenu::triggered(QAction* maction)
     return;
   }
 
-  auto* mainWindow = qobject_cast<MainWindow*>(QApplication::activeWindow());
+  auto* mainWindow = MainWindow::instance();
   auto* pip = mainWindow ? mainWindow->pipeline() : nullptr;
   if (!pip) {
     qCritical("No active pipeline. Load data first.");

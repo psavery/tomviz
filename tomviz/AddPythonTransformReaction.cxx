@@ -118,7 +118,7 @@ void AddPythonTransformReaction::updateEnableState()
 
 OperatorPython* AddPythonTransformReaction::addExpression(DataSource*)
 {
-  auto* mainWindow = qobject_cast<MainWindow*>(QApplication::activeWindow());
+  auto* mainWindow = MainWindow::instance();
   auto* pip = mainWindow ? mainWindow->pipeline() : nullptr;
   if (!pip) {
     return nullptr;

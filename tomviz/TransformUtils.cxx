@@ -133,16 +133,7 @@ static pipeline::DeferredLinkInfo insertTransformAtLinkDeferred(
 
 bool insertTransformIntoPipeline(pipeline::TransformNode* transform)
 {
-  auto* activeWin = QApplication::activeWindow();
-  auto* mainWindow = qobject_cast<MainWindow*>(activeWin);
-  if (!mainWindow) {
-    // The active window may be a dialog or menu; walk up the parent chain.
-    for (auto* w = activeWin; w; w = w->parentWidget()) {
-      mainWindow = qobject_cast<MainWindow*>(w);
-      if (mainWindow)
-        break;
-    }
-  }
+  auto* mainWindow = MainWindow::instance();
   auto* pip = mainWindow ? mainWindow->pipeline() : nullptr;
   if (!pip) {
     qCritical("insertTransformIntoPipeline: No active pipeline. "
