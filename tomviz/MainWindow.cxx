@@ -109,6 +109,7 @@
 #include <QShortcut>
 #include <QOffscreenSurface>
 #include <QOpenGLContext>
+#include <QSet>
 #include <QStandardPaths>
 #include <QSurfaceFormat>
 #include <QTimer>
@@ -981,8 +982,27 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   auto pythonFuture = QtConcurrent::run(initPython);
   pythonWatcher->setFuture(pythonFuture);
 
-  // Add plugin dock widgets when a plugin is loaded
+  // Snapshot existing dock widgets before loading plugin dock widgets
+  auto currentDocks = findChildren<QDockWidget*>();
+  QSet<QDockWidget*> existingDocks(currentDocks.begin(), currentDocks.end());
+
+  // Add plugin dock widgets when a plugin is loaded.
   new pqPluginDockWidgetsBehavior(this);
+
+  // On first launch (no saved window state), ParaView plugin dock widgets
+  // (e.g., Node Editor) appear visible by default. Hide any that were added
+  // by plugins. pqPersistentMainWindowStateBehavior will restore their
+  // visibility on subsequent launches if the user opened them.
+  QTimer::singleShot(0, this, [this, existingDocks]() {
+    QSettings* settings = pqApplicationCore::instance()->settings();
+    if (!settings->contains("MainWindow/Geometry")) {
+      for (auto* dock : findChildren<QDockWidget*>()) {
+        if (!existingDocks.contains(dock)) {
+          dock->hide();
+        }
+      }
+    }
+  });
 }
 
 MainWindow::~MainWindow()
