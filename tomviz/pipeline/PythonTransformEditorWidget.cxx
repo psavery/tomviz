@@ -8,6 +8,7 @@
 
 #include <pqPythonSyntaxHighlighter.h>
 
+#include <QFontDatabase>
 #include <QHBoxLayout>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -49,7 +50,7 @@ PythonTransformEditorWidget::PythonTransformEditorWidget(
   auto* scriptLayout = new QVBoxLayout(scriptTab);
 
   m_scriptEdit = new QTextEdit(scriptTab);
-  m_scriptEdit->setFont(QFont("Monospace"));
+  m_scriptEdit->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
   m_scriptEdit->setLineWrapMode(QTextEdit::NoWrap);
 
   // Attach the syntax highlighter. ConnectHighligter() must be called —
