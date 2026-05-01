@@ -137,8 +137,7 @@ bool insertTransformIntoPipeline(pipeline::TransformNode* transform)
   auto* pip = mainWindow ? mainWindow->pipeline() : nullptr;
   if (!pip) {
     qCritical("insertTransformIntoPipeline: No active pipeline. "
-              "Load data first. (activeWindow=%p, mainWindow=%p)",
-              static_cast<void*>(activeWin),
+              "Load data first. (mainWindow=%p)",
               static_cast<void*>(mainWindow));
     delete transform;
     return false;

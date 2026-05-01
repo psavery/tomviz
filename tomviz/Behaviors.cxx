@@ -6,6 +6,7 @@
 #include "ActiveObjects.h"
 #include "AddRenderViewContextMenuBehavior.h"
 #include "ManualManipulationWidget.h"
+#include "SelectCylinderWidget.h"
 #include "ShiftRotationCenterWidget.h"
 #include "RotateAlignWidget.h"
 #include "transforms/LegacyPythonTransform.h"
@@ -127,6 +128,15 @@ void Behaviors::registerCustomOperatorUIs()
       [](QWidget* parent, vtkSmartPointer<vtkImageData> data,
          vtkSMProxy* colorMap) -> CustomPythonTransformWidget* {
         return new ManualManipulationWidget(data, colorMap, parent);
+      } });
+
+  LegacyPythonTransform::registerCustomWidget(
+    "CylindricalCropWidget",
+    { /*needsData=*/true,
+      /*create=*/
+      [](QWidget* parent, vtkSmartPointer<vtkImageData> data,
+         vtkSMProxy* colorMap) -> CustomPythonTransformWidget* {
+        return new SelectCylinderWidget(data, colorMap, parent);
       } });
 }
 
