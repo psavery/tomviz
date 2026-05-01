@@ -73,7 +73,8 @@ void PythonAppInitPrependPathWindows(const std::string& exe_dir)
   }
 
   // Prepend conda prefix site packages if available
-  std::string conda_prefix = std::getenv("CONDA_PREFIX");
+  const char* conda_prefix_env = std::getenv("CONDA_PREFIX");
+  std::string conda_prefix = conda_prefix_env ? conda_prefix_env : "";
   if (!conda_prefix.empty()) {
     PythonAppInitPrependPythonPath(conda_prefix + "/Lib/site-packages");
   }
@@ -114,7 +115,8 @@ void PythonAppInitPrependPathLinux(const std::string& exe_dir)
   }
 
   // Prepend conda prefix site packages if available
-  std::string conda_prefix = std::getenv("CONDA_PREFIX");
+  const char* conda_prefix_env = std::getenv("CONDA_PREFIX");
+  std::string conda_prefix = conda_prefix_env ? conda_prefix_env : "";
   if (!conda_prefix.empty()) {
     PythonAppInitPrependPythonPath(
         conda_prefix +
@@ -155,7 +157,8 @@ void PythonAppInitPrependPathOsX(const std::string& exe_dir)
   }
 
   // Prepend conda prefix site packages if available
-  std::string conda_prefix = std::getenv("CONDA_PREFIX");
+  const char* conda_prefix_env = std::getenv("CONDA_PREFIX");
+  std::string conda_prefix = conda_prefix_env ? conda_prefix_env : "";
   if (!conda_prefix.empty()) {
     PythonAppInitPrependPythonPath(
         conda_prefix +
