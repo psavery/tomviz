@@ -863,7 +863,7 @@ install(FILES "${tomviz_SOURCE_DIR}/docs/TomvizBasicUserGuide.pdf"
   DESTINATION "${tomviz_data_install_dir}/docs"
   COMPONENT "Documentation")
 
-if(APPLE)
+if(APPLE AND TOMVIZ_MACOSX_BUNDLE)
   list(APPEND exec_sources icons/tomviz.icns)
   set(MACOSX_BUNDLE_ICON_FILE tomviz.icns)
   set(MACOSX_BUNDLE_BUNDLE_VERSION "${tomviz_version}")
@@ -898,7 +898,11 @@ set_property(TARGET tomvizlib PROPERTY POSITION_INDEPENDENT_CODE TRUE)
 
 find_package(Viskores QUIET)
 
-add_executable(tomviz WIN32 MACOSX_BUNDLE ${exec_sources} resources.qrc pipeline/pipeline_icons.qrc)
+if(APPLE AND TOMVIZ_MACOSX_BUNDLE)
+  add_executable(tomviz MACOSX_BUNDLE ${exec_sources} resources.qrc pipeline/pipeline_icons.qrc)
+else()
+  add_executable(tomviz WIN32 ${exec_sources} resources.qrc pipeline/pipeline_icons.qrc)
+endif()
 target_link_libraries(tomviz PRIVATE tomvizlib ${OPENGL_LIBRARIES} ${extra_link_libraries})
 if(Viskores_FOUND)
   target_link_libraries(tomviz PRIVATE viskores::cont)
@@ -932,6 +936,7 @@ target_link_libraries(tomvizlib
   PRIVATE
     Qt6::Core5Compat
     Python3::Python
+    $<$<PLATFORM_ID:Windows>:dbghelp shell32>
     pybind11::embed
     VTK::WrappingPythonCore
     VTK::IOImage
@@ -948,7 +953,7 @@ target_link_libraries(tomvizlib
     VTK::ChartsCore
     VTK::ViewsContext2D)
 
-if(APPLE)
+if(APPLE AND TOMVIZ_MACOSX_BUNDLE)
   set_target_properties(tomviz
     PROPERTIES
       MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/tomviz.plist.in)
