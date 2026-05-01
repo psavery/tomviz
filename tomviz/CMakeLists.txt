@@ -54,6 +54,8 @@ set(SOURCES
   ConvertToFloatReaction.h
   CropReaction.cxx
   CropReaction.h
+  SelectCylinderWidget.cxx
+  SelectCylinderWidget.h
   SelectVolumeWidget.cxx
   SelectVolumeWidget.h
   DataBroker.cxx
@@ -618,6 +620,7 @@ set(python_files
   SegmentParticles.py
   UnsharpMask.py
   AddConstant.py
+  CylindricalCrop.py
   SegmentPores.py
   RotationAlign.py
   WienerFilter.py
@@ -680,6 +683,7 @@ set(json_files
   SegmentParticles.json
   UnsharpMask.json
   AddConstant.json
+  CylindricalCrop.json
   SegmentPores.json
   RotationAlign.json
   WienerFilter.json

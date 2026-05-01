@@ -77,6 +77,9 @@ def register_builtins():
     )
     from tomviz.pipeline.transforms.transpose import TransposeDataTransform
     from tomviz.pipeline.transforms.crop import CropTransform
+    from tomviz.pipeline.transforms.cylindrical_crop import (
+        CylindricalCropTransform,
+    )
     from tomviz.pipeline.transforms.threshold import ThresholdTransform
 
     NodeFactory.register('transform.legacyPython', LegacyPythonTransform)
@@ -85,6 +88,7 @@ def register_builtins():
     NodeFactory.register('transform.convertToFloat', ConvertToFloatTransform)
     NodeFactory.register('transform.transposeData', TransposeDataTransform)
     NodeFactory.register('transform.crop', CropTransform)
+    NodeFactory.register('transform.cylindricalCrop', CylindricalCropTransform)
     NodeFactory.register('transform.threshold', ThresholdTransform)
 
     # Sinks: all collapse to the inert SinkNode placeholder. Each defines

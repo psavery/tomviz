@@ -39,6 +39,7 @@ void DataTransformMenu::buildTransforms()
   QMenu* dataManagement = menu->addMenu("Data Management");
   auto customPythonAction = dataManagement->addAction("Custom Transform");
   auto cropDataAction = dataManagement->addAction("Crop");
+  auto cylindricalCropAction = dataManagement->addAction("Cylindrical Crop");
   auto convertDataAction = dataManagement->addAction("Convert to Float");
   auto arrayWranglerAction = dataManagement->addAction("Convert Type");
   auto transposeDataAction = dataManagement->addAction("Transpose Data");
@@ -109,6 +110,10 @@ void DataTransformMenu::buildTransforms()
   // Add our Python script reactions, these compose Python into menu entries.
   new AddExpressionReaction(customPythonAction);
   new CropReaction(cropDataAction, mainWindow);
+  new AddPythonTransformReaction(
+    cylindricalCropAction, "Cylindrical Crop",
+    readInPythonScript("CylindricalCrop"),
+    readInJSONDescription("CylindricalCrop"));
   new ConvertToFloatReaction(convertDataAction);
   new ArrayWranglerReaction(arrayWranglerAction, mainWindow);
   new TransposeDataReaction(transposeDataAction, mainWindow);
