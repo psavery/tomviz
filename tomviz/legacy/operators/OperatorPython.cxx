@@ -4,6 +4,7 @@
 #include "OperatorPython.h"
 
 #include <QFileDialog>
+#include <QFontDatabase>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -53,6 +54,8 @@ public:
     m_ui.name->setText(o->label());
     // Ensure the tab widget expands to fill available vertical space.
     m_ui.verticalLayout->setStretch(1, 1);
+    m_ui.script->setFont(
+      QFontDatabase::systemFont(QFontDatabase::FixedFont));
     auto* highlighter =
       new pqPythonSyntaxHighlighter(m_ui.script, *m_ui.script);
     highlighter->ConnectHighligter();
