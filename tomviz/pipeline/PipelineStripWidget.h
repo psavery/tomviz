@@ -129,6 +129,7 @@ signals:
   void nodeSelected(Node* node);
   void portSelected(OutputPort* port);
   void linkSelected(Link* link);
+  void selectionCleared();
   void nodeDoubleClicked(Node* node);
   void linkRequested(OutputPort* from, InputPort* to);
   void leaveGroupRequested(Node* member, SinkGroupNode* group);
@@ -227,7 +228,7 @@ private:
   // Dimming state — we store the bright set; everything else is dimmed
   // when m_hasBrightSelection is true.
   qreal m_dimLevel = 0.75;
-  bool m_dimmingEnabled = true;
+  bool m_dimmingEnabled = false;
   bool m_hasBrightSelection = false;
   QSet<Node*> m_brightNodes;
   QSet<OutputPort*> m_brightPorts;

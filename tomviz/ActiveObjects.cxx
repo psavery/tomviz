@@ -149,6 +149,15 @@ pipeline::Pipeline* ActiveObjects::pipeline() const
 
 void ActiveObjects::setActiveNode(pipeline::Node* node)
 {
+  // Only one of node / port / link can be active at a time. Clear the
+  // others before emitting our own change so listeners (e.g. the
+  // properties panel) settle on the new selection rather than briefly
+  // showing it and then being wiped by a trailing port/link clear.
+  if (node) {
+    setActivePort(nullptr);
+    setActiveLink(nullptr);
+  }
+
   auto* prevNode = m_activeNode;
   if (m_activeNode != node) {
     m_activeNode = node;
@@ -175,6 +184,10 @@ pipeline::Node* ActiveObjects::activeNode() const
 
 void ActiveObjects::setActivePort(pipeline::OutputPort* port)
 {
+  if (port) {
+    setActiveNode(nullptr);
+    setActiveLink(nullptr);
+  }
   if (m_activePort != port) {
     m_activePort = port;
     emit activePortChanged(port);
@@ -191,6 +204,10 @@ pipeline::OutputPort* ActiveObjects::activePort() const
 
 void ActiveObjects::setActiveLink(pipeline::Link* link)
 {
+  if (link) {
+    setActiveNode(nullptr);
+    setActivePort(nullptr);
+  }
   if (m_activeLink != link) {
     m_activeLink = link;
     emit activeLinkChanged(link);
@@ -198,6 +215,13 @@ void ActiveObjects::setActiveLink(pipeline::Link* link)
   if (link) {
     setActiveTipOutputPort(link->from());
   }
+}
+
+void ActiveObjects::clearActiveSelection()
+{
+  setActiveNode(nullptr);
+  setActivePort(nullptr);
+  setActiveLink(nullptr);
 }
 
 pipeline::Link* ActiveObjects::activeLink() const
@@ -213,7 +237,15 @@ pipeline::OutputPort* ActiveObjects::activeTipOutputPort() const
 void ActiveObjects::setActiveTipOutputPort(pipeline::OutputPort* port)
 {
   if (m_activeTipOutputPort != port) {
+    QObject::disconnect(m_tipEffectiveTypeConn);
     m_activeTipOutputPort = port;
+    if (port) {
+      m_tipEffectiveTypeConn = connect(
+        port, &pipeline::OutputPort::effectiveTypeChanged,
+        this, [this](pipeline::PortType) {
+          emit activeTipOutputPortChanged(m_activeTipOutputPort);
+        });
+    }
     emit activeTipOutputPortChanged(port);
   }
 }

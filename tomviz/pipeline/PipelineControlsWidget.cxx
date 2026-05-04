@@ -50,9 +50,9 @@ PipelineControlsWidget::PipelineControlsWidget(QWidget* parent)
   m_dimmingButton = new QToolButton(this);
   m_dimmingButton->setAutoRaise(true);
   m_dimmingButton->setIconSize(QSize(20, 20));
-  m_dimmingButton->setIcon(QIcon(":/icons/filter_disabled.svg"));
+  m_dimmingButton->setIcon(QIcon(":/icons/filter.svg"));
   m_dimmingButton->setToolTip(
-    tr("Disable focus dimming (show all pipeline elements at full opacity)"));
+    tr("Enable focus dimming (dim unrelated pipeline elements on selection)"));
   connect(m_dimmingButton, &QToolButton::clicked, this, [this]() {
     m_dimmingEnabled = !m_dimmingEnabled;
     if (m_dimmingEnabled) {

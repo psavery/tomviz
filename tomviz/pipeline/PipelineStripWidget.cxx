@@ -972,7 +972,7 @@ void PipelineStripWidget::selectItem(int index)
       emit nodeSelected(item.node);
     }
   } else {
-    emit nodeSelected(nullptr);
+    emit selectionCleared();
   }
 }
 

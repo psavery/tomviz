@@ -42,7 +42,7 @@ private:
   QTimer* m_spinnerTimer = nullptr;
   int m_spinnerAngle = 0;
   bool m_stopping = false;
-  bool m_dimmingEnabled = true;
+  bool m_dimmingEnabled = false;
   QToolButton* m_dimmingButton = nullptr;
 
   static constexpr int SpinnerSize = 14;

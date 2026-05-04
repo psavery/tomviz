@@ -53,13 +53,16 @@ public:
   void setPipeline(pipeline::Pipeline* p);
   pipeline::Pipeline* pipeline() const;
 
-  /// Active selection tracking
+  /// Active selection tracking. At most one of node / port / link is
+  /// non-null at a time — setting any of them to a non-null value clears
+  /// the others. Use clearActiveSelection() to clear them all at once.
   void setActiveNode(pipeline::Node* node);
   pipeline::Node* activeNode() const;
   void setActivePort(pipeline::OutputPort* port);
   pipeline::OutputPort* activePort() const;
   void setActiveLink(pipeline::Link* link);
   pipeline::Link* activeLink() const;
+  void clearActiveSelection();
   pipeline::OutputPort* activeTipOutputPort() const;
 
 public slots:
@@ -132,6 +135,11 @@ protected:
 
 private:
   void setActiveTipOutputPort(pipeline::OutputPort* port);
+  // Tracks the active tip port's effectiveTypeChanged subscription so we
+  // re-emit activeTipOutputPortChanged when type inference updates the tip
+  // (e.g. a freshly-added transform whose output type is inferred from its
+  // input only after the upstream link is created).
+  QMetaObject::Connection m_tipEffectiveTypeConn;
   Q_DISABLE_COPY(ActiveObjects)
 };
 

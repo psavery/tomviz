@@ -263,6 +263,8 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
           this, &MainWindow::onPortSelected);
   connect(m_pipelineStrip, &pipeline::PipelineStripWidget::linkSelected,
           this, &MainWindow::onLinkSelected);
+  connect(m_pipelineStrip, &pipeline::PipelineStripWidget::selectionCleared,
+          &ActiveObjects::instance(), &ActiveObjects::clearActiveSelection);
 
   // Sync ActiveObjects changes back to the strip widget and properties panel.
   // This ensures programmatic setActiveNode/Port/Link calls are reflected.
@@ -287,7 +289,9 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
             }
           });
 
-  // Link validator: type-compatible, different nodes, target not connected
+  // Link validator: type-compatible, different nodes. If the target input
+  // already has a link, the existing one will be replaced when the drag
+  // completes.
   m_pipelineStrip->setLinkValidator(
     [](pipeline::OutputPort* from, pipeline::InputPort* to) -> bool {
       if (from->node() == to->node()) {
@@ -298,22 +302,6 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
         return false;
       }
       if (!from->canAcceptLink(to)) {
-        return false;
-      }
-      if (to->link()) {
-        // Allow if dragging from a SinkGroupNode "+" to a sink that
-        // shares the same upstream port as the group.
-        auto* sg = qobject_cast<pipeline::SinkGroupNode*>(from->node());
-        if (sg) {
-          int idx = sg->outputPorts().indexOf(from);
-          if (idx >= 0 && idx < sg->inputPorts().size()) {
-            auto* groupInput = sg->inputPorts()[idx];
-            if (groupInput->link() &&
-                groupInput->link()->from() == to->link()->from()) {
-              return true;
-            }
-          }
-        }
         return false;
       }
       return true;
@@ -1666,26 +1654,19 @@ pipeline::Pipeline* MainWindow::pipeline() const
 
 void MainWindow::onNodeSelected(pipeline::Node* node)
 {
-  // Forward to ActiveObjects; the rest (strip widget sync, properties panel,
-  // colormap) is handled by onActiveNodeChanged / onActivePortChanged.
+  // Forward to ActiveObjects; mutual exclusion of node/port/link is
+  // enforced there. Properties panel, strip sync, and colormap are
+  // handled by onActiveNodeChanged / onActivePortChanged.
   ActiveObjects::instance().setActiveNode(node);
-  ActiveObjects::instance().setActivePort(nullptr);
-  ActiveObjects::instance().setActiveLink(nullptr);
 }
 
 void MainWindow::onPortSelected(pipeline::OutputPort* port)
 {
-  // Forward to ActiveObjects; the rest is handled by onActivePortChanged.
-  ActiveObjects::instance().setActiveNode(nullptr);
   ActiveObjects::instance().setActivePort(port);
-  ActiveObjects::instance().setActiveLink(nullptr);
 }
 
 void MainWindow::onLinkSelected(pipeline::Link* link)
 {
-  // Forward to ActiveObjects; the rest is handled by onActiveLinkChanged.
-  ActiveObjects::instance().setActiveNode(nullptr);
-  ActiveObjects::instance().setActivePort(nullptr);
   ActiveObjects::instance().setActiveLink(link);
 }
 
