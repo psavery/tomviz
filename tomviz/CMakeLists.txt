@@ -162,8 +162,6 @@ set(SOURCES
   legacy/PipelineProxy.h
   legacy/PipelineWorker.cxx
   legacy/PipelineWorker.h
-  legacy/PipelineSettingsDialog.cxx
-  legacy/PipelineSettingsDialog.h
   PresetDialog.cxx
   PresetDialog.h
   PresetModel.cxx
@@ -285,6 +283,18 @@ set(SOURCES
   pipeline/PipelineStateIO.h
   pipeline/PipelineExecutor.cxx
   pipeline/PipelineExecutor.h
+  pipeline/NodeExecutor.cxx
+  pipeline/NodeExecutor.h
+  pipeline/InternalNodeExecutor.cxx
+  pipeline/InternalNodeExecutor.h
+  pipeline/ExternalNodeExecutor.cxx
+  pipeline/ExternalNodeExecutor.h
+  pipeline/NodeExecutorFactory.cxx
+  pipeline/NodeExecutorFactory.h
+  pipeline/ProgressReader.cxx
+  pipeline/ProgressReader.h
+  pipeline/PythonNodeWrapper.cxx
+  pipeline/PythonNodeWrapper.h
   pipeline/DefaultExecutor.cxx
   pipeline/DefaultExecutor.h
   pipeline/ExecutionFuture.cxx

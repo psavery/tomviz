@@ -81,7 +81,6 @@
     <addaction name="actionAcquisition"/>
     <addaction name="actionAnimationHelper"/>
     <addaction name="actionPassiveAcquisition"/>
-    <addaction name="actionPipelineSettings"/>
    </widget>
    <widget class="QMenu" name="menuData">
     <property name="title">
@@ -396,14 +395,6 @@
    </property>
    <property name="toolTip">
     <string>Export data to Web</string>
-   </property>
-  </action>
-  <action name="actionPipelineSettings">
-   <property name="text">
-    <string>Pipeline Settings</string>
-   </property>
-   <property name="toolTip">
-    <string>Pipeline Settings</string>
    </property>
   </action>
   <action name="actionAcquisition">

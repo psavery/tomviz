@@ -309,17 +309,18 @@ void VolumeSink::applyActiveScalars()
 
   auto* pointData = vol->imageData()->GetPointData();
   int idx = m_activeScalars;
-  if (idx < 0) {
-    // Default: use whatever vtkPointData considers active
-    auto* active = pointData->GetScalars();
-    if (active && active->GetName()) {
-      m_volumeMapper->SelectScalarArray(active->GetName());
-    }
-  } else if (idx < pointData->GetNumberOfArrays()) {
-    auto* array = pointData->GetArray(idx);
-    if (array && array->GetName()) {
-      m_volumeMapper->SelectScalarArray(array->GetName());
-    }
+  vtkDataArray* selected = nullptr;
+  if (idx >= 0 && idx < pointData->GetNumberOfArrays()) {
+    selected = pointData->GetArray(idx);
+  }
+  if (!selected) {
+    // Default (idx < 0) or saved index doesn't fit the current data —
+    // fall back to PointData's active. m_activeScalars is left alone
+    // so the user's selection snaps back on the next layout match.
+    selected = pointData->GetScalars();
+  }
+  if (selected && selected->GetName()) {
+    m_volumeMapper->SelectScalarArray(selected->GetName());
   }
 }
 

@@ -28,6 +28,15 @@ public:
 protected:
   virtual bool consume(const QMap<QString, PortData>& inputs) = 0;
 
+  /// Hook fired before consume() in both execute() and
+  /// onIntermediateData() paths. Default no-op.
+  virtual void prepareConsume(const QMap<QString, PortData>& /*inputs*/)
+  {}
+
+  /// Hook fired after consume() in both execute() and
+  /// onIntermediateData() paths. Default no-op.
+  virtual void postConsume(bool /*success*/) {}
+
 private slots:
   void onIntermediateData();
 

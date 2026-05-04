@@ -128,14 +128,14 @@ bool writeStringColumn(h5::H5ReadWrite& writer,
 /// sub-dataset `c0`, `c1`, … with attributes `name` (column name) and
 /// `vtkDataType` (the int returned by vtkAbstractArray::GetDataType, or
 /// VTK_STRING for string columns).  Group-level attributes record the
-/// payload kind and the column count for the reader.
+/// payload type and the column count for the reader.
 bool writeTablePayload(h5::H5ReadWrite& writer, const std::string& portGroup,
                        vtkTable* table)
 {
   if (!table) {
     return false;
   }
-  writer.setAttribute(portGroup, "kind", "table");
+  writer.setAttribute(portGroup, "type", "table");
 
   vtkIdType numColumns = table->GetNumberOfColumns();
   vtkIdType numRows = table->GetNumberOfRows();
@@ -197,7 +197,7 @@ bool writeMoleculePayload(h5::H5ReadWrite& writer,
   if (!molecule) {
     return false;
   }
-  writer.setAttribute(portGroup, "kind", "molecule");
+  writer.setAttribute(portGroup, "type", "molecule");
 
   vtkIdType numAtoms = molecule->GetNumberOfAtoms();
   vtkIdType numBonds = molecule->GetNumberOfBonds();

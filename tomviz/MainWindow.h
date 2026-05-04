@@ -113,6 +113,14 @@ private:
   void initPipeline();
   void clearDynamicPropertiesWidget();
   void updateColorMapDisplay();
+  /// Coalescing wrapper around updateColorMapDisplay — at most one
+  /// refresh per kColorMapUpdateThrottleMs window.
+  void scheduleColorMapDisplayUpdate();
+  /// Ensure @a port's VolumeData has a color map (init + copy from
+  /// upstream on first use) and rescale it. Returns true on first
+  /// creation so the caller can refresh sinks.
+  bool ensureColorMapForPort(pipeline::Node* node,
+                             pipeline::OutputPort* port);
   void setPipelineMutationEnabled(bool enabled);
   QScopedPointer<Ui::MainWindow> m_ui;
   QMenu* m_customTransformsMenu = nullptr;
@@ -128,6 +136,7 @@ private:
   ProgressDialogManager* m_progressDialogManager = nullptr;
   QMetaObject::Connection m_tipDataChangedConn;
   QMetaObject::Connection m_tipMetadataChangedConn;
+  bool m_colorMapUpdatePending = false;
   QMetaObject::Connection m_sinkColorMapChangedConn;
   QMetaObject::Connection m_editingChangedConn;
   QPointer<QWidget> m_dynamicPropertiesWidget;

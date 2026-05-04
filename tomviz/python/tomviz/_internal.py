@@ -4,7 +4,6 @@
 # This source file is part of the Tomviz project, https://tomviz.org/.
 # It is released under the 3-Clause BSD License, see "LICENSE".
 ###############################################################################
-from pathlib import Path
 from types import MethodType
 from typing import Any, Callable
 import fnmatch
@@ -13,9 +12,7 @@ import importlib.util
 import inspect
 import json
 import os
-import subprocess
 import sys
-import tempfile
 import traceback
 
 import tomviz
@@ -43,12 +40,28 @@ def delete_module(name):
 
 
 class OperatorWrapper(object):
-    """Stub used outside the Qt application to provide the `canceled` /
-    `completed` attributes that operators read on `self._operator_wrapper`.
-    Migrated from tomviz.executor (legacy CLI) so the new pipeline runtime
-    can keep using it."""
-    canceled = False
-    completed = False
+    """Backs `self.canceled` / `self.completed` on operators running
+    under the pure-Python pipeline runtime. The flags can be flipped
+    out-of-band by the parent process via a transport-specific
+    ControlChannel, which is polled lazily on every getter access —
+    no reader thread needed on the subprocess side."""
+
+    def __init__(self, control_channel=None):
+        self._channel = control_channel
+        self._canceled = False
+        self._completed = False
+
+    @property
+    def canceled(self) -> bool:
+        if self._channel is not None:
+            self._channel.poll(self)
+        return self._canceled
+
+    @property
+    def completed(self) -> bool:
+        if self._channel is not None:
+            self._channel.poll(self)
+        return self._completed
 
 
 def find_operator_class(transform_module):
@@ -200,126 +213,18 @@ def add_transform_decorators(transform_method: Callable,
 
 def transform_method_wrapper(transform_method: Callable,
                              operator_serialized: str, *args, **kwargs):
-    # We take the serialized operator as input because we may need it
-    # later. If we need to execute this in an external environment,
-    # we need it serialized. It's easier to have the C++ side do the
-    # serialization right now.
+    # External execution is now driven from C++ via the per-node
+    # ExternalNodeExecutor strategy (see tomviz/pipeline/
+    # ExternalNodeExecutor.h). The wrapper still receives the serialized
+    # operator JSON for symmetry with the legacy entry point and so any
+    # future Python-side dispatch decisions have it on hand, but the
+    # `tomviz_pipeline_env` branch was removed: when it's set on the
+    # operator description, LegacyPythonTransform synthesizes a
+    # NodeExecutor at deserialize time and the in-app run happens out of
+    # process before Python is even involved.
     operator_dict = json.loads(operator_serialized)
-    tomviz_pipeline_env = None
-
-    # Add any transform decorators that we need
     transform_method = add_transform_decorators(transform_method, operator_dict)
-
-    operator_description = operator_dict.get('description')
-    if operator_description:
-        description_json = json.loads(operator_description)
-        tomviz_pipeline_env = description_json.get('tomviz_pipeline_env')
-
-    if not tomviz_pipeline_env:
-        # Execute internally as normal
-        return transform_method(*args, **kwargs)
-
-    return transform_single_external_operator(transform_method, operator_serialized, *args, **kwargs)
-
-
-def transform_single_external_operator(transform_method: Callable,
-                                       operator_serialized: str, *args, **kwargs):
-    from tomviz.io_emd import load_dataset, _write_emd
-
-    operator_dict = json.loads(operator_serialized)
-    description_dict = json.loads(operator_dict['description'])
-    tomviz_pipeline_env = description_dict['tomviz_pipeline_env']
-
-    # Find the `tomviz-pipeline` executable
-    if sys.platform == 'win32':
-        exec_path = Path(tomviz_pipeline_env) / 'Scripts' / 'tomviz-pipeline.exe'
-    else:
-        exec_path = Path(tomviz_pipeline_env) / 'bin' / 'tomviz-pipeline'
-    if not exec_path.exists():
-        msg = f'Tomviz pipeline executable does not exist: {exec_path}'
-        raise RuntimeError(msg)
-
-    # Get the dataset as a Dataset class
-    dataset = convert_to_dataset(args[0])
-
-    # Set up the temporary directory for reading/writing
-    with tempfile.TemporaryDirectory() as tmpdir_path:
-        tmpdir_path = Path(tmpdir_path)
-
-        # Save the input data to an EMD file
-        input_path = tmpdir_path / 'original.emd'
-        _write_emd(input_path, dataset)
-
-        # Build the state file dict
-        state_dict = {
-            'dataSources': [{
-                'reader': {
-                    'fileNames': [str(input_path)],
-                },
-                'operators': [operator_dict],
-            }],
-        }
-
-        # Write the state file
-        state_path = tmpdir_path / 'state.tvsm'
-        with open(state_path, 'w') as wf:
-            json.dump(state_dict, wf)
-
-        output_path = tmpdir_path / 'output.emd'
-
-        progress_path = tmpdir_path / 'progress'
-        # FIXME: set up 'socket' progress mode for Linux, and
-        # 'files' progress mode for Mac/Windows. We need to implement
-        # a Python reader for each of these. They should just forward
-        # progress to the main progress.
-        progress_mode = 'tqdm'
-
-        # Set up the command
-        cmd = [
-            exec_path,
-            '-s',
-            state_path,
-            '-o',
-            output_path,
-            '-p',
-            progress_mode,
-            '-u',
-            progress_path,
-        ]
-        cmd = [str(x) for x in cmd]
-
-        # Slightly customize the environment
-        custom_env = os.environ.copy()
-        custom_env.pop('TOMVIZ_APPLICATION', None)
-        custom_env.pop('PYTHONHOME', None)
-        custom_env.pop('PYTHONPATH', None)
-        custom_env['PYTHONUNBUFFERED'] = 'ON'
-
-        print('Executing operator with command:', ' '.join(cmd))
-
-        # Run the operator
-        result = subprocess.run(
-            cmd, env=custom_env,
-            capture_output=True, text=True)
-        if result.stdout:
-            print(result.stdout)
-        if result.returncode != 0:
-            print('tomviz-pipeline stderr:', result.stderr)
-            result.check_returncode()
-
-        # Load and return the result
-        output_dataset = load_dataset(output_path)
-
-    # Now modify the input dataset with any changes made.
-    # FIXME: put these in a function to copy one dataset to another?
-    for name in output_dataset.scalars_names:
-        dataset.set_scalars(name, output_dataset.scalars(name))
-    dataset.tilt_angles = output_dataset.tilt_angles
-    dataset.spacing = output_dataset.spacing
-
-    # FIXME: for functions that normally return a dict with things like
-    # a child dataset, what should we do?
-    return None
+    return transform_method(*args, **kwargs)
 
 
 def _load_module(operator_dir, python_file):

@@ -20,12 +20,18 @@ import vtk.util.numpy_support as np_s
 from tomviz.dataset import Dataset as AbstractDataset
 
 
+_DEFAULT_SCALARS_NAME = 'Scalars'
+
+
 class PipelineDataset(AbstractDataset):
     """Dataset wrapping a vtkImageData for use in the new pipeline library."""
 
     def __init__(self, data_object):
         self._data_object = data_object
         self._tilt_axis = 2
+        # Used by active_scalars setter on a still-empty vtkImageData
+        # so the array doesn't default to "Scalars".
+        self._inherited_active_name: str | None = None
 
     @property
     def active_scalars(self):
@@ -53,9 +59,12 @@ class PipelineDataset(AbstractDataset):
 
         do = dsa.WrapDataObject(self._data_object)
         oldscalars = do.PointData.GetScalars()
-        arrayname = "Scalars"
         if oldscalars is not None:
             arrayname = oldscalars.GetName()
+        elif self._inherited_active_name:
+            arrayname = self._inherited_active_name
+        else:
+            arrayname = _DEFAULT_SCALARS_NAME
 
         # Update extent if shape changed
         sameshape = list(vtkshape) == list(self._data_object.GetDimensions())
@@ -73,6 +82,10 @@ class PipelineDataset(AbstractDataset):
         if scalars is None:
             return None
         return scalars.GetName()
+
+    @active_name.setter
+    def active_name(self, name):
+        self._data_object.GetPointData().SetActiveScalars(name)
 
     @property
     def num_scalars(self):
@@ -127,6 +140,11 @@ class PipelineDataset(AbstractDataset):
         pd.RemoveArray(name)
         if pd.GetScalars() is None and pd.GetNumberOfArrays() > 0:
             pd.SetActiveScalars(pd.GetArrayName(0))
+
+    def rename_active(self, new_name: str):
+        scalars = self._data_object.GetPointData().GetScalars()
+        if scalars is not None:
+            scalars.SetName(new_name)
 
     @property
     def spacing(self):
@@ -211,4 +229,10 @@ class PipelineDataset(AbstractDataset):
         input_spacing = self._data_object.GetSpacing()
         child_spacing = (input_spacing[0], input_spacing[1], input_spacing[0])
         new_child.SetSpacing(child_spacing)
-        return PipelineDataset(new_child)
+        child = PipelineDataset(new_child)
+        # Carry the parent's active-scalar name so the child's first
+        # array doesn't default to "Scalars".
+        parent_active = self._data_object.GetPointData().GetScalars()
+        if parent_active is not None and parent_active.GetName():
+            child._inherited_active_name = parent_active.GetName()
+        return child

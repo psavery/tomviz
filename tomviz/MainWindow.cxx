@@ -71,7 +71,6 @@
 #include "legacy/Pipeline.h"
 #include "legacy/PipelineManager.h"
 #include "legacy/PipelineProxy.h"
-#include "legacy/PipelineSettingsDialog.h"
 #include "ProgressDialogManager.h"
 #include "PtychoRunner.h"
 #include "PyXRFRunner.h"
@@ -549,10 +548,10 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
             if (port) {
               m_tipDataChangedConn = connect(
                 port, &pipeline::OutputPort::dataChanged,
-                this, &MainWindow::updateColorMapDisplay);
+                this, &MainWindow::scheduleColorMapDisplayUpdate);
               m_tipMetadataChangedConn = connect(
                 port, &pipeline::OutputPort::metadataChanged,
-                this, &MainWindow::updateColorMapDisplay);
+                this, &MainWindow::scheduleColorMapDisplayUpdate);
             }
             updateColorMapDisplay();
           });
@@ -925,10 +924,6 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   connect(m_ui->actionPassiveAcquisition, &QAction::triggered, this, [this]() {
     openDialog<PassiveAcquisitionWidget>(&m_passiveAcquisitionDialog);
   });
-
-  auto pipelineSettingsDialog = new PipelineSettingsDialog(this);
-  connect(m_ui->actionPipelineSettings, &QAction::triggered,
-          pipelineSettingsDialog, &QWidget::show);
 
   // Prepopulate the previously seen python readers/writers
   // This operation is fast since it fetches the readers description
@@ -1567,23 +1562,33 @@ void MainWindow::initPipeline()
             }
           });
 
+  // Initialize/rescale color maps on intermediate updates so the
+  // volume renders correctly during the first execution and across
+  // re-runs. Safe under setIntermediateData's BQC — the worker is
+  // paused while we mutate SM proxies. Sink-side rebinding is in
+  // LegacyModuleSink::postConsume.
+  connect(p, &pipeline::Pipeline::nodeAdded, this,
+          [this](pipeline::Node* node) {
+            for (auto* port : node->outputPorts()) {
+              if (!pipeline::isVolumeType(port->type())) {
+                continue;
+              }
+              connect(port, &pipeline::OutputPort::intermediateDataApplied,
+                      this, [this, node, port]() {
+                        if (ensureColorMapForPort(node, port)) {
+                          updateColorMapDisplay();
+                        }
+                      });
+            }
+          });
+
   // Select newly added nodes so the tip output port updates
   connect(p, &pipeline::Pipeline::nodeAdded, this,
           &MainWindow::onNodeSelected);
 
-  // Color map propagation after pipeline execution completes.
-  // SM proxy creation is NOT safe while the ThreadedExecutor's worker thread
-  // is still running, so we use Pipeline::executionFinished (fires after the
-  // worker is idle) for first-time proxy creation, and per-node
-  // nodeExecutionFinished for rescaling on re-executions (safe because
-  // rescaleColorMap uses cached VTK objects, not SM proxies).
-  //
-  // TransformNode::execute() reuses existing VolumeData objects (preserving
-  // color maps across re-executions).
-
-  // Per-node handler: rescale existing color maps after each node finishes.
-  // This uses cached VTK objects (no SM proxy creation), so it's safe even
-  // while the worker thread is still running subsequent nodes.
+  // Per-node rescale of existing color maps. Uses cached VTK objects
+  // (not SM proxy creation), so safe while the worker thread is still
+  // running subsequent nodes.
   connect(p->executor(), &pipeline::PipelineExecutor::nodeExecutionFinished,
           this, [](pipeline::Node* node, bool success) {
     if (!success) {
@@ -1605,56 +1610,22 @@ void MainWindow::initPipeline()
     }
   });
 
-  // Pipeline-complete handler: initialize color maps for new VolumeData
-  // (requires SM proxy creation, only safe after worker is idle), then
-  // update any sinks whose color map was just created.
+  // Backstop for the per-port intermediate path: covers nodes whose
+  // first intermediate never fires (no progress.data) and the first
+  // run of a freshly loaded pipeline. Topological order makes sure
+  // upstream color maps exist before downstream's copyColorMapFrom.
   connect(p, &pipeline::Pipeline::executionFinished, this, [this, p]() {
     bool anyNewColorMaps = false;
     for (auto* node : p->topologicalSort()) {
-      pipeline::VolumeDataPtr upstream;
-      for (auto* port : node->inputPorts()) {
-        if (port->hasData() &&
-            pipeline::isVolumeType(port->data().type())) {
-          try {
-            upstream = port->data().value<pipeline::VolumeDataPtr>();
-          } catch (const std::bad_any_cast&) {
-          }
-          if (upstream) {
-            break;
-          }
-        }
-      }
-
       for (auto* port : node->outputPorts()) {
-        if (!pipeline::isVolumeType(port->type()) ||
-            !port->hasData()) {
-          continue;
-        }
-        pipeline::VolumeDataPtr vol;
-        try {
-          vol = port->data().value<pipeline::VolumeDataPtr>();
-        } catch (const std::bad_any_cast&) {
-          continue;
-        }
-        if (!vol || vol == upstream) {
-          continue;
-        }
-        // First execution: create proxy, copy from upstream, rescale
-        if (!vol->hasColorMap()) {
-          vol->initColorMap();
-          if (upstream && upstream->hasColorMap()) {
-            vol->copyColorMapFrom(*upstream);
-          }
-          vol->rescaleColorMap();
+        if (ensureColorMapForPort(node, port)) {
           anyNewColorMaps = true;
         }
       }
     }
 
-    // If any new color maps were created, update sinks that may have
-    // skipped updateColorMap() during execution because the proxy
-    // didn't exist yet, and refresh the central widget so it picks up
-    // the newly available LUT proxy.
+    // Refresh sinks that skipped updateColorMap during execution
+    // (proxy didn't exist yet) plus the central histogram widget.
     if (anyNewColorMaps) {
       for (auto* node : p->nodes()) {
         auto* sink = dynamic_cast<pipeline::LegacyModuleSink*>(node);
@@ -1870,6 +1841,70 @@ void MainWindow::onActiveLinkChanged(pipeline::Link* link)
   clearDynamicPropertiesWidget();
   // No link properties panel yet — show empty.
   m_ui->propertiesPanelStackedWidget->setCurrentWidget(m_ui->empty);
+}
+
+bool MainWindow::ensureColorMapForPort(pipeline::Node* node,
+                                       pipeline::OutputPort* port)
+{
+  if (!port || !port->hasData() ||
+      !pipeline::isVolumeType(port->type())) {
+    return false;
+  }
+  pipeline::VolumeDataPtr vol;
+  try {
+    vol = port->data().value<pipeline::VolumeDataPtr>();
+  } catch (const std::bad_any_cast&) {
+    return false;
+  }
+  if (!vol) {
+    return false;
+  }
+
+  pipeline::VolumeDataPtr upstream;
+  if (node) {
+    for (auto* in : node->inputPorts()) {
+      if (in->hasData() && pipeline::isVolumeType(in->data().type())) {
+        try {
+          upstream = in->data().value<pipeline::VolumeDataPtr>();
+        } catch (const std::bad_any_cast&) {
+        }
+        if (upstream) {
+          break;
+        }
+      }
+    }
+  }
+  // Pass-through node: shared color map, nothing to do.
+  if (vol == upstream) {
+    return false;
+  }
+
+  bool created = false;
+  if (!vol->hasColorMap()) {
+    vol->initColorMap();
+    if (upstream && upstream->hasColorMap()) {
+      vol->copyColorMapFrom(*upstream);
+    }
+    created = true;
+  }
+  vol->rescaleColorMap();
+  return created;
+}
+
+void MainWindow::scheduleColorMapDisplayUpdate()
+{
+  // Coalesce — drop if a refresh is already scheduled. Live operator
+  // updates fire dataChanged at multi-Hz rates; without this each
+  // would re-bind the color-map / histogram machinery.
+  if (m_colorMapUpdatePending) {
+    return;
+  }
+  m_colorMapUpdatePending = true;
+  static constexpr int kColorMapUpdateThrottleMs = 200;
+  QTimer::singleShot(kColorMapUpdateThrottleMs, this, [this]() {
+    m_colorMapUpdatePending = false;
+    updateColorMapDisplay();
+  });
 }
 
 void MainWindow::updateColorMapDisplay()

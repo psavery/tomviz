@@ -3,7 +3,9 @@
 
 #include "ThreadedExecutor.h"
 
+#include "InternalNodeExecutor.h"
 #include "Node.h"
+#include "NodeExecutor.h"
 #include "Pipeline.h"
 
 #include <QThread>
@@ -47,9 +49,14 @@ public slots:
         continue;
       }
 
+      auto* nx = node->nodeExecutor();
+      if (!nx) {
+        nx = &InternalNodeExecutor::instance();
+      }
+
       m_currentNode.store(node);
       emit nodeStarted(node);
-      bool success = node->execute();
+      bool success = nx->execute(node);
       m_currentNode.store(nullptr);
       emit nodeFinished(node, success);
 
@@ -158,6 +165,9 @@ void ThreadedExecutor::cancel()
 {
   m_cancelRequested = true;
   if (auto* node = m_currentNode.load()) {
+    // cancelExecution sets the canceled flag, emits the signal, and
+    // notifies the per-node executor (so an external one terminates
+    // its subprocess).
     node->cancelExecution();
   }
 }

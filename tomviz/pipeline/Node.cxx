@@ -5,6 +5,8 @@
 
 #include "InputPort.h"
 #include "Link.h"
+#include "NodeExecutor.h"
+#include "NodeExecutorFactory.h"
 #include "OutputPort.h"
 
 #include <QJsonArray>
@@ -253,6 +255,36 @@ bool Node::execute()
   return true;
 }
 
+void Node::setIntermediateOutputs(const QMap<QString, PortData>& updates)
+{
+  for (auto it = updates.constBegin(); it != updates.constEnd(); ++it) {
+    if (auto* port = outputPort(it.key())) {
+      port->setIntermediateData(it.value());
+    }
+  }
+}
+
+NodeExecutor* Node::nodeExecutor() const
+{
+  return m_nodeExecutor;
+}
+
+void Node::setNodeExecutor(NodeExecutor* executor)
+{
+  if (m_nodeExecutor == executor) {
+    return;
+  }
+  // Replace any previously-owned executor. Safe even when executor is
+  // null — deleteLater on a null QObject is a no-op via the guard.
+  if (m_nodeExecutor) {
+    m_nodeExecutor->deleteLater();
+  }
+  m_nodeExecutor = executor;
+  if (m_nodeExecutor) {
+    m_nodeExecutor->setParent(this);
+  }
+}
+
 int Node::totalProgressSteps() const
 {
   return m_totalProgressSteps;
@@ -317,12 +349,24 @@ void Node::cancelExecution()
 {
   m_canceled = true;
   emit executionCanceled();
+  // Notify the per-node executor so it can take any executor-specific
+  // action (e.g. ExternalNodeExecutor terminates its subprocess). The
+  // default NodeExecutor::cancel is a no-op — the canceled flag set
+  // above is what in-process executors rely on.
+  if (m_nodeExecutor) {
+    m_nodeExecutor->cancel(this);
+  }
 }
 
 void Node::completeExecution()
 {
   m_completed = true;
   emit executionCompleted();
+  // Same dispatch as cancelExecution — let the executor forward the
+  // request to any out-of-process work.
+  if (m_nodeExecutor) {
+    m_nodeExecutor->complete(this);
+  }
 }
 
 void Node::resetExecutionFlags()
@@ -435,6 +479,13 @@ QJsonObject Node::serialize() const
     }
     json[QStringLiteral("typeInferenceSources")] = tis;
   }
+  // Persist only when a non-default executor is set. The implicit
+  // InternalNodeExecutor carries no JSON footprint.
+  if (m_nodeExecutor && !m_nodeExecutor->type().isEmpty()) {
+    QJsonObject executor = m_nodeExecutor->serialize();
+    executor[QStringLiteral("type")] = m_nodeExecutor->type();
+    json[QStringLiteral("executor")] = executor;
+  }
   if (!m_outputPorts.isEmpty()) {
     QJsonObject outputs;
     for (auto* port : m_outputPorts) {
@@ -442,8 +493,6 @@ QJsonObject Node::serialize() const
       entry[QStringLiteral("type")] =
         portTypeToString(port->declaredType());
       entry[QStringLiteral("persistent")] = !port->isTransient();
-      // Delegate payload serialization to the port itself; base OutputPort
-      // dispatches on PortData's payload type. Node stays agnostic.
       auto metadata = port->serialize();
       if (!metadata.isEmpty()) {
         entry[QStringLiteral("metadata")] = metadata;
@@ -492,6 +541,23 @@ bool Node::deserialize(const QJsonObject& json)
       json.value(QStringLiteral("typeInferenceSources")).toObject();
     for (auto it = tis.constBegin(); it != tis.constEnd(); ++it) {
       m_typeInferenceSources[it.key()] = it.value().toString();
+    }
+  }
+  if (json.contains(QStringLiteral("executor"))) {
+    // Defensive: ad-hoc paths (e.g. ExternalNodeExecutor cloning a
+    // node) may hit deserialize without going through PipelineStateIO.
+    NodeExecutorFactory::registerBuiltins();
+    auto executorJson =
+      json.value(QStringLiteral("executor")).toObject();
+    auto type = executorJson.value(QStringLiteral("type")).toString();
+    if (!type.isEmpty()) {
+      auto* executor = NodeExecutorFactory::instance().create(type);
+      if (executor) {
+        executor->deserialize(executorJson);
+        setNodeExecutor(executor);
+      } else {
+        qWarning() << "Node::deserialize: unknown executor type" << type;
+      }
     }
   }
   if (json.contains(QStringLiteral("outputPorts"))) {

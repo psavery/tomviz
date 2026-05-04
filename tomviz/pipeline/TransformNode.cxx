@@ -10,6 +10,9 @@
 
 #include <vtkImageData.h>
 
+#include <QMetaObject>
+#include <QThread>
+
 namespace tomviz {
 namespace pipeline {
 
@@ -64,8 +67,6 @@ bool TransformNode::execute()
   resetProgress();
   setExecState(NodeExecState::Running);
 
-  // Check that all input ports are connected and have data.
-  // If any required input is missing, skip execution rather than crash.
   for (auto* port : inputPorts()) {
     if (!port->link() || !port->hasData()) {
       setExecState(NodeExecState::Failed);
@@ -80,45 +81,50 @@ bool TransformNode::execute()
 
   auto outputs = transform(inputs);
 
-  // If cancellation was requested during transform, discard the result.
   if (isCanceled()) {
     setExecState(NodeExecState::Canceled);
     return false;
   }
 
-  // An empty output map when the node declares output ports means the
-  // transform failed.
   if (outputs.isEmpty() && !outputPorts().isEmpty()) {
     setExecState(NodeExecState::Failed);
     return false;
   }
 
-  for (auto it = outputs.constBegin(); it != outputs.constEnd(); ++it) {
-    auto* port = outputPort(it.key());
-    if (!port) {
-      continue;
-    }
-
-    // Reuse existing VolumeData on re-execution: update its imageData
-    // rather than replacing it, so the color map and other state persist.
-    if (port->hasData() && isVolumeType(port->data().type()) &&
-        isVolumeType(it.value().type())) {
-      try {
-        auto existing = port->data().value<VolumeDataPtr>();
-        auto fresh = it.value().value<VolumeDataPtr>();
-        if (existing && fresh && existing != fresh) {
-          existing->setImageData(
-            vtkSmartPointer<vtkImageData>(fresh->imageData()));
-          existing->setLabel(fresh->label());
-          existing->setUnits(fresh->units());
-          port->setData(PortData(std::any(existing), it.value().type()));
-          continue;
-        }
-      } catch (const std::bad_any_cast&) {
+  // Port mutations belong on the node's thread.
+  auto applyOutputs = [this, &outputs]() {
+    for (auto it = outputs.constBegin(); it != outputs.constEnd(); ++it) {
+      auto* port = outputPort(it.key());
+      if (!port) {
+        continue;
       }
-    }
 
-    port->setData(it.value());
+      // Reuse existing VolumeData so its color map survives.
+      if (port->hasData() && isVolumeType(port->data().type()) &&
+          isVolumeType(it.value().type())) {
+        try {
+          auto existing = port->data().value<VolumeDataPtr>();
+          auto fresh = it.value().value<VolumeDataPtr>();
+          if (existing && fresh && existing != fresh) {
+            existing->setImageData(
+              vtkSmartPointer<vtkImageData>(fresh->imageData()));
+            existing->setLabel(fresh->label());
+            existing->setUnits(fresh->units());
+            port->setData(PortData(std::any(existing), it.value().type()));
+            continue;
+          }
+        } catch (const std::bad_any_cast&) {
+        }
+      }
+
+      port->setData(it.value());
+    }
+  };
+  if (QThread::currentThread() == thread()) {
+    applyOutputs();
+  } else {
+    QMetaObject::invokeMethod(this, applyOutputs,
+                              Qt::BlockingQueuedConnection);
   }
 
   markCurrent();

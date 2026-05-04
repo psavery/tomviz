@@ -12,6 +12,10 @@ if in_application():
 else:
     from tomviz.external_dataset import Dataset
 
+# PipelineDataset is a sibling of Dataset, not a subclass; use the
+# abstract base for the apply_to_each_array isinstance check.
+from tomviz.dataset import Dataset as AbstractDataset
+
 
 def zoom_shape(input: np.ndarray, zoom: np.ndarray) -> tuple[int]:
     """
@@ -206,7 +210,7 @@ def apply_to_each_array(func):
         # For any data sources in the result, add all the scalars to it
         if isinstance(result, dict):
             for k, v in result.items():
-                if isinstance(v, Dataset):
+                if isinstance(v, AbstractDataset):
                     # Rename the active array
                     v.rename_active(array_names[-1])
                     # Go back through the other results and set scalars on this
@@ -214,14 +218,17 @@ def apply_to_each_array(func):
                     for i, other_result in enumerate(results[:-1]):
                         if (
                             isinstance(other_result, dict) and
-                            isinstance(other_result.get(k), Dataset)
+                            isinstance(other_result.get(k), AbstractDataset)
                         ):
                             other_dataset = other_result[k]
                             other_dataset.rename_active(array_names[i])
                             v.set_scalars(other_dataset.active_name,
                                           other_dataset.active_scalars)
+                    # Restore the original active so the merged output
+                    # doesn't end up on whatever was processed last.
+                    if active_name in v.scalars_names:
+                        v.active_name = active_name
 
-        # Return the final result
         return result
 
     return wrapper

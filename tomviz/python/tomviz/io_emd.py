@@ -3,8 +3,8 @@
 # It is released under the 3-Clause BSD License, see "LICENSE".
 ###############################################################################
 """EMD and Data Exchange HDF5 readers/writers used by the pipeline CLI and
-operator helpers (ptycho, pyxrf, _internal.transform_single_external_operator).
-Migrated unchanged from the previous tomviz.executor module."""
+operator helpers (ptycho, pyxrf). Migrated unchanged from the previous
+tomviz.executor module."""
 
 import collections
 import copy
@@ -113,32 +113,44 @@ def _read_emd(path, options=None):
 
 
 def _get_arrays_for_writing(dataset):
+    """Return ``(primary_name, primary_array, extra_arrays)``.
+
+    Primary is the first scalar in insertion order — it goes into
+    ``<group>/data`` and lands at idx 0 on read. Preserves the
+    dataset's iteration order across the round-trip so
+    ``apply_to_each_array`` merges land at the same indices in both
+    executors. The active scalar is marked separately by the caller
+    via ``active_scalar_name`` when it differs from the primary.
+    """
     tilt_angles = dataset.tilt_angles
     tilt_axis = dataset.tilt_axis
-    active_array = dataset.active_scalars
+
+    names = list(dataset.scalars_names)
+    if not names:
+        return None, None, {}
+    primary_name = names[0]
+    primary_array = dataset.scalars(primary_name)
 
     extra_arrays = {}
-    for name in dataset.scalars_names:
-        if name == dataset.active_name:
-            continue
+    for name in names[1:]:
         extra_arrays[name] = dataset.scalars(name)
 
     if tilt_angles is not None and tilt_axis == 2:
-        active_array = np.transpose(active_array, [2, 1, 0])
+        primary_array = np.transpose(primary_array, [2, 1, 0])
         extra_arrays = {name: np.transpose(array, [2, 1, 0]) for (name, array)
                         in extra_arrays.items()}
 
-    active_array = np.ascontiguousarray(active_array)
+    primary_array = np.ascontiguousarray(primary_array)
     extra_arrays = {name: np.ascontiguousarray(array) for (name, array)
                     in extra_arrays.items()}
 
-    if active_array.dtype == np.float16:
-        active_array = active_array.astype(np.float32)
+    if primary_array.dtype == np.float16:
+        primary_array = primary_array.astype(np.float32)
     for key, value in extra_arrays.items():
         if value.dtype == np.float16:
             extra_arrays[key] = value.astype(np.float32)
 
-    return active_array, extra_arrays
+    return primary_name, primary_array, extra_arrays
 
 
 def _get_dims_for_writing(dataset, data, default_dims=None):
@@ -185,11 +197,12 @@ def _write_emd_node_into(node_group, dataset, dims=None):
     *is* the port group (matching what
     ``Tvh5Format::populatePayloadData`` and
     ``EmdFormat::readNode(reader, path, ...)`` expect)."""
-    active_array, extra_arrays = _get_arrays_for_writing(dataset)
+    primary_name, primary_array, extra_arrays = \
+        _get_arrays_for_writing(dataset)
 
     node_group.attrs.create('emd_group_type', 1, dtype='uint32')
-    data = node_group.create_dataset('data', data=active_array)
-    data.attrs['name'] = dataset.active_name
+    data = node_group.create_dataset('data', data=primary_array)
+    data.attrs['name'] = primary_name
 
     dims = _get_dims_for_writing(dataset, data, dims)
 
@@ -210,10 +223,14 @@ def _write_emd_node_into(node_group, dataset, dims=None):
         for (name, array) in extra_arrays.items():
             tomviz_scalars.create_dataset(name, data=array)
 
-    # Soft-link the active scalar to its primary location. Using
-    # ``data.name`` (the absolute HDF5 path) keeps the link valid both
-    # at file root and when nested inside a tvh5 port group.
-    tomviz_scalars[dataset.active_name] = h5py.SoftLink(data.name)
+    # Soft-link primary into tomviz_scalars so the group lists every
+    # scalar including the one stored inline at /data.
+    tomviz_scalars[primary_name] = h5py.SoftLink(data.name)
+
+    # The reader applies this after array layout to override the
+    # default of "active = /data".
+    if dataset.active_name and dataset.active_name != primary_name:
+        node_group.attrs['active_scalar_name'] = dataset.active_name
 
     if dataset.scan_ids is not None:
         node_group.create_dataset(

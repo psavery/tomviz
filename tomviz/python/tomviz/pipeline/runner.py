@@ -67,7 +67,7 @@ from typing import Union
 
 from tomviz.pipeline.executor import DefaultExecutor
 from tomviz.pipeline.leaf_writer import write_leaf_outputs
-from tomviz.pipeline.node import NodeState, Pipeline
+from tomviz.pipeline.node import NodeState, Pipeline, SourceNode
 from tomviz.pipeline.progress import make_progress
 from tomviz.pipeline.sources.reader import ReaderSourceNode
 from tomviz.pipeline.state_io import load_state, read_state_json
@@ -179,7 +179,12 @@ def run(
             logger.info('[run] %s/%d -> %s',
                         log_target or 'run', runs_count, run_dir)
 
-        _reset_pipeline(pipeline)
+        # Iteration 0 starts from the freshly loaded pipeline (load_state
+        # already gave us clean state plus any tvh5-embedded payloads).
+        # Subsequent iterations need a reset so override file_names get
+        # re-read by their source nodes.
+        if index > 0:
+            _reset_pipeline(pipeline)
         for sid, path in per_run_files.items():
             target_nodes[sid].file_names = [str(path)]
 
@@ -351,8 +356,19 @@ def _resolve_run_count(expanded: dict) -> int:
 
 def _reset_pipeline(pipeline: Pipeline) -> None:
     """Clear output-port payloads and reset state on every node so the
-    executor will re-run the whole graph on the next call."""
+    executor will re-run the whole graph on the next call.
+
+    Source nodes whose data has no replay mechanism (e.g. source.generic
+    populated from tvh5 dataRefs at load time — no file_names, no
+    execute() that produces data) are skipped: wiping their outputs
+    would leave them stuck on subsequent iterations. ReaderSourceNode
+    (re-reads file_names on each execute) and transforms (re-execute
+    from upstream) reset normally.
+    """
     for node in pipeline.nodes:
+        if isinstance(node, SourceNode) and not getattr(
+                node, 'file_names', None):
+            continue
         node.state = NodeState.New
         for port in node.output_ports():
             port.set_data(None)

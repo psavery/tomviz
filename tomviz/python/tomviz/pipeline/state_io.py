@@ -252,8 +252,16 @@ def _read_emd_group(group) -> Dataset:
 
     arrays = [(n, np.asfortranarray(a)) for (n, a) in arrays]
 
-    (active_name, _) = arrays[0]
+    # /data is the first scalar; active is marked separately. Files
+    # without the attribute fall back to the primary.
+    primary_name, _ = arrays[0]
+    active_attr = group.attrs.get('active_scalar_name')
+    if isinstance(active_attr, (np.ndarray, list, tuple)):
+        active_attr = active_attr[0]
+    if isinstance(active_attr, (bytes, bytearray)):
+        active_attr = active_attr.decode()
     arrays_dict = {n: a for (n, a) in arrays}
+    active_name = active_attr if (active_attr in arrays_dict) else primary_name
     dataset = Dataset(arrays_dict, active_name)
     if dims[-1].name in ('angles', b'angles'):
         dataset.tilt_angles = dims[-1].values[:].astype(np.float64)

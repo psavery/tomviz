@@ -3,7 +3,9 @@
 
 #include "DefaultExecutor.h"
 
+#include "InternalNodeExecutor.h"
 #include "Node.h"
+#include "NodeExecutor.h"
 #include "Pipeline.h"
 
 namespace tomviz {
@@ -49,8 +51,13 @@ void DefaultExecutor::execute(const QList<Node*>& nodes, Pipeline* pipeline)
       continue;
     }
 
+    auto* nx = node->nodeExecutor();
+    if (!nx) {
+      nx = &InternalNodeExecutor::instance();
+    }
+
     emit nodeExecutionStarted(node);
-    bool success = node->execute();
+    bool success = nx->execute(node);
     emit nodeExecutionFinished(node, success);
 
     if (!success) {

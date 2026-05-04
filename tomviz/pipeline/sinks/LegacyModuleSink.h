@@ -130,6 +130,19 @@ protected:
   /// and clear the pending name. No-op when no pending name is set.
   void resolvePendingActiveScalar(int& activeScalarsIdx);
 
+  /// Refresh m_volumeData from the inputs and wire metadata-change
+  /// notifications on first capture. Runs before every consume so
+  /// applyActiveScalars sees the freshly-arrived payload, not a
+  /// stale capture from a prior execute().
+  void prepareConsume(const QMap<QString, PortData>& inputs) override;
+
+  /// Re-bind the color map onto the renderer after consume. Lives in
+  /// the hook (not execute()) so live intermediate updates also
+  /// re-bind — an in-place CTF rescale leaves the pointer unchanged,
+  /// so SetColor is a no-op and m_volumeProperty's MTime never bumps
+  /// otherwise.
+  void postConsume(bool success) override;
+
 private:
   /// Reset camera on first consume if no other sink has rendered to this view.
   void resetCameraIfFirstSink();

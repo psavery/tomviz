@@ -4,8 +4,10 @@
 #include "LegacyPythonTransform.h"
 
 #include "CustomPythonTransformWidget.h"
+#include "ExternalNodeExecutor.h"
 #include "InputPort.h"
 #include "OutputPort.h"
+#include "PythonNodeWrapper.h"
 #include "VolumeOutputPort.h"
 #include "PythonTransformEditorWidget.h"
 #include "TransformPropertiesWidget.h"
@@ -21,9 +23,11 @@
 #include "pybind11/PybindVTKTypeCaster.h"
 #pragma pop_macro("slots")
 
+#include <vtkDataArray.h>
 #include <vtkImageData.h>
 #include <vtkMolecule.h>
 #include <vtkNew.h>
+#include <vtkPointData.h>
 #include <vtkPythonUtil.h>
 #include <vtkTable.h>
 
@@ -69,7 +73,15 @@ QVariant coerceJsonByDeclaredType(const QJsonValue& value,
     }
     return list;
   }
-  if (type == "int" || type == "integer" || type == "enumeration") {
+  if (type == "int" || type == "integer") {
+    return QVariant(value.toInt());
+  }
+  if (type == "enumeration") {
+    // Enumeration option values can be either int or string; preserve
+    // the JSON-native type so saved values round-trip losslessly.
+    if (value.isString()) {
+      return QVariant(value.toString());
+    }
     return QVariant(value.toInt());
   }
   if (type == "double") {
@@ -83,6 +95,30 @@ QVariant coerceJsonByDeclaredType(const QJsonValue& value,
     return QVariant(value.toString());
   }
   return QVariant(); // caller handles complex / unknown types
+}
+
+/// Resolve an enumeration parameter's stored form to the option value
+/// the operator actually receives. The state-file convention is to
+/// persist the option value (so a saved file is human-readable and
+/// self-describing); this helper accepts either form so we can also
+/// load older files that persisted the index. Returns an invalid
+/// QVariant when no resolution is possible — the caller falls back to
+/// its usual coercion path.
+QVariant resolveEnumValue(const QJsonValue& value, const QJsonArray& options)
+{
+  if (value.isString()) {
+    return value.toVariant();
+  }
+  if (value.isDouble() && !options.isEmpty()) {
+    int idx = value.toInt();
+    if (idx >= 0 && idx < options.size()) {
+      QJsonObject opt = options.at(idx).toObject();
+      if (!opt.isEmpty()) {
+        return opt.constBegin().value().toVariant();
+      }
+    }
+  }
+  return QVariant();
 }
 
 } // namespace
@@ -211,13 +247,27 @@ EditTransformWidget* LegacyPythonTransform::createPropertiesWidget(
     }
   }
 
+  // Seed the Execution tab from the current per-node executor (if any).
+  // Only ExternalNodeExecutor is exposed in the UI today; any other
+  // future type would round-trip through the JSON but would show as
+  // "Internal" in the dropdown until the UI grows support for it.
+  QString currentType;
+  QString currentEnvPath;
+  if (auto* ext = qobject_cast<ExternalNodeExecutor*>(nodeExecutor())) {
+    currentType = ExternalNodeExecutor::typeString();
+    currentEnvPath = ext->envPath();
+  }
+
   auto* widget = new PythonTransformEditorWidget(
-    label(), m_script, m_jsonDescription, m_parameters, customWidget, parent);
+    label(), m_script, m_jsonDescription, m_parameters, currentType,
+    currentEnvPath, customWidget, parent);
 
   connect(widget, &PythonTransformEditorWidget::applied, this,
           [this, customWidget](const QString& newLabel,
                                const QString& newScript,
-                               const QMap<QString, QVariant>& values) {
+                               const QMap<QString, QVariant>& values,
+                               const QString& executorType,
+                               const QString& executorEnvPath) {
             bool changed = false;
 
             if (label() != newLabel) {
@@ -244,6 +294,31 @@ EditTransformWidget* LegacyPythonTransform::createPropertiesWidget(
                 changed = true;
               }
               setParameter(it.key(), it.value());
+            }
+
+            // Apply executor-tab choice. Internal (empty type) clears
+            // any per-node executor; External updates the env path on
+            // an existing ExternalNodeExecutor in place, or attaches a
+            // new one. Counts as a "changed" for re-execution purposes
+            // when the effective type/env actually moved.
+            auto* currentExternal =
+              qobject_cast<ExternalNodeExecutor*>(nodeExecutor());
+            if (executorType.isEmpty()) {
+              if (nodeExecutor() != nullptr) {
+                setNodeExecutor(nullptr);
+                changed = true;
+              }
+            } else if (executorType ==
+                       ExternalNodeExecutor::typeString()) {
+              if (currentExternal) {
+                if (currentExternal->envPath() != executorEnvPath) {
+                  currentExternal->setEnvPath(executorEnvPath);
+                  changed = true;
+                }
+              } else {
+                setNodeExecutor(new ExternalNodeExecutor(executorEnvPath));
+                changed = true;
+              }
             }
 
             if (changed) {
@@ -287,14 +362,39 @@ bool LegacyPythonTransform::deserialize(const QJsonObject& json)
   auto args = json.value("arguments").toObject();
   for (auto it = args.constBegin(); it != args.constEnd(); ++it) {
     const QString& key = it.key();
-    QVariant qv = coerceJsonByDeclaredType(
-      it.value(), m_parameterTypes.value(key));
+    const QString declType = m_parameterTypes.value(key);
+    QVariant qv;
+    if (declType == "enumeration") {
+      qv = resolveEnumValue(it.value(), m_enumOptions.value(key));
+    }
+    if (!qv.isValid()) {
+      qv = coerceJsonByDeclaredType(it.value(), declType);
+    }
     if (!qv.isValid()) {
       // Unknown / complex declared type (select_scalars, xyz_header, …):
       // fall back to QJsonValue's own conversion.
       qv = it.value().toVariant();
     }
     setParameter(key, qv);
+  }
+
+  // Legacy compatibility: an operator JSON description may carry a
+  // `tomviz_pipeline_env` key that pre-dates the schema-v2 per-node
+  // executor block. If no explicit executor was set by Node::deserialize
+  // above, synthesize an ExternalNodeExecutor here so the operator runs
+  // in the configured Python env. Re-saving the file converges to the
+  // schema-v2 form (the executor block in serialize() takes over).
+  if (!nodeExecutor()) {
+    QJsonDocument descDoc =
+      QJsonDocument::fromJson(m_jsonDescription.toUtf8());
+    if (descDoc.isObject()) {
+      auto envPath =
+        descDoc.object().value(QStringLiteral("tomviz_pipeline_env"))
+          .toString();
+      if (!envPath.isEmpty()) {
+        setNodeExecutor(new ExternalNodeExecutor(envPath));
+      }
+    }
   }
   return true;
 }
@@ -322,6 +422,7 @@ void LegacyPythonTransform::parseJSON()
   // Parse parameters with defaults
   m_datasetInputNames.clear();
   m_parameterTypes.clear();
+  m_enumOptions.clear();
   if (obj.contains("parameters")) {
     QJsonArray params = obj.value("parameters").toArray();
     for (const auto& paramVal : params) {
@@ -342,6 +443,20 @@ void LegacyPythonTransform::parseJSON()
       // QVariant<double>, regardless of whether it was an int).
       if (!name.isEmpty()) {
         m_parameterTypes[name] = type;
+      }
+
+      // For enumerations, cache the options list so deserialize can
+      // map a saved index to its value. Resolve the default to the
+      // option value here so m_parameters always holds option values,
+      // never indices — serialization then writes values uniformly.
+      if (type == "enumeration") {
+        QJsonArray options = param.value("options").toArray();
+        m_enumOptions[name] = options;
+        QVariant resolved = resolveEnumValue(defaultVal, options);
+        if (resolved.isValid()) {
+          m_parameters[name] = resolved;
+          continue;
+        }
       }
 
       QVariant value = coerceJsonByDeclaredType(defaultVal, type);
@@ -437,6 +552,28 @@ QMap<QString, PortData> LegacyPythonTransform::transform(
   vtkNew<vtkImageData> outputImage;
   outputImage->DeepCopy(inputVolume->imageData());
 
+  // Use the previous output's active scalar (if any) as the merge
+  // target so user selections persist across re-runs. The override is
+  // on the deep copy — upstream input is untouched.
+  if (auto* outPort = outputPort(m_primaryOutputName)) {
+    if (outPort->hasData() && isVolumeType(outPort->data().type())) {
+      try {
+        auto prevVol = outPort->data().value<VolumeDataPtr>();
+        if (prevVol && prevVol->imageData()) {
+          if (auto* prevScalars =
+                prevVol->imageData()->GetPointData()->GetScalars()) {
+            if (auto* name = prevScalars->GetName()) {
+              if (outputImage->GetPointData()->HasArray(name)) {
+                outputImage->GetPointData()->SetActiveScalars(name);
+              }
+            }
+          }
+        }
+      } catch (const std::bad_any_cast&) {
+      }
+    }
+  }
+
   // Ensure Python is initialized. Never finalize — C extension modules
   // like numpy cannot be re-loaded after finalize_interpreter().
   if (!Py_IsInitialized()) {
@@ -486,74 +623,10 @@ QMap<QString, PortData> LegacyPythonTransform::transform(
       py::object opClass = findOpClass(scriptModule);
 
       if (!opClass.is_none()) {
-        // Create a wrapper object that bridges Python progress/cancel
-        // property accesses back to the C++ Node API.
-        auto* node = this;
-        py::object builtins = py::module_::import("builtins");
-        py::object propertyFn = builtins.attr("property");
-        py::object typeFn = builtins.attr("type");
-
-        py::dict attrs;
-        attrs["progress_maximum"] = propertyFn(
-          py::cpp_function(
-            [node](py::object) -> int {
-              return node->totalProgressSteps();
-            }),
-          py::cpp_function(
-            [node](py::object, int v) {
-              node->setTotalProgressSteps(v);
-            }));
-        attrs["progress_value"] = propertyFn(
-          py::cpp_function(
-            [node](py::object) -> int { return node->progressStep(); }),
-          py::cpp_function(
-            [node](py::object, int v) { node->setProgressStep(v); }));
-        attrs["progress_message"] = propertyFn(
-          py::cpp_function(
-            [node](py::object) -> std::string {
-              return node->progressMessage().toStdString();
-            }),
-          py::cpp_function(
-            [node](py::object, const std::string& msg) {
-              node->setProgressMessage(QString::fromStdString(msg));
-            }));
-        auto* outPort = node->outputPort(node->m_primaryOutputName);
-        attrs["progress_data"] = propertyFn(
-          py::cpp_function([](py::object) -> py::object {
-            return py::none();
-          }),
-          py::cpp_function(
-            [outPort](py::object, py::object pyChild) {
-              if (pyChild.is_none() || !outPort) {
-                return;
-              }
-              // The value may be a PipelineDataset (wrapping a
-              // vtkImageData in _data_object) or a raw vtkDataObject
-              // (after convert_to_vtk_data_object in operators.py).
-              py::object dataObj = pyChild;
-              if (py::hasattr(pyChild, "_data_object")) {
-                dataObj = pyChild.attr("_data_object");
-              }
-              auto* childImage = vtkImageData::SafeDownCast(
-                vtkPythonUtil::GetPointerFromObject(
-                  dataObj.ptr(), "vtkObjectBase"));
-              if (!childImage) {
-                return;
-              }
-              auto vol = std::make_shared<VolumeData>(childImage);
-              PortData pd(std::any(vol), outPort->type());
-              // Release GIL before blocking on the main thread.
-              py::gil_scoped_release release;
-              outPort->setIntermediateData(pd);
-            }));
-        attrs["canceled"] = propertyFn(py::cpp_function(
-          [node](py::object) -> bool { return node->isCanceled(); }));
-        attrs["completed"] = propertyFn(py::cpp_function(
-          [node](py::object) -> bool { return node->isCompleted(); }));
-
-        py::object wrapperCls =
-          typeFn(py::str("_NodeWrapper"), py::make_tuple(), attrs);
-        py::object wrapper = wrapperCls();
+        // Build the standard _operator_wrapper (progress / cancel /
+        // completion / progress_data API) — shared with future Python-
+        // bearing node types.
+        py::object wrapper = createNodeWrapper(this, m_primaryOutputName);
 
         // Instantiate following the same pattern as find_transform_function:
         // cls.__new__(cls) → set _operator_wrapper → cls.__init__(o)

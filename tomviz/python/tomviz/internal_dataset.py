@@ -21,6 +21,10 @@ class Dataset(AbstractDataset):
     def active_name(self):
         return internal_utils.get_active_scalars_name(self._data_object)
 
+    @active_name.setter
+    def active_name(self, name):
+        self._data_object.GetPointData().SetActiveScalars(name)
+
     @property
     def num_scalars(self):
         return len(self.scalars_names)

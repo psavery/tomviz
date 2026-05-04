@@ -53,6 +53,12 @@ class Dataset(ABC):
         """The name of the currently active scalar array."""
         pass
 
+    @active_name.setter
+    @abstractmethod
+    def active_name(self, name: str):
+        """Set which scalar array is the active one (by name)."""
+        pass
+
     @property
     @abstractmethod
     def num_scalars(self) -> int:

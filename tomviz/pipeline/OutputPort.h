@@ -83,6 +83,11 @@ public:
   /// deserialize). Returns false on unrecoverable parse errors.
   virtual bool deserialize(const QJsonObject& json);
 
+  /// Drop pending metadata stashed by deserialize() so the next
+  /// setData() installs the payload as-is. Used by transient clones
+  /// that need port structure but not replayed data-state metadata.
+  void clearPendingData();
+
 signals:
   void dataChanged();
   void staleChanged(bool stale);

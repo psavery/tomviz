@@ -282,8 +282,9 @@ bool GenericHDF5Format::addScalarArray(h5::H5ReadWrite& reader,
 
       std::cerr << "Error in GenericHDF5Format::addScalarArray():\n"
                 << ss.str() << std::endl;
-      QMessageBox::critical(nullptr, "Dimensions do not match",
-                            ss.str().c_str());
+      // No modal dialog here: the caller may run under a BQC during
+      // intermediate updates, and a nested QDialog reenters paint/
+      // layout from inside a format-reader stack frame and crashes.
       return false;
     }
   }

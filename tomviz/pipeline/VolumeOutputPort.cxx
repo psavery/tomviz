@@ -26,19 +26,19 @@ void VolumeOutputPort::setIntermediateData(const PortData& incoming)
     if (!fresh || !fresh->imageData()) {
       return;
     }
-
+    // Swap a fresh vtkImageData *inside* the existing VolumeData:
+    // keeps the VolumeData identity (color map etc.) while giving
+    // downstream a new pointer — vtkActiveScalarsProducer caches by
+    // pointer and won't refresh on in-place mutation.
+    vtkNew<vtkImageData> copy;
+    copy->DeepCopy(fresh->imageData());
     if (hasData() && isVolumeType(data().type())) {
       auto existing = data().value<VolumeDataPtr>();
-      if (existing && existing->imageData()) {
-        existing->imageData()->DeepCopy(fresh->imageData());
-        existing->imageData()->Modified();
+      if (existing) {
+        existing->setImageData(vtkSmartPointer<vtkImageData>(copy.Get()));
         emit dataChanged();
       }
     } else {
-      // First intermediate update — deep-copy into a new VolumeData
-      // so the port owns its own vtkImageData (independent of Python).
-      vtkNew<vtkImageData> copy;
-      copy->DeepCopy(fresh->imageData());
       auto vol = std::make_shared<VolumeData>(copy.Get());
       setData(PortData(std::any(vol), type()));
     }

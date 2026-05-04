@@ -52,6 +52,22 @@ def _coerce_param_default(param_type: str, default):
     return default
 
 
+def _resolve_enum_default(param: dict):
+    """For an enumeration parameter, return the value of the option at
+    the index given by ``default``, or ``None`` if the description is
+    malformed. Each entry in ``options`` is a single-key dict where the
+    key is the UI label and the value is what gets passed to the
+    operator."""
+    options = param.get('options') or []
+    default = param.get('default')
+    if not isinstance(default, int) or not (0 <= default < len(options)):
+        return None
+    opt = options[default]
+    if not isinstance(opt, dict) or not opt:
+        return None
+    return next(iter(opt.values()))
+
+
 class LegacyPythonTransform(TransformNode):
     type_name = 'transform.legacyPython'
 
@@ -119,6 +135,14 @@ class LegacyPythonTransform(TransformNode):
             if 'default' not in param:
                 # Unset complex types — operator's own Python default wins.
                 continue
+            if ptype == 'enumeration':
+                # The description's `default` is an index into `options`;
+                # the operator expects the option's value. Resolve here
+                # so _parameters always holds the value, not the index.
+                resolved = _resolve_enum_default(param)
+                if resolved is not None:
+                    self._parameters[name] = resolved
+                    continue
             self._parameters[name] = _coerce_param_default(
                 ptype, param['default'])
 
@@ -206,12 +230,21 @@ class LegacyPythonTransform(TransformNode):
 
         transform_fn = add_transform_decorators(transform_fn, operator_dict)
 
-        # Wire progress + cancel/complete stubs onto the operator instance
-        # so `self.progress.value = ...` inside operators routes to the
-        # CLI's progress reporter.
+        # Wire progress + cancel/complete onto the operator instance.
+        # `self.progress.value = ...` routes to the CLI's progress
+        # reporter; `self.canceled` / `self.completed` lazily check
+        # the parent → child control channel exposed by the same
+        # progress object (None for tqdm; socket/files otherwise).
         if hasattr(transform_fn, '__self__'):
             transform_fn.__self__.progress = self.progress
-            transform_fn.__self__._operator_wrapper = OperatorWrapper()
+            channel = (self.progress.control_channel()
+                       if self.progress is not None else None)
+            transform_fn.__self__._operator_wrapper = OperatorWrapper(channel)
+            # Tell the progress reporter which port a bare `progress.data
+            # = X` should populate. Multi-port operators that pass a
+            # dict bypass this.
+            if hasattr(self.progress, 'set_primary_port'):
+                self.progress.set_primary_port(self._primary_output_name)
 
         return transform_fn
 

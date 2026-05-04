@@ -6,6 +6,7 @@
 
 #include "TransformNode.h"
 
+#include <QJsonArray>
 #include <QMap>
 #include <QString>
 #include <QStringList>
@@ -98,6 +99,10 @@ private:
   // otherwise pass `axis: 2` to Python as 2.0 and break operators that
   // index with it.
   QMap<QString, QString> m_parameterTypes;
+  // For each enumeration parameter, the options array from the JSON
+  // description — captured at parseJSON time so deserialize can
+  // resolve a saved option index back to its value.
+  QMap<QString, QJsonArray> m_enumOptions;
   QString m_customWidgetID;
   QStringList m_resultNames;
   QStringList m_resultTypes;

@@ -1,5 +1,4 @@
 import collections.abc
-import copy
 
 import numpy as np
 
@@ -134,14 +133,17 @@ class Dataset(AbstractDataset):
         self._scan_ids = v
 
     def create_child_dataset(self):
-        child = copy.deepcopy(self)
-        # Set tilt angles to None to be consistent with internal dataset
-        child.tilt_angles = None
-        # If the parent had tilt angles, set the spacing of the tilt
-        # axis to match that of x, as is done in the internal dataset
-        if self.tilt_angles is not None and self.spacing is not None:
+        # Empty child — matches internal_dataset and PipelineDataset.
+        # Inheriting the parent's scalars would leave the un-written
+        # ones at the input shape while the active one takes the
+        # output shape, breaking downstream readers.
+        child = Dataset({}, active=self.active_name)
+        if self.spacing is not None:
             s = self.spacing
-            child.spacing = [s[0], s[1], s[0]]
+            if self.tilt_angles is not None:
+                child.spacing = [s[0], s[1], s[0]]
+            else:
+                child.spacing = list(s)
         return child
 
     def remove_scalars(self, name):
@@ -153,3 +155,5 @@ class Dataset(AbstractDataset):
 
     def rename_active(self, new_name: str):
         self.arrays[new_name] = self.arrays.pop(self.active_name)
+        # Keep the pointer in sync with the dict key.
+        self._active_name = new_name

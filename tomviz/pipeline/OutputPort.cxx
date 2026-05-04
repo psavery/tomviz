@@ -6,6 +6,9 @@
 #include "Link.h"
 #include "data/VolumeData.h"
 
+#include <QMetaObject>
+#include <QThread>
+
 namespace tomviz {
 namespace pipeline {
 
@@ -79,7 +82,23 @@ bool OutputPort::hasData() const
   return m_data.isValid();
 }
 
-void OutputPort::setIntermediateData(const PortData& /*data*/) {}
+void OutputPort::setIntermediateData(const PortData& data)
+{
+  // Default: replace the payload outright. Subclasses (e.g.
+  // VolumeOutputPort) override when they can preserve the existing
+  // object's identity to keep downstream references (color maps,
+  // module pipelines) attached. Marshaled to the port's owning
+  // thread so callers from worker threads are safe.
+  auto apply = [this, data]() {
+    setData(data);
+    emit intermediateDataApplied();
+  };
+  if (QThread::currentThread() == thread()) {
+    apply();
+  } else {
+    QMetaObject::invokeMethod(this, apply, Qt::BlockingQueuedConnection);
+  }
+}
 
 bool OutputPort::isStale() const
 {
@@ -147,6 +166,11 @@ bool OutputPort::deserialize(const QJsonObject& json)
   // user's colormap / scalar renames from the state file).
   m_pendingData = json;
   return true;
+}
+
+void OutputPort::clearPendingData()
+{
+  m_pendingData = QJsonObject();
 }
 
 } // namespace pipeline

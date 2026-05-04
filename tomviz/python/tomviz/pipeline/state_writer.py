@@ -59,7 +59,7 @@ def _write_table_into(group: 'h5py.Group', table) -> None:
 
     num_columns = int(table.GetNumberOfColumns())
     num_rows = int(table.GetNumberOfRows())
-    group.attrs['kind'] = 'table'
+    group.attrs['type'] = 'table'
     group.attrs['numColumns'] = np.int64(num_columns)
     group.attrs['numRows'] = np.int64(num_rows)
 
@@ -93,7 +93,7 @@ def _write_molecule_into(group: 'h5py.Group', molecule) -> None:
     """Serialize ``molecule`` (a vtkMolecule) under ``group`` using the
     same layout as C++ ``Tvh5Format::writeMoleculePayload``:
 
-    - Group attrs ``kind=molecule``, ``numAtoms``, ``numBonds``.
+    - Group attrs ``type=molecule``, ``numAtoms``, ``numBonds``.
     - ``atomicNumbers`` — uint16 dataset of length numAtoms.
     - ``atomPositions`` — float32 dataset shaped (numAtoms, 3).
     - ``bondAtoms`` — int64 dataset shaped (numBonds, 2), each row is
@@ -104,7 +104,7 @@ def _write_molecule_into(group: 'h5py.Group', molecule) -> None:
 
     num_atoms = int(molecule.GetNumberOfAtoms())
     num_bonds = int(molecule.GetNumberOfBonds())
-    group.attrs['kind'] = 'molecule'
+    group.attrs['type'] = 'molecule'
     group.attrs['numAtoms'] = np.int64(num_atoms)
     group.attrs['numBonds'] = np.int64(num_bonds)
 

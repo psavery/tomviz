@@ -4,16 +4,21 @@
 #include "PythonTransformEditorWidget.h"
 
 #include "CustomPythonTransformWidget.h"
+#include "ExternalNodeExecutor.h"
 #include "TransformPropertiesWidget.h"
 
 #include <pqPythonSyntaxHighlighter.h>
 
+#include <QComboBox>
+#include <QFileDialog>
 #include <QFontDatabase>
+#include <QGridLayout>
 #include <QHBoxLayout>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
+#include <QPushButton>
 #include <QTabWidget>
 #include <QTextEdit>
 #include <QVBoxLayout>
@@ -23,7 +28,8 @@ namespace pipeline {
 
 PythonTransformEditorWidget::PythonTransformEditorWidget(
   const QString& label, const QString& script, const QString& jsonDescription,
-  const QMap<QString, QVariant>& currentValues,
+  const QMap<QString, QVariant>& currentValues, const QString& executorType,
+  const QString& executorEnvPath,
   CustomPythonTransformWidget* customParamsWidget, QWidget* parent)
   : EditTransformWidget(parent), m_customParamsWidget(customParamsWidget)
 {
@@ -53,8 +59,7 @@ PythonTransformEditorWidget::PythonTransformEditorWidget(
   m_scriptEdit->setFont(QFontDatabase::systemFont(QFontDatabase::FixedFont));
   m_scriptEdit->setLineWrapMode(QTextEdit::NoWrap);
 
-  // Attach the syntax highlighter. ConnectHighligter() must be called —
-  // the constructor alone does not wire the highlighter to the QTextEdit.
+  // ConnectHighligter() is required — the ctor alone doesn't wire it.
   auto* highlighter =
     new pqPythonSyntaxHighlighter(m_scriptEdit, *m_scriptEdit);
   highlighter->ConnectHighligter();
@@ -99,7 +104,66 @@ PythonTransformEditorWidget::PythonTransformEditorWidget(
 
   m_tabWidget->addTab(paramsTab, tr("Parameters"));
 
-  // Start on the Parameters tab
+  // --- Tab 3: Execution ---
+  // Picks the per-node executor strategy. Empty string == Internal.
+  auto* execTab = new QWidget(m_tabWidget);
+  auto* execLayout = new QVBoxLayout(execTab);
+
+  auto* execGridContainer = new QWidget(execTab);
+  auto* execGrid = new QGridLayout(execGridContainer);
+  execGrid->setContentsMargins(0, 0, 0, 0);
+
+  auto* executorLabel = new QLabel(tr("Executor"), execGridContainer);
+  m_executorCombo = new QComboBox(execGridContainer);
+  m_executorCombo->addItem(tr("Internal"), QString());
+  m_executorCombo->addItem(
+    tr("External"), ExternalNodeExecutor::typeString());
+  executorLabel->setBuddy(m_executorCombo);
+  execGrid->addWidget(executorLabel, 0, 0);
+  execGrid->addWidget(m_executorCombo, 0, 1);
+
+  m_envPathLabel = new QLabel(tr("Python Env"), execGridContainer);
+  m_envPathRow = new QWidget(execGridContainer);
+  auto* envLayout = new QHBoxLayout(m_envPathRow);
+  envLayout->setContentsMargins(0, 0, 0, 0);
+  m_envPathEdit = new QLineEdit(executorEnvPath, m_envPathRow);
+  m_envPathEdit->setPlaceholderText(
+    tr("Path to a Python env containing tomviz-pipeline"));
+  envLayout->addWidget(m_envPathEdit, 1);
+  auto* browseBtn = new QPushButton(tr("Browse"), m_envPathRow);
+  envLayout->addWidget(browseBtn);
+  m_envPathLabel->setBuddy(m_envPathRow);
+  execGrid->addWidget(m_envPathLabel, 1, 0);
+  execGrid->addWidget(m_envPathRow, 1, 1);
+
+  execLayout->addWidget(execGridContainer);
+  execLayout->addStretch();
+  m_tabWidget->addTab(execTab, tr("Execution"));
+
+  int typeIdx = m_executorCombo->findData(executorType);
+  if (typeIdx < 0) {
+    typeIdx = 0;
+  }
+  m_executorCombo->setCurrentIndex(typeIdx);
+  // Enable/disable rather than show/hide so the grid columns don't
+  // resize when toggling between Internal and External.
+  m_envPathLabel->setEnabled(!executorType.isEmpty());
+  m_envPathRow->setEnabled(!executorType.isEmpty());
+
+  connect(m_executorCombo, &QComboBox::currentIndexChanged, this,
+          [this](int) {
+            QString type = m_executorCombo->currentData().toString();
+            m_envPathLabel->setEnabled(!type.isEmpty());
+            m_envPathRow->setEnabled(!type.isEmpty());
+          });
+  connect(browseBtn, &QPushButton::clicked, this, [this]() {
+    auto dir = QFileDialog::getExistingDirectory(
+      this, tr("Select Python environment"), m_envPathEdit->text());
+    if (!dir.isEmpty()) {
+      m_envPathEdit->setText(dir);
+    }
+  });
+
   m_tabWidget->setCurrentIndex(1);
 }
 
@@ -109,7 +173,10 @@ void PythonTransformEditorWidget::applyChangesToOperator()
   if (m_paramsWidget) {
     values = m_paramsWidget->values();
   }
-  emit applied(m_nameEdit->text(), m_scriptEdit->toPlainText(), values);
+  QString type = m_executorCombo->currentData().toString();
+  QString envPath = type.isEmpty() ? QString() : m_envPathEdit->text();
+  emit applied(m_nameEdit->text(), m_scriptEdit->toPlainText(), values, type,
+               envPath);
 }
 
 void PythonTransformEditorWidget::showScriptTab()

@@ -6,6 +6,7 @@
 
 #include "NodeExecState.h"
 #include "NodeState.h"
+#include "PortData.h"
 #include "PortType.h"
 
 #include <QIcon>
@@ -25,6 +26,7 @@ namespace tomviz {
 namespace pipeline {
 
 class InputPort;
+class NodeExecutor;
 class OutputPort;
 
 class Node : public QObject
@@ -82,6 +84,22 @@ public:
   virtual void triggerAction();
 
   virtual bool execute();
+
+  /// Per-node executor strategy. Null means "use the pipeline-level
+  /// fallback" (InternalNodeExecutor singleton). Setting a non-null
+  /// executor reparents it under this node — the node owns its
+  /// executor's lifetime.
+  NodeExecutor* nodeExecutor() const;
+  void setNodeExecutor(NodeExecutor* executor);
+
+  /// Apply a batch of intermediate (live preview) updates to this
+  /// node's output ports. Each entry maps an output port name to the
+  /// new payload; missing port names are ignored. Routes through
+  /// OutputPort::setIntermediateData so subclasses with type-specific
+  /// merge semantics (e.g. VolumeOutputPort preserving the existing
+  /// vtkImageData identity for downstream color-map references) take
+  /// effect. Thread-safe.
+  void setIntermediateOutputs(const QMap<QString, PortData>& updates);
 
   /// Return the total number of progress steps. Zero means indeterminate.
   int totalProgressSteps() const;
@@ -159,12 +177,20 @@ signals:
   void executionCanceled();
   void executionCompleted();
 
+public:
+  /// Reset the canceled/completed flags. Public so a NodeExecutor can
+  /// prime them at the start of an execution.
+  void resetExecutionFlags();
+
+  /// Update the execution state machine indicator. Public so a
+  /// NodeExecutor that fully replaces the in-process execute() path
+  /// (e.g. ExternalNodeExecutor) can drive the same transitions
+  /// TransformNode::execute does internally.
+  void setExecState(NodeExecState state);
+
 protected:
   void setSupportsCancel(bool b);
   void setSupportsCompletion(bool b);
-  void resetExecutionFlags();
-
-  void setExecState(NodeExecState state);
   InputPort* addInputPort(const QString& name, PortTypes acceptedTypes);
   OutputPort* addOutputPort(const QString& name, PortType type);
   void addOutputPort(OutputPort* port);
@@ -186,6 +212,7 @@ private:
   bool m_supportsCompletion = false;
   std::atomic<bool> m_canceled{false};
   std::atomic<bool> m_completed{false};
+  NodeExecutor* m_nodeExecutor = nullptr;
 };
 
 } // namespace pipeline

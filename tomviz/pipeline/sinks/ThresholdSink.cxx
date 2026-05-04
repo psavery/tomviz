@@ -550,24 +550,20 @@ void ThresholdSink::applyActiveScalars()
   resolvePendingActiveScalar(m_activeScalars);
 
   auto* pointData = vol->imageData()->GetPointData();
-  QString arrayName;
+  vtkDataArray* selected = nullptr;
   int idx = m_activeScalars;
-  if (idx < 0) {
-    auto* active = pointData->GetScalars();
-    if (active && active->GetName()) {
-      arrayName = QString::fromUtf8(active->GetName());
-    }
-  } else if (idx < pointData->GetNumberOfArrays()) {
-    auto* array = pointData->GetArray(idx);
-    if (array && array->GetName()) {
-      arrayName = QString::fromUtf8(array->GetName());
-    }
+  if (idx >= 0 && idx < pointData->GetNumberOfArrays()) {
+    selected = pointData->GetArray(idx);
   }
-
-  if (!arrayName.isEmpty()) {
+  if (!selected) {
+    // Default or saved index doesn't fit the current data — fall back
+    // to active. m_activeScalars left alone.
+    selected = pointData->GetScalars();
+  }
+  if (selected && selected->GetName()) {
     vtkSMPropertyHelper(m_thresholdFilter, "SelectInputScalars")
       .SetInputArrayToProcess(vtkDataObject::FIELD_ASSOCIATION_POINTS,
-                              arrayName.toUtf8().constData());
+                              selected->GetName());
     m_thresholdFilter->UpdateVTKObjects();
   }
 }

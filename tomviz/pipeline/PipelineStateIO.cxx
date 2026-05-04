@@ -6,6 +6,7 @@
 #include "InputPort.h"
 #include "Link.h"
 #include "Node.h"
+#include "NodeExecutorFactory.h"
 #include "NodeFactory.h"
 #include "OutputPort.h"
 #include "Pipeline.h"
@@ -30,6 +31,7 @@ bool PipelineStateIO::save(Pipeline* pipeline, QJsonObject& outState)
     return false;
   }
   NodeFactory::registerBuiltins();
+  NodeExecutorFactory::registerBuiltins();
 
   // Assign ids to every node up front so link references are resolvable.
   for (auto* node : pipeline->nodes()) {
@@ -92,6 +94,7 @@ bool PipelineStateIO::load(Pipeline* pipeline, const QJsonObject& state,
     return false;
   }
   NodeFactory::registerBuiltins();
+  NodeExecutorFactory::registerBuiltins();
 
   auto pipelineJson = state.value(QStringLiteral("pipeline")).toObject();
   if (pipelineJson.isEmpty()) {

@@ -40,7 +40,9 @@ void SinkNode::onIntermediateData()
     }
   }
   if (!inputs.isEmpty()) {
-    consume(inputs);
+    prepareConsume(inputs);
+    bool success = consume(inputs);
+    postConsume(success);
   }
 }
 
@@ -53,7 +55,9 @@ bool SinkNode::execute()
     inputs[port->name()] = port->data();
   }
 
+  prepareConsume(inputs);
   bool success = consume(inputs);
+  postConsume(success);
 
   if (success) {
     markCurrent();

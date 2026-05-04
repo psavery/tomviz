@@ -415,33 +415,37 @@ void LegacyModuleSink::resolvePendingActiveScalar(int& activeScalarsIdx)
   }
 }
 
-bool LegacyModuleSink::execute()
+void LegacyModuleSink::prepareConsume(
+  const QMap<QString, PortData>& inputs)
 {
-  // Before consuming, cache VolumeData from the first Volume-type input port
   for (auto* port : inputPorts()) {
-    if (port->acceptedTypes().testFlag(PortType::ImageData)) {
-      auto* lnk = port->link();
-      if (lnk) {
-        auto* outPort = lnk->from();
-        if (outPort && outPort->hasData() &&
-            isVolumeType(outPort->type())) {
-          auto vol = outPort->data().value<VolumeDataPtr>();
-          if (vol) {
-            m_volumeData = vol;
-            // Connect once to upstream port metadata changes so sinks
-            // can react without a full pipeline re-execution.
-            if (!m_metadataConnected) {
-              connect(outPort, &OutputPort::metadataChanged,
-                      this, &LegacyModuleSink::onMetadataChanged);
-              m_metadataConnected = true;
-            }
-            break;
-          }
+    if (!port->acceptedTypes().testFlag(PortType::ImageData)) {
+      continue;
+    }
+    auto it = inputs.constFind(port->name());
+    if (it == inputs.constEnd() || !isVolumeType(it.value().type())) {
+      continue;
+    }
+    auto vol = it.value().value<VolumeDataPtr>();
+    if (!vol) {
+      continue;
+    }
+    m_volumeData = vol;
+    if (!m_metadataConnected) {
+      if (auto* lnk = port->link()) {
+        if (auto* outPort = lnk->from()) {
+          connect(outPort, &OutputPort::metadataChanged, this,
+                  &LegacyModuleSink::onMetadataChanged);
+          m_metadataConnected = true;
         }
       }
     }
+    break;
   }
+}
 
+bool LegacyModuleSink::execute()
+{
   bool success = SinkNode::execute();
 
   if (success && m_firstConsume) {
@@ -449,16 +453,21 @@ bool LegacyModuleSink::execute()
     resetCameraIfFirstSink();
   }
 
-  // Push color map into VTK pipeline after consume.
-  // updateColorMap() already emits renderNeeded(), so only emit separately
-  // when it was not called.
-  if (success && isColorMapNeeded()) {
+  return success;
+}
+
+void LegacyModuleSink::postConsume(bool success)
+{
+  if (!success) {
+    return;
+  }
+  // updateColorMap() emits renderNeeded(); if the sink doesn't need
+  // a color map, trigger a render directly.
+  if (isColorMapNeeded()) {
     updateColorMap();
-  } else if (success) {
+  } else {
     emit renderNeeded();
   }
-
-  return success;
 }
 
 void LegacyModuleSink::resetCameraIfFirstSink()
