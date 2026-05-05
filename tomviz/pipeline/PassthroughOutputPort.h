@@ -33,10 +33,10 @@ public:
   bool isStale() const override;
 
   /// A passthrough owns no data of its own — it forwards from m_source.
-  /// Always report transient so state-file writers skip it (no duplicated
-  /// voxel embeds) and stay immune to old state files whose persistent
-  /// flag would otherwise flip the base m_transient.
-  bool isTransient() const override { return true; }
+  /// Always report non-persistent so state-file writers skip it (no
+  /// duplicated voxel embeds) and stay immune to old state files whose
+  /// persistent flag would otherwise flip the base m_persistent.
+  bool isPersistent() const override { return false; }
 
   /// Only SinkNodes may connect to a passthrough port.
   bool canAcceptLink(InputPort* to) const override;

@@ -295,6 +295,12 @@ set(SOURCES
   pipeline/ProgressReader.h
   pipeline/PythonNodeWrapper.cxx
   pipeline/PythonNodeWrapper.h
+  pipeline/PythonNodeUtils.cxx
+  pipeline/PythonNodeUtils.h
+  pipeline/PythonNodeBackend.cxx
+  pipeline/PythonNodeBackend.h
+  pipeline/CustomNodeWidgetRegistry.cxx
+  pipeline/CustomNodeWidgetRegistry.h
   pipeline/DefaultExecutor.cxx
   pipeline/DefaultExecutor.h
   pipeline/ExecutionFuture.cxx
@@ -307,12 +313,16 @@ set(SOURCES
   pipeline/sources/SphereSource.h
   pipeline/sources/ReaderSourceNode.cxx
   pipeline/sources/ReaderSourceNode.h
+  pipeline/sources/PythonSource.cxx
+  pipeline/sources/PythonSource.h
   pipeline/transforms/ThresholdTransform.cxx
   pipeline/transforms/ThresholdTransform.h
   pipeline/transforms/SetTiltAnglesTransform.cxx
   pipeline/transforms/SetTiltAnglesTransform.h
   pipeline/transforms/LegacyPythonTransform.cxx
   pipeline/transforms/LegacyPythonTransform.h
+  pipeline/transforms/PythonTransform.cxx
+  pipeline/transforms/PythonTransform.h
   pipeline/transforms/ConvertToFloatTransform.cxx
   pipeline/transforms/ConvertToFloatTransform.h
   pipeline/transforms/ConvertToVolumeTransform.cxx
@@ -362,8 +372,8 @@ set(SOURCES
   pipeline/sinks/SegmentSinkWidget.h
   pipeline/ParameterInterfaceBuilder.cxx
   pipeline/ParameterInterfaceBuilder.h
-  pipeline/CustomPythonTransformWidget.cxx
-  pipeline/CustomPythonTransformWidget.h
+  pipeline/CustomPythonNodeWidget.cxx
+  pipeline/CustomPythonNodeWidget.h
   pipeline/EditTransformWidget.cxx
   pipeline/EditTransformWidget.h
   pipeline/TransformPropertiesWidget.cxx
@@ -704,6 +714,7 @@ set(json_files
   FourierShellCorrelation.json
   RemoveArrays.json
   Recon_real_time_tomography.json
+  InvertData.json
   )
 
 set(resource_files
@@ -768,11 +779,11 @@ set(tomviz_python_modules
   executor.py
   external_dataset.py
   fix_pdb.py
+  nodes.py
   operators.py
   internal_dataset.py
   internal_utils.py
   itkutils.py
-  pipeline_dataset.py
   utils.py
   web.py
   modules.py

@@ -21,7 +21,7 @@ namespace tomviz {
 namespace pipeline {
 
 class TransformPropertiesWidget;
-class CustomPythonTransformWidget;
+class CustomPythonNodeWidget;
 
 /// Tabbed editor widget for LegacyPythonTransform operators.
 /// Tab 1: Python script editor with syntax highlighting.
@@ -42,7 +42,7 @@ public:
     const QString& jsonDescription,
     const QMap<QString, QVariant>& currentValues,
     const QString& executorType, const QString& executorEnvPath,
-    CustomPythonTransformWidget* customParamsWidget = nullptr,
+    CustomPythonNodeWidget* customParamsWidget = nullptr,
     QWidget* parent = nullptr);
 
   void applyChangesToOperator() override;
@@ -66,7 +66,7 @@ private:
   QTabWidget* m_tabWidget = nullptr;
   QTextEdit* m_scriptEdit = nullptr;
   TransformPropertiesWidget* m_paramsWidget = nullptr;
-  CustomPythonTransformWidget* m_customParamsWidget = nullptr;
+  CustomPythonNodeWidget* m_customParamsWidget = nullptr;
   QComboBox* m_executorCombo = nullptr;
   QLabel* m_envPathLabel = nullptr;
   QWidget* m_envPathRow = nullptr;

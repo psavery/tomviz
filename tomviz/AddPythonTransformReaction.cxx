@@ -12,6 +12,7 @@
 #include "pipeline/Pipeline.h"
 #include "pipeline/TransformNode.h"
 #include "pipeline/transforms/LegacyPythonTransform.h"
+#include "pipeline/transforms/PythonTransform.h"
 
 #include <QApplication>
 #include <QEvent>
@@ -34,6 +35,66 @@ static pipeline::PortType portTypeFromString(const QString& str)
     return pipeline::PortType::ImageData;
   return pipeline::PortType::None;
 }
+
+namespace {
+
+/// Returns true when the operator description declares schemaVersion 2.
+/// Empty / non-object / missing schemaVersion all default to v1.
+bool isSchemaV2(const QString& json)
+{
+  if (json.isEmpty()) {
+    return false;
+  }
+  auto doc = QJsonDocument::fromJson(json.toUtf8());
+  if (!doc.isObject()) {
+    return false;
+  }
+  return doc.object().value(QStringLiteral("schemaVersion")).toInt(1) == 2;
+}
+
+template <typename T>
+T* configurePythonTransform(T* node, const QString& label,
+                            const QString& script, const QString& json,
+                            const QMap<QString, QVariant>& arguments)
+{
+  node->setLabel(label);
+  node->setScript(script);
+  if (!json.isEmpty()) {
+    node->setJSONDescription(json);
+  }
+  for (auto it = arguments.constBegin(); it != arguments.constEnd(); ++it) {
+    node->setParameter(it.key(), it.value());
+  }
+  return node;
+}
+
+/// Build the right Python transform node for @a json (legacy if no
+/// schemaVersion or v1, else PythonTransform). Returns nullptr if the
+/// JSON declares schemaVersion 2 but has empty inputs — that's a
+/// source-shape description being routed to a transform-only entry
+/// point and is rejected at construction (Q4 design choice).
+pipeline::TransformNode* makePythonTransform(
+  const QString& label, const QString& script, const QString& json,
+  const QMap<QString, QVariant>& arguments)
+{
+  if (isSchemaV2(json)) {
+    auto doc = QJsonDocument::fromJson(json.toUtf8());
+    if (doc.object().value(QStringLiteral("inputs")).toArray().isEmpty()) {
+      qCritical()
+        << "AddPythonTransformReaction: schema-v2 description for"
+        << label
+        << "declares no inputs (it is source-shaped) — refusing to "
+           "create a transform from a source description.";
+      return nullptr;
+    }
+    return configurePythonTransform(
+      new pipeline::PythonTransform(), label, script, json, arguments);
+  }
+  return configurePythonTransform(
+    new pipeline::LegacyPythonTransform(), label, script, json, arguments);
+}
+
+} // namespace
 
 AddPythonTransformReaction::AddPythonTransformReaction(
   QAction* parentObject, const QString& l, const QString& s,
@@ -61,7 +122,32 @@ AddPythonTransformReaction::AddPythonTransformReaction(
     if (!externalNode.isUndefined() && !externalNode.isNull()) {
       this->externalCompatible = externalNode.toBool();
     }
-    if (root.contains("inputType")) {
+    m_isSchemaV2 =
+      root.value(QStringLiteral("schemaVersion")).toInt(1) == 2;
+    if (m_isSchemaV2) {
+      // v2 derives accepted input types from the inputs[] array. If
+      // empty, the description is source-shaped and shouldn't be
+      // routed through this transform-flavored reaction at all —
+      // disable the action permanently.
+      auto inputs = root.value(QStringLiteral("inputs")).toArray();
+      if (inputs.isEmpty()) {
+        qCritical()
+          << "AddPythonTransformReaction: schema-v2 description for"
+          << l
+          << "declares no inputs (it is source-shaped) — disabling.";
+        m_disabled = true;
+      } else {
+        // Use the first input's declared type as the accepted gate.
+        // Multi-input v2 transforms keep the same first-input gating
+        // the legacy `inputType` field provided.
+        auto firstType =
+          inputs.first().toObject().value(QStringLiteral("type")).toString();
+        auto pt = portTypeFromString(firstType);
+        if (pt != pipeline::PortType::None) {
+          m_acceptedInputTypes = pt;
+        }
+      }
+    } else if (root.contains("inputType")) {
       auto pt = portTypeFromString(root.value("inputType").toString());
       if (pt != pipeline::PortType::None) {
         m_acceptedInputTypes = pt;
@@ -100,6 +186,12 @@ bool AddPythonTransformReaction::eventFilter(QObject* obj, QEvent* event)
 
 void AddPythonTransformReaction::updateEnableState()
 {
+  // Permanently disabled (e.g. malformed schema-v2 description).
+  if (m_disabled) {
+    parentAction()->setEnabled(false);
+    return;
+  }
+
   // Ctrl held: user wants to add an unconnected node, so always enable.
   if (m_ctrlHeld) {
     parentAction()->setEnabled(true);
@@ -124,24 +216,12 @@ OperatorPython* AddPythonTransformReaction::addExpression(DataSource*)
     return nullptr;
   }
 
-  bool hasJson = this->jsonSource.size() > 0;
-
-  // Create the transform node
-  auto* transform = new pipeline::LegacyPythonTransform();
-  transform->setLabel(scriptLabel);
-  transform->setScript(scriptSource);
-
-  if (hasJson) {
-    transform->setJSONDescription(jsonSource);
-
-    // If the transform has parameters (from JSON), show properties after
-    // insertion. For now, just insert it directly.
-    insertTransformIntoPipeline(transform);
-  } else {
-    // Simple script with no JSON, no custom UI — insert directly
-    insertTransformIntoPipeline(transform);
+  auto* transform =
+    makePythonTransform(scriptLabel, scriptSource, jsonSource, {});
+  if (!transform) {
+    return nullptr;
   }
-
+  insertTransformIntoPipeline(transform);
   return nullptr;
 }
 
@@ -157,14 +237,10 @@ void AddPythonTransformReaction::addPythonOperator(
   const QString& scriptBaseString, const QMap<QString, QVariant> arguments,
   const QString& jsonString)
 {
-  auto* transform = new pipeline::LegacyPythonTransform();
-  transform->setLabel(scriptLabel);
-  transform->setScript(scriptBaseString);
-  if (!jsonString.isEmpty()) {
-    transform->setJSONDescription(jsonString);
-  }
-  for (auto it = arguments.begin(); it != arguments.end(); ++it) {
-    transform->setParameter(it.key(), it.value());
+  auto* transform = makePythonTransform(
+    scriptLabel, scriptBaseString, jsonString, arguments);
+  if (!transform) {
+    return;
   }
   insertTransformIntoPipeline(transform);
 }
@@ -174,11 +250,11 @@ void AddPythonTransformReaction::addPythonOperator(
   const QString& scriptBaseString, const QMap<QString, QVariant> arguments,
   const QMap<QString, QString>)
 {
-  auto* transform = new pipeline::LegacyPythonTransform();
-  transform->setLabel(scriptLabel);
-  transform->setScript(scriptBaseString);
-  for (auto it = arguments.begin(); it != arguments.end(); ++it) {
-    transform->setParameter(it.key(), it.value());
+  // No JSON description provided → can't be schema-v2; legacy path.
+  auto* transform = makePythonTransform(
+    scriptLabel, scriptBaseString, /*json=*/QString(), arguments);
+  if (!transform) {
+    return;
   }
   insertTransformIntoPipeline(transform);
 }

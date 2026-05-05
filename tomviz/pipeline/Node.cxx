@@ -8,8 +8,13 @@
 #include "NodeExecutor.h"
 #include "NodeExecutorFactory.h"
 #include "OutputPort.h"
+#include "data/VolumeData.h"
+
+#include <vtkImageData.h>
 
 #include <QJsonArray>
+#include <QMetaObject>
+#include <QThread>
 
 namespace tomviz {
 namespace pipeline {
@@ -168,6 +173,15 @@ OutputPort* Node::outputPort(const QString& name) const
   return nullptr;
 }
 
+QMap<QString, PortData> Node::collectInputs() const
+{
+  QMap<QString, PortData> inputs;
+  for (auto* port : m_inputPorts) {
+    inputs[port->name()] = port->data();
+  }
+  return inputs;
+}
+
 bool Node::allInputsCurrent() const
 {
   for (auto* input : m_inputPorts) {
@@ -261,6 +275,44 @@ void Node::setIntermediateOutputs(const QMap<QString, PortData>& updates)
     if (auto* port = outputPort(it.key())) {
       port->setIntermediateData(it.value());
     }
+  }
+}
+
+void Node::applyOutputs(const QMap<QString, PortData>& outputs)
+{
+  auto apply = [this, &outputs]() {
+    for (auto it = outputs.constBegin(); it != outputs.constEnd(); ++it) {
+      auto* port = outputPort(it.key());
+      if (!port) {
+        continue;
+      }
+
+      // Reuse existing VolumeData so its color map survives.
+      if (port->hasData() && isVolumeType(port->data().type()) &&
+          isVolumeType(it.value().type())) {
+        try {
+          auto existing = port->data().value<VolumeDataPtr>();
+          auto fresh = it.value().value<VolumeDataPtr>();
+          if (existing && fresh && existing != fresh) {
+            existing->setImageData(
+              vtkSmartPointer<vtkImageData>(fresh->imageData()));
+            existing->setLabel(fresh->label());
+            existing->setUnits(fresh->units());
+            port->setData(PortData(std::any(existing), it.value().type()));
+            continue;
+          }
+        } catch (const std::bad_any_cast&) {
+        }
+      }
+
+      port->setData(it.value());
+    }
+  };
+
+  if (QThread::currentThread() == thread()) {
+    apply();
+  } else {
+    QMetaObject::invokeMethod(this, apply, Qt::BlockingQueuedConnection);
   }
 }
 
@@ -492,7 +544,7 @@ QJsonObject Node::serialize() const
       QJsonObject entry;
       entry[QStringLiteral("type")] =
         portTypeToString(port->declaredType());
-      entry[QStringLiteral("persistent")] = !port->isTransient();
+      entry[QStringLiteral("persistent")] = port->isPersistent();
       auto metadata = port->serialize();
       if (!metadata.isEmpty()) {
         entry[QStringLiteral("metadata")] = metadata;
@@ -580,8 +632,8 @@ bool Node::deserialize(const QJsonObject& json)
         }
       }
       if (entry.contains(QStringLiteral("persistent"))) {
-        port->setTransient(
-          !entry.value(QStringLiteral("persistent")).toBool());
+        port->setPersistent(
+          entry.value(QStringLiteral("persistent")).toBool());
       }
       if (entry.contains(QStringLiteral("metadata"))) {
         port->deserialize(

@@ -6,19 +6,12 @@
 #include "Node.h"
 #include "OutputPort.h"
 #include "PortData.h"
-#include "PortType.h"
-#include "data/VolumeData.h"
+#include "PythonNodeUtils.h"
 
 #pragma push_macro("slots")
 #undef slots
 #include <pybind11/embed.h>
 #pragma pop_macro("slots")
-
-#include <vtkImageData.h>
-#include <vtkMolecule.h>
-#include <vtkPythonUtil.h>
-#include <vtkSmartPointer.h>
-#include <vtkTable.h>
 
 #include <QMap>
 #include <QString>
@@ -27,53 +20,6 @@ namespace py = pybind11;
 
 namespace tomviz {
 namespace pipeline {
-
-namespace {
-
-/// Unwrap a Python value passed to `progress.data` into a typed
-/// PortData suitable for @a port. Operators may hand us a
-/// PipelineDataset wrapping a vtkObject in `_data_object` or the raw
-/// vtkObject directly; both forms are supported. Returns an invalid
-/// PortData when the conversion isn't applicable for the port's
-/// effective type.
-PortData pythonValueToPortData(py::object pyValue, OutputPort* port)
-{
-  if (!port || pyValue.is_none()) {
-    return PortData();
-  }
-  py::object dataObj = pyValue;
-  if (py::hasattr(pyValue, "_data_object")) {
-    dataObj = pyValue.attr("_data_object");
-  }
-  void* raw =
-    vtkPythonUtil::GetPointerFromObject(dataObj.ptr(), "vtkObjectBase");
-  if (!raw) {
-    return PortData();
-  }
-  PortType type = port->type();
-  if (isVolumeType(type)) {
-    if (auto* image =
-          vtkImageData::SafeDownCast(static_cast<vtkObjectBase*>(raw))) {
-      auto vol = std::make_shared<VolumeData>(image);
-      return PortData(std::any(vol), type);
-    }
-  } else if (type == PortType::Table) {
-    if (auto* table =
-          vtkTable::SafeDownCast(static_cast<vtkObjectBase*>(raw))) {
-      vtkSmartPointer<vtkTable> sp(table);
-      return PortData(std::any(sp), type);
-    }
-  } else if (type == PortType::Molecule) {
-    if (auto* mol =
-          vtkMolecule::SafeDownCast(static_cast<vtkObjectBase*>(raw))) {
-      vtkSmartPointer<vtkMolecule> sp(mol);
-      return PortData(std::any(sp), type);
-    }
-  }
-  return PortData();
-}
-
-} // namespace
 
 py::object createNodeWrapper(Node* node, const QString& primaryPortName)
 {
@@ -126,7 +72,7 @@ py::object createNodeWrapper(Node* node, const QString& primaryPortName)
         QString name =
           QString::fromStdString(item.first.cast<std::string>());
         auto* port = node->outputPort(name);
-        PortData pd = pythonValueToPortData(
+        PortData pd = PythonNodeUtils::pythonValueToPortData(
           py::reinterpret_borrow<py::object>(item.second), port);
         if (pd.isValid()) {
           updates.insert(name, pd);

@@ -315,14 +315,10 @@ def convert_to_dataset(data):
         # It is already a dataset
         return data
 
-    from tomviz.pipeline_dataset import PipelineDataset
-    if isinstance(data, PipelineDataset):
-        data = data._data_object
-
     if in_application():
         if isinstance(data, vtkDataObject):
-            # Make a new dataset object with no Datasource
-            return Dataset(data, None)
+            # Wrap the bare VTK object in a Dataset.
+            return Dataset(data)
 
     msg = 'Cannot convert type to Dataset: ' + str(type(data))
     raise Exception(msg)
@@ -332,13 +328,12 @@ def convert_to_vtk_data_object(data):
     # This method will extract/convert certain data types to a vtkDataObject
 
     from tomviz.dataset import Dataset
-    from tomviz.pipeline_dataset import PipelineDataset
 
     if isinstance(data, vtkDataObject):
         # It is already a vtkDataObject
         return data
 
-    if isinstance(data, (Dataset, PipelineDataset)):
+    if isinstance(data, Dataset):
         # Should be stored in _data_object
         return data._data_object
 

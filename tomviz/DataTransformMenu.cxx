@@ -162,7 +162,8 @@ void DataTransformMenu::buildTransforms()
     addConstantAction, "Add a Constant", readInPythonScript("AddConstant"),
     readInJSONDescription("AddConstant"));
   new AddPythonTransformReaction(invertDataAction, "Invert Data",
-                                 readInPythonScript("InvertData"));
+                                 readInPythonScript("InvertData"),
+                                 readInJSONDescription("InvertData"));
   new AddPythonTransformReaction(squareRootAction, "Square Root Data",
                                  readInPythonScript("Square_Root_Data"));
   new AddPythonTransformReaction(cropEdgesAction, "Clip Edges",

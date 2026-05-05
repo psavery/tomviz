@@ -4,24 +4,27 @@
 #ifndef tomvizRotateAlignWidget_h
 #define tomvizRotateAlignWidget_h
 
-#include "CustomPythonTransformWidget.h"
+#include "CustomPythonNodeWidget.h"
+#include "PortData.h"
 
 #include "vtkSmartPointer.h"
 
+#include <QMap>
 #include <QScopedPointer>
+#include <QString>
 
 class vtkImageData;
 class vtkSMProxy;
 
 namespace tomviz {
 
-class RotateAlignWidget : public pipeline::CustomPythonTransformWidget
+class RotateAlignWidget : public pipeline::CustomPythonNodeWidget
 {
   Q_OBJECT
 
 public:
-  RotateAlignWidget(vtkSmartPointer<vtkImageData> image,
-                    vtkSMProxy* sourceColorMap, QWidget* parent = nullptr);
+  RotateAlignWidget(const QMap<QString, pipeline::PortData>& inputs,
+                    QWidget* parent = nullptr);
   ~RotateAlignWidget();
 
   void getValues(QMap<QString, QVariant>& map) override;

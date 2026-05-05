@@ -104,8 +104,11 @@ class SocketControlChannel(ControlChannel):
 
 class TqdmProgress(ProgressBase):
     def __init__(self):
-        self._maximum = None
-        self._value = None
+        # Initialize maximum/value to 0 (matching the in-app
+        # _operator_wrapper defaults) so operators can safely use
+        # ``self.progress.value += 1`` before any explicit assignment.
+        self._maximum = 0
+        self._value = 0
         self._message = None
         self._progress_bar = None
 
@@ -348,8 +351,10 @@ class LocalSocketProgress(JsonProgress):
     consumed by the C++ Qt-side QLocalServer."""
 
     def __init__(self, socket_path):
-        self._maximum = None
-        self._value = None
+        # 0 default so ``self.progress.value += 1`` works before any
+        # explicit assignment (mirrors the in-app wrapper defaults).
+        self._maximum = 0
+        self._value = 0
         self._message = None
         self._connection = None
         self._path = socket_path
@@ -389,6 +394,9 @@ class FilesProgress(JsonProgress):
     that is being watched by the consumer (legacy on Mac/Windows)."""
 
     def __init__(self, path):
+        self._maximum = 0
+        self._value = 0
+        self._message = None
         self._path = path
         self._sequence_number = 0
 

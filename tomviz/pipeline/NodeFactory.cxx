@@ -18,6 +18,7 @@
 #include "sinks/ThresholdSink.h"
 #include "sinks/VolumeSink.h"
 #include "sinks/VolumeStatsSink.h"
+#include "sources/PythonSource.h"
 #include "sources/ReaderSourceNode.h"
 #include "sources/SphereSource.h"
 #include "transforms/ArrayWranglerTransform.h"
@@ -25,6 +26,7 @@
 #include "transforms/ConvertToVolumeTransform.h"
 #include "transforms/CropTransform.h"
 #include "transforms/LegacyPythonTransform.h"
+#include "transforms/PythonTransform.h"
 #include "transforms/ReconstructionTransform.h"
 #include "transforms/SetTiltAnglesTransform.h"
 #include "transforms/SnapshotTransform.h"
@@ -80,6 +82,7 @@ void NodeFactory::registerBuiltins()
   registerType<SourceNode>(QStringLiteral("source.generic"));
   registerType<ReaderSourceNode>(QStringLiteral("source.reader"));
   registerType<SphereSource>(QStringLiteral("source.sphere"));
+  registerType<PythonSource>(QStringLiteral("source.python"));
 
   registerType<ArrayWranglerTransform>(
     QStringLiteral("transform.arrayWrangler"));
@@ -90,6 +93,7 @@ void NodeFactory::registerBuiltins()
   registerType<CropTransform>(QStringLiteral("transform.crop"));
   registerType<LegacyPythonTransform>(
     QStringLiteral("transform.legacyPython"));
+  registerType<PythonTransform>(QStringLiteral("transform.python"));
   registerType<ReconstructionTransform>(
     QStringLiteral("transform.reconstruction"));
   registerType<SetTiltAnglesTransform>(

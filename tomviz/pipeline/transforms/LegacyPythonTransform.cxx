@@ -3,10 +3,11 @@
 
 #include "LegacyPythonTransform.h"
 
-#include "CustomPythonTransformWidget.h"
+#include "CustomPythonNodeWidget.h"
 #include "ExternalNodeExecutor.h"
 #include "InputPort.h"
 #include "OutputPort.h"
+#include "PythonNodeUtils.h"
 #include "PythonNodeWrapper.h"
 #include "VolumeOutputPort.h"
 #include "PythonTransformEditorWidget.h"
@@ -41,95 +42,6 @@ namespace py = pybind11;
 
 namespace tomviz {
 namespace pipeline {
-
-namespace {
-
-/// Coerce @a value into a QVariant whose Qt type matches the operator
-/// JSON description's declared @a type for a parameter. Returns a valid
-/// QVariant for the scalar types operators care about (``int``,
-/// ``double``, ``bool``, ``string``-family, ``enumeration``) and for
-/// arrays of int/double; returns an invalid QVariant for any other
-/// declared type so the caller can decide on a site-appropriate
-/// fallback (typically ``QJsonValue::toVariant()`` for already-saved
-/// runtime values, or skipping for missing defaults).
-///
-/// Needed because Qt6's ``QJsonValue::toVariant()`` collapses every
-/// JSON number into ``QVariant<double>`` regardless of whether the
-/// source was an int — which lets ``axis: 2`` reach Python operators
-/// as ``2.0`` and break tuple/list indexing.
-QVariant coerceJsonByDeclaredType(const QJsonValue& value,
-                                  const QString& type)
-{
-  if (value.isArray()) {
-    QVariantList list;
-    for (const auto& item : value.toArray()) {
-      if (type == "int" || type == "integer") {
-        list.append(item.toInt());
-      } else if (type == "double") {
-        list.append(item.toDouble());
-      } else {
-        list.append(item.toVariant());
-      }
-    }
-    return list;
-  }
-  if (type == "int" || type == "integer") {
-    return QVariant(value.toInt());
-  }
-  if (type == "enumeration") {
-    // Enumeration option values can be either int or string; preserve
-    // the JSON-native type so saved values round-trip losslessly.
-    if (value.isString()) {
-      return QVariant(value.toString());
-    }
-    return QVariant(value.toInt());
-  }
-  if (type == "double") {
-    return QVariant(value.toDouble());
-  }
-  if (type == "bool" || type == "boolean") {
-    return QVariant(value.toBool());
-  }
-  if (type == "string" || type == "file" || type == "save_file" ||
-      type == "directory") {
-    return QVariant(value.toString());
-  }
-  return QVariant(); // caller handles complex / unknown types
-}
-
-/// Resolve an enumeration parameter's stored form to the option value
-/// the operator actually receives. The state-file convention is to
-/// persist the option value (so a saved file is human-readable and
-/// self-describing); this helper accepts either form so we can also
-/// load older files that persisted the index. Returns an invalid
-/// QVariant when no resolution is possible — the caller falls back to
-/// its usual coercion path.
-QVariant resolveEnumValue(const QJsonValue& value, const QJsonArray& options)
-{
-  if (value.isString()) {
-    return value.toVariant();
-  }
-  if (value.isDouble() && !options.isEmpty()) {
-    int idx = value.toInt();
-    if (idx >= 0 && idx < options.size()) {
-      QJsonObject opt = options.at(idx).toObject();
-      if (!opt.isEmpty()) {
-        return opt.constBegin().value().toVariant();
-      }
-    }
-  }
-  return QVariant();
-}
-
-} // namespace
-
-QMap<QString, CustomWidgetInfo> LegacyPythonTransform::s_customWidgetMap;
-
-void LegacyPythonTransform::registerCustomWidget(const QString& id,
-                                                  const CustomWidgetInfo& info)
-{
-  s_customWidgetMap[id] = info;
-}
 
 QString LegacyPythonTransform::customWidgetID() const
 {
@@ -221,42 +133,26 @@ bool LegacyPythonTransform::hasPropertiesWidget() const
 
 bool LegacyPythonTransform::propertiesWidgetNeedsInput() const
 {
-  if (!m_customWidgetID.isEmpty() &&
-      s_customWidgetMap.contains(m_customWidgetID)) {
-    return s_customWidgetMap[m_customWidgetID].needsData;
+  if (m_customWidgetID.isEmpty()) {
+    return false;
   }
-  return false;
+  const auto* info = findCustomNodeWidget(m_customWidgetID);
+  return info && info->needsData;
 }
 
 EditTransformWidget* LegacyPythonTransform::createPropertiesWidget(
   QWidget* parent)
 {
-  CustomPythonTransformWidget* customWidget = nullptr;
+  CustomPythonNodeWidget* customWidget = nullptr;
 
-  if (!m_customWidgetID.isEmpty() &&
-      s_customWidgetMap.contains(m_customWidgetID)) {
-    const auto& info = s_customWidgetMap[m_customWidgetID];
-
-    // Get input data and color map if the widget needs them
-    vtkSmartPointer<vtkImageData> inputImage;
-    vtkSMProxy* colorMap = nullptr;
-    if (info.needsData) {
-      auto* input = inputPort("volume");
-      if (input && input->hasData()) {
-        auto vol = input->data().value<VolumeDataPtr>();
-        if (vol && vol->isValid()) {
-          inputImage = vol->imageData();
-          vol->initColorMap();
-          colorMap = vol->colorMap();
+  if (!m_customWidgetID.isEmpty()) {
+    if (const auto* info = findCustomNodeWidget(m_customWidgetID)) {
+      if (info->create) {
+        customWidget = info->create(collectInputs(), parent);
+        if (customWidget) {
+          customWidget->setValues(m_parameters);
+          customWidget->setScript(m_script);
         }
-      }
-    }
-
-    if (info.create) {
-      customWidget = info.create(parent, inputImage, colorMap);
-      if (customWidget) {
-        customWidget->setValues(m_parameters);
-        customWidget->setScript(m_script);
       }
     }
   }
@@ -379,10 +275,10 @@ bool LegacyPythonTransform::deserialize(const QJsonObject& json)
     const QString declType = m_parameterTypes.value(key);
     QVariant qv;
     if (declType == "enumeration") {
-      qv = resolveEnumValue(it.value(), m_enumOptions.value(key));
+      qv = PythonNodeUtils::resolveEnumValue(it.value(), m_enumOptions.value(key));
     }
     if (!qv.isValid()) {
-      qv = coerceJsonByDeclaredType(it.value(), declType);
+      qv = PythonNodeUtils::coerceJsonByDeclaredType(it.value(), declType);
     }
     if (!qv.isValid()) {
       // Unknown / complex declared type (select_scalars, xyz_header, …):
@@ -466,14 +362,14 @@ void LegacyPythonTransform::parseJSON()
       if (type == "enumeration") {
         QJsonArray options = param.value("options").toArray();
         m_enumOptions[name] = options;
-        QVariant resolved = resolveEnumValue(defaultVal, options);
+        QVariant resolved = PythonNodeUtils::resolveEnumValue(defaultVal, options);
         if (resolved.isValid()) {
           m_parameters[name] = resolved;
           continue;
         }
       }
 
-      QVariant value = coerceJsonByDeclaredType(defaultVal, type);
+      QVariant value = PythonNodeUtils::coerceJsonByDeclaredType(defaultVal, type);
       if (!value.isValid()) {
         // Complex / unknown declared type (select_scalars, xyz_header,
         // label_map, reconstruction, …): with no explicit default, let
@@ -531,7 +427,7 @@ void LegacyPythonTransform::parseJSON()
       if (out && !m_childName.isEmpty()) {
         out->setName(m_childName);
         m_primaryOutputName = m_childName;
-        out->setTransient(false);
+        out->setPersistent(true);
       }
     }
   }
@@ -597,28 +493,21 @@ QMap<QString, PortData> LegacyPythonTransform::transform(
   try {
     py::gil_scoped_acquire gil;
 
-    // Import the pipeline_dataset module
-    py::module_ datasetMod =
-      py::module_::import("tomviz.pipeline_dataset");
-
     // Some operator scripts reference tomviz.utils.* without
     // importing it; preload it as legacy/OperatorPython.cxx does.
     py::module_::import("tomviz.utils");
 
-    // Create PipelineDataset wrapping the copied vtkImageData
-    py::object datasetCls = datasetMod.attr("PipelineDataset");
+    // Wrap the copied vtkImageData in a LegacyDataset — v1 operators
+    // expect dataset.create_child_dataset() to be available.
+    py::module_ datasetMod =
+      py::module_::import("tomviz.internal_dataset");
+    py::object datasetCls = datasetMod.attr("LegacyDataset");
     py::object dataset =
       datasetCls(py::cast(static_cast<vtkImageData*>(outputImage.Get()),
                           py::return_value_policy::reference));
 
-    // Load the Python script as a module
-    py::module_ types = py::module_::import("types");
-    py::object moduleType = types.attr("ModuleType");
     py::object scriptModule =
-      moduleType(py::str(m_operatorName.toStdString()));
-
-    // Execute the script in the module's namespace
-    py::exec(py::str(m_script.toStdString()), scriptModule.attr("__dict__"));
+      PythonNodeUtils::loadScriptAsModule(m_operatorName, m_script);
 
     // Find the transform function: try module-level transform() first, then
     // transform_scalars(), then look for an Operator subclass.
@@ -670,52 +559,11 @@ QMap<QString, PortData> LegacyPythonTransform::transform(
     py::dict kwargs;
     for (auto it = m_parameters.constBegin(); it != m_parameters.constEnd();
          ++it) {
-      std::string key = it.key().toStdString();
-      const QVariant& val = it.value();
-      switch (val.typeId()) {
-        case QMetaType::Double:
-          kwargs[py::str(key)] = py::float_(val.toDouble());
-          break;
-        case QMetaType::Int:
-          kwargs[py::str(key)] = py::int_(val.toInt());
-          break;
-        case QMetaType::Bool:
-          kwargs[py::str(key)] = py::bool_(val.toBool());
-          break;
-        case QMetaType::QString:
-          kwargs[py::str(key)] = py::str(val.toString().toStdString());
-          break;
-        case QMetaType::QVariantList: {
-          py::list pyList;
-          for (const auto& item : val.toList()) {
-            switch (item.typeId()) {
-              case QMetaType::Int:
-                pyList.append(py::int_(item.toInt()));
-                break;
-              case QMetaType::Double:
-                pyList.append(py::float_(item.toDouble()));
-                break;
-              case QMetaType::Bool:
-                pyList.append(py::bool_(item.toBool()));
-                break;
-              case QMetaType::QString:
-                pyList.append(py::str(item.toString().toStdString()));
-                break;
-              default:
-                pyList.append(py::str(item.toString().toStdString()));
-                break;
-            }
-          }
-          kwargs[py::str(key)] = pyList;
-          break;
-        }
-        default:
-          kwargs[py::str(key)] = py::float_(val.toDouble());
-          break;
-      }
+      kwargs[py::str(it.key().toStdString())] =
+        PythonNodeUtils::qvariantToPython(it.value());
     }
 
-    // Wrap dataset input ports as PipelineDataset kwargs
+    // Wrap dataset input ports as LegacyDataset kwargs
     for (const auto& dsName : m_datasetInputNames) {
       auto it = inputs.find(dsName);
       if (it == inputs.end()) {

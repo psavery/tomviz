@@ -4,24 +4,27 @@
 #ifndef tomvizSelectCylinderWidget_h
 #define tomvizSelectCylinderWidget_h
 
-#include "CustomPythonTransformWidget.h"
+#include "CustomPythonNodeWidget.h"
+#include "PortData.h"
 
 #include <vtkSmartPointer.h>
 
+#include <QMap>
 #include <QScopedPointer>
+#include <QString>
 
 class vtkImageData;
 class vtkSMProxy;
 
 namespace tomviz {
 
-class SelectCylinderWidget : public pipeline::CustomPythonTransformWidget
+class SelectCylinderWidget : public pipeline::CustomPythonNodeWidget
 {
   Q_OBJECT
 
 public:
-  SelectCylinderWidget(vtkSmartPointer<vtkImageData> image,
-                       vtkSMProxy* colorMap, QWidget* parent = nullptr);
+  SelectCylinderWidget(const QMap<QString, pipeline::PortData>& inputs,
+                       QWidget* parent = nullptr);
   ~SelectCylinderWidget();
 
   void getValues(QMap<QString, QVariant>& map) override;

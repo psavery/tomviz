@@ -6,14 +6,11 @@ import numpy as np
 
 from tomviz._internal import in_application
 from tomviz.internal_utils import _minmax
-if in_application():
-    from vtk import vtkTable
-    from tomviz.internal_dataset import Dataset
-else:
-    from tomviz.external_dataset import Dataset
 
-# PipelineDataset is a sibling of Dataset, not a subclass; use the
-# abstract base for the apply_to_each_array isinstance check.
+# Used by the apply_to_each_array isinstance check so it accepts both
+# the in-app (VTK-backed) Dataset and the external (CLI / numpy-backed)
+# Dataset. The concrete classes are pulled in only inside the function
+# bodies that need them.
 from tomviz.dataset import Dataset as AbstractDataset
 
 

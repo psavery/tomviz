@@ -4,25 +4,28 @@
 #ifndef tomvizShiftRotationCenterWidget_h
 #define tomvizShiftRotationCenterWidget_h
 
-#include "CustomPythonTransformWidget.h"
+#include "CustomPythonNodeWidget.h"
+#include "PortData.h"
 
 #include <vtkSmartPointer.h>
 
+#include <QMap>
 #include <QScopedPointer>
+#include <QString>
 
 class vtkImageData;
 class vtkSMProxy;
 
 namespace tomviz {
 
-class ShiftRotationCenterWidget : public pipeline::CustomPythonTransformWidget
+class ShiftRotationCenterWidget : public pipeline::CustomPythonNodeWidget
 {
   Q_OBJECT
 
 public:
-  ShiftRotationCenterWidget(vtkSmartPointer<vtkImageData> image,
-                            vtkSMProxy* sourceColorMap,
-                            QWidget* parent = nullptr);
+  ShiftRotationCenterWidget(
+    const QMap<QString, pipeline::PortData>& inputs,
+    QWidget* parent = nullptr);
   ~ShiftRotationCenterWidget();
 
   void getValues(QMap<QString, QVariant>& map) override;

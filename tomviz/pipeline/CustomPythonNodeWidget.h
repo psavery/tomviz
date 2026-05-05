@@ -1,8 +1,8 @@
 /* This source file is part of the Tomviz project, https://tomviz.org/.
    It is released under the 3-Clause BSD License, see "LICENSE". */
 
-#ifndef tomvizPipelineCustomPythonTransformWidget_h
-#define tomvizPipelineCustomPythonTransformWidget_h
+#ifndef tomvizPipelineCustomPythonNodeWidget_h
+#define tomvizPipelineCustomPythonNodeWidget_h
 
 #include <QMap>
 #include <QString>
@@ -12,16 +12,18 @@
 namespace tomviz {
 namespace pipeline {
 
-/// Base class for custom parameter widgets that replace the auto-generated
-/// parameter UI for specific Python transforms (e.g. RotationAlign,
-/// ShiftRotationCenter).
-class CustomPythonTransformWidget : public QWidget
+/// Base class for custom parameter widgets that replace the
+/// auto-generated parameter UI for specific Python nodes (sources or
+/// transforms). Concrete subclasses are registered with
+/// :func:`registerCustomNodeWidget` keyed on the JSON description's
+/// ``widget`` field.
+class CustomPythonNodeWidget : public QWidget
 {
   Q_OBJECT
 
 public:
-  CustomPythonTransformWidget(QWidget* parent = nullptr);
-  ~CustomPythonTransformWidget() override;
+  CustomPythonNodeWidget(QWidget* parent = nullptr);
+  ~CustomPythonNodeWidget() override;
 
   virtual void getValues(QMap<QString, QVariant>& map) = 0;
   virtual void setValues(const QMap<QString, QVariant>& map) = 0;

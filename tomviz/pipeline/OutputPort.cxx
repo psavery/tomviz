@@ -40,14 +40,14 @@ void OutputPort::setEffectiveType(PortType type)
   }
 }
 
-bool OutputPort::isTransient() const
+bool OutputPort::isPersistent() const
 {
-  return m_transient;
+  return m_persistent;
 }
 
-void OutputPort::setTransient(bool transient)
+void OutputPort::setPersistent(bool persistent)
 {
-  m_transient = transient;
+  m_persistent = persistent;
 }
 
 PortData OutputPort::data() const

@@ -3,7 +3,7 @@
 
 #include "PythonTransformEditorWidget.h"
 
-#include "CustomPythonTransformWidget.h"
+#include "CustomPythonNodeWidget.h"
 #include "ExternalNodeExecutor.h"
 #include "TransformPropertiesWidget.h"
 
@@ -30,7 +30,7 @@ PythonTransformEditorWidget::PythonTransformEditorWidget(
   const QString& label, const QString& script, const QString& jsonDescription,
   const QMap<QString, QVariant>& currentValues, const QString& executorType,
   const QString& executorEnvPath,
-  CustomPythonTransformWidget* customParamsWidget, QWidget* parent)
+  CustomPythonNodeWidget* customParamsWidget, QWidget* parent)
   : EditTransformWidget(parent), m_customParamsWidget(customParamsWidget)
 {
   auto* mainLayout = new QVBoxLayout(this);

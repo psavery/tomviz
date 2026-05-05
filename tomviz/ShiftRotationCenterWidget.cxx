@@ -9,6 +9,7 @@
 #include "PresetDialog.h"
 #include "PythonUtilities.h"
 #include "Utilities.h"
+#include "pipeline/data/VolumeData.h"
 
 // Qt defines 'slots' as a macro which conflicts with Python's object.h.
 // We must undef it before including any pybind11/Python headers.
@@ -649,9 +650,10 @@ public:
     try {
       Python python;
 
-      // Create PipelineDataset wrapping the vtkImageData
-      py::module_ datasetMod = py::module_::import("tomviz.pipeline_dataset");
-      py::object datasetCls = datasetMod.attr("PipelineDataset");
+      // Wrap the vtkImageData in a Dataset (uses LegacyDataset since
+      // the test script may rely on the v1 create_child_dataset API).
+      py::module_ datasetMod = py::module_::import("tomviz.internal_dataset");
+      py::object datasetCls = datasetMod.attr("LegacyDataset");
       py::object dataset = datasetCls(
         py::cast(image.Get(), py::return_value_policy::reference));
 
@@ -1100,9 +1102,20 @@ public:
 #include "ShiftRotationCenterWidget.moc"
 
 ShiftRotationCenterWidget::ShiftRotationCenterWidget(
-  vtkSmartPointer<vtkImageData> image, vtkSMProxy* sourceColorMap, QWidget* p)
-  : pipeline::CustomPythonTransformWidget(p)
+  const QMap<QString, pipeline::PortData>& inputs, QWidget* p)
+  : pipeline::CustomPythonNodeWidget(p)
 {
+  vtkSmartPointer<vtkImageData> image;
+  vtkSMProxy* sourceColorMap = nullptr;
+  if (auto it = inputs.constFind(QStringLiteral("volume"));
+      it != inputs.constEnd()) {
+    if (auto vol = it.value().value<pipeline::VolumeDataPtr>();
+        vol && vol->isValid()) {
+      image = vol->imageData();
+      vol->initColorMap();
+      sourceColorMap = vol->colorMap();
+    }
+  }
   m_internal.reset(new Internal(image, sourceColorMap, this));
 }
 

@@ -62,6 +62,12 @@ public:
   InputPort* inputPort(const QString& name) const;
   OutputPort* outputPort(const QString& name) const;
 
+  /// Snapshot the current data on every input port, keyed by port name.
+  /// Used by execute() to feed transform()/produce(), and by
+  /// createPropertiesWidget() to seed custom widgets that render over
+  /// live input data. Empty for source-shape nodes.
+  QMap<QString, PortData> collectInputs() const;
+
   bool allInputsCurrent() const;
   bool anyInputStale() const;
 
@@ -194,6 +200,14 @@ protected:
   InputPort* addInputPort(const QString& name, PortTypes acceptedTypes);
   OutputPort* addOutputPort(const QString& name, PortType type);
   void addOutputPort(OutputPort* port);
+
+  /// Apply a map of output port name → PortData to this node's output
+  /// ports as the final step of execute(). When both the existing and
+  /// incoming payloads are volume-shaped, reuses the existing VolumeData
+  /// instance (replaces its vtkImageData / label / units in place) so
+  /// downstream references like color maps survive a re-run. Marshals to
+  /// the node's owning thread when called from a worker thread.
+  void applyOutputs(const QMap<QString, PortData>& outputs);
 
 private:
   QString m_label;

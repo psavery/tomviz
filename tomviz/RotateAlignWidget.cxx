@@ -9,6 +9,7 @@
 #include "TomographyReconstruction.h"
 #include "TomographyTiltSeries.h"
 #include "Utilities.h"
+#include "pipeline/data/VolumeData.h"
 
 #include <cmath>
 
@@ -416,10 +417,21 @@ public:
   }
 };
 
-RotateAlignWidget::RotateAlignWidget(vtkSmartPointer<vtkImageData> image,
-                                     vtkSMProxy* sourceColorMap, QWidget* p)
-  : pipeline::CustomPythonTransformWidget(p), Internals(new RAWInternal)
+RotateAlignWidget::RotateAlignWidget(
+  const QMap<QString, pipeline::PortData>& inputs, QWidget* p)
+  : pipeline::CustomPythonNodeWidget(p), Internals(new RAWInternal)
 {
+  vtkSmartPointer<vtkImageData> image;
+  vtkSMProxy* sourceColorMap = nullptr;
+  if (auto it = inputs.constFind(QStringLiteral("volume"));
+      it != inputs.constEnd()) {
+    if (auto vol = it.value().value<pipeline::VolumeDataPtr>();
+        vol && vol->isValid()) {
+      image = vol->imageData();
+      vol->initColorMap();
+      sourceColorMap = vol->colorMap();
+    }
+  }
   this->Internals->m_image = image;
   initUI(sourceColorMap);
 }

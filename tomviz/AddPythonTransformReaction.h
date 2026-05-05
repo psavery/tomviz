@@ -73,6 +73,11 @@ private:
   bool m_ctrlHeld = false;
   pipeline::PortTypes m_acceptedInputTypes = pipeline::PortType::ImageData;
   bool externalCompatible = true;
+  bool m_isSchemaV2 = false;
+  // True if the action is permanently disabled because the JSON
+  // description is malformed or shape-mismatched (e.g. a v2 source
+  // description loaded by this transform-flavored reaction).
+  bool m_disabled = false;
 };
 } // namespace tomviz
 

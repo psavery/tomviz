@@ -9,7 +9,7 @@
 #include "SelectCylinderWidget.h"
 #include "ShiftRotationCenterWidget.h"
 #include "RotateAlignWidget.h"
-#include "transforms/LegacyPythonTransform.h"
+#include "CustomNodeWidgetRegistry.h"
 #include "TimeSeriesLabel.h"
 #include "ViewFrameActions.h"
 
@@ -103,41 +103,14 @@ void Behaviors::registerCustomOperatorUIs()
 {
   using namespace pipeline;
 
-  LegacyPythonTransform::registerCustomWidget(
-    "RotationAlignWidget",
-    { /*needsData=*/true,
-      /*create=*/
-      [](QWidget* parent, vtkSmartPointer<vtkImageData> data,
-         vtkSMProxy* colorMap) -> CustomPythonTransformWidget* {
-        return new RotateAlignWidget(data, colorMap, parent);
-      } });
-
-  LegacyPythonTransform::registerCustomWidget(
-    "ShiftRotationCenterWidget",
-    { /*needsData=*/true,
-      /*create=*/
-      [](QWidget* parent, vtkSmartPointer<vtkImageData> data,
-         vtkSMProxy* colorMap) -> CustomPythonTransformWidget* {
-        return new ShiftRotationCenterWidget(data, colorMap, parent);
-      } });
-
-  LegacyPythonTransform::registerCustomWidget(
-    "ManualManipulationWidget",
-    { /*needsData=*/true,
-      /*create=*/
-      [](QWidget* parent, vtkSmartPointer<vtkImageData> data,
-         vtkSMProxy* colorMap) -> CustomPythonTransformWidget* {
-        return new ManualManipulationWidget(data, colorMap, parent);
-      } });
-
-  LegacyPythonTransform::registerCustomWidget(
-    "CylindricalCropWidget",
-    { /*needsData=*/true,
-      /*create=*/
-      [](QWidget* parent, vtkSmartPointer<vtkImageData> data,
-         vtkSMProxy* colorMap) -> CustomPythonTransformWidget* {
-        return new SelectCylinderWidget(data, colorMap, parent);
-      } });
+  registerCustomNodeWidget<RotateAlignWidget>(
+    "RotationAlignWidget", /*needsData=*/true);
+  registerCustomNodeWidget<ShiftRotationCenterWidget>(
+    "ShiftRotationCenterWidget", /*needsData=*/true);
+  registerCustomNodeWidget<ManualManipulationWidget>(
+    "ManualManipulationWidget", /*needsData=*/true);
+  registerCustomNodeWidget<SelectCylinderWidget>(
+    "CylindricalCropWidget", /*needsData=*/true);
 }
 
 } // end of namespace tomviz

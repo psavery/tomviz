@@ -26,7 +26,17 @@ from tomviz._internal import (
     add_transform_decorators,
     find_transform_function,
 )
+from tomviz.external_dataset import Dataset, LegacyDataset
 from tomviz.pipeline.node import PortData, TransformNode
+
+
+def _upgrade_to_legacy(payload):
+    """Upgrade a base Dataset payload to a LegacyDataset so v1
+    operators get the create_child_dataset API. Non-Dataset payloads
+    pass through unchanged."""
+    if isinstance(payload, Dataset) and not isinstance(payload, LegacyDataset):
+        return LegacyDataset.from_dataset(payload)
+    return payload
 
 
 logger = logging.getLogger('tomviz.pipeline')
@@ -194,8 +204,9 @@ class LegacyPythonTransform(TransformNode):
 
         import copy as _copy
         # Operators mutate the dataset they're handed — give them a deep
-        # copy so upstream ports keep their original payload.
-        dataset = _copy.deepcopy(primary.payload)
+        # copy so upstream ports keep their original payload. Upgrade
+        # to LegacyDataset so v1 operators have create_child_dataset.
+        dataset = _upgrade_to_legacy(_copy.deepcopy(primary.payload))
 
         transform_fn = self._resolve_transform_fn()
         if transform_fn is None:
@@ -253,7 +264,9 @@ class LegacyPythonTransform(TransformNode):
         for dsname in self._dataset_input_names:
             ds_input = inputs.get(dsname)
             if ds_input is not None:
-                kwargs[dsname] = ds_input.payload
+                # v1 ops may call create_child_dataset on these too,
+                # so the same upgrade applies.
+                kwargs[dsname] = _upgrade_to_legacy(ds_input.payload)
         return kwargs
 
     def _collect_outputs(self, dataset, result):

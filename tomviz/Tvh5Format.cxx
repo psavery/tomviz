@@ -301,7 +301,7 @@ bool writePersistentPayloads(pipeline::Pipeline* pipeline,
 
     bool modified = false;
     for (auto* port : node->outputPorts()) {
-      if (port->isTransient() || !port->hasData()) {
+      if (!port->isPersistent() || !port->hasData()) {
         continue;
       }
       pipeline::PortType declared = port->declaredType();

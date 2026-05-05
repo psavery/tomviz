@@ -63,9 +63,12 @@ def register_builtins():
     NodeFactory.register('source.generic', SourceNode)
     from tomviz.pipeline.sources.reader import ReaderSourceNode
     NodeFactory.register('source.reader', ReaderSourceNode)
+    from tomviz.pipeline.sources.python_source import PythonSource
+    NodeFactory.register('source.python', PythonSource)
 
     # Transform types
     from tomviz.pipeline.transforms.legacy_python import LegacyPythonTransform
+    from tomviz.pipeline.transforms.python_transform import PythonTransform
     from tomviz.pipeline.transforms.convert_to_volume import (
         ConvertToVolumeTransform,
     )
@@ -83,6 +86,7 @@ def register_builtins():
     from tomviz.pipeline.transforms.threshold import ThresholdTransform
 
     NodeFactory.register('transform.legacyPython', LegacyPythonTransform)
+    NodeFactory.register('transform.python', PythonTransform)
     NodeFactory.register('transform.convertToVolume', ConvertToVolumeTransform)
     NodeFactory.register('transform.setTiltAngles', SetTiltAnglesTransform)
     NodeFactory.register('transform.convertToFloat', ConvertToFloatTransform)

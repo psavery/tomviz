@@ -304,7 +304,7 @@ bool PipelineStateIO::load(Pipeline* pipeline, const QJsonObject& state,
       continue;
     }
     for (auto* port : node->outputPorts()) {
-      if (!port->isTransient() && !port->hasData()) {
+      if (port->isPersistent() && !port->hasData()) {
         node->markStale();
         break;
       }

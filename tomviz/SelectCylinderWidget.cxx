@@ -4,6 +4,7 @@
 #include "SelectCylinderWidget.h"
 
 #include "ActiveObjects.h"
+#include "pipeline/data/VolumeData.h"
 
 #include <vtkCallbackCommand.h>
 #include <vtkCommand.h>
@@ -163,11 +164,20 @@ public:
   bool blockSignals = false;
 };
 
-SelectCylinderWidget::SelectCylinderWidget(vtkSmartPointer<vtkImageData> image,
-                                           vtkSMProxy* /*colorMap*/,
-                                           QWidget* parent)
-  : CustomPythonTransformWidget(parent), m_internal(new Internal)
+SelectCylinderWidget::SelectCylinderWidget(
+  const QMap<QString, pipeline::PortData>& inputs, QWidget* parent)
+  : CustomPythonNodeWidget(parent), m_internal(new Internal)
 {
+  // Registered with needsData=true, so the host gates creation on
+  // input availability — image is expected to be valid here.
+  vtkSmartPointer<vtkImageData> image;
+  if (auto it = inputs.constFind(QStringLiteral("volume"));
+      it != inputs.constEnd()) {
+    if (auto vol = it.value().value<pipeline::VolumeDataPtr>();
+        vol && vol->isValid()) {
+      image = vol->imageData();
+    }
+  }
   image->GetExtent(m_internal->extent);
   image->GetOrigin(m_internal->origin);
   image->GetSpacing(m_internal->spacing);

@@ -6,12 +6,6 @@
 #include "EditTransformWidget.h"
 #include "InputPort.h"
 #include "OutputPort.h"
-#include "data/VolumeData.h"
-
-#include <vtkImageData.h>
-
-#include <QMetaObject>
-#include <QThread>
 
 namespace tomviz {
 namespace pipeline {
@@ -74,10 +68,7 @@ bool TransformNode::execute()
     }
   }
 
-  QMap<QString, PortData> inputs;
-  for (auto* port : inputPorts()) {
-    inputs[port->name()] = port->data();
-  }
+  auto inputs = collectInputs();
 
   auto outputs = transform(inputs);
 
@@ -91,41 +82,7 @@ bool TransformNode::execute()
     return false;
   }
 
-  // Port mutations belong on the node's thread.
-  auto applyOutputs = [this, &outputs]() {
-    for (auto it = outputs.constBegin(); it != outputs.constEnd(); ++it) {
-      auto* port = outputPort(it.key());
-      if (!port) {
-        continue;
-      }
-
-      // Reuse existing VolumeData so its color map survives.
-      if (port->hasData() && isVolumeType(port->data().type()) &&
-          isVolumeType(it.value().type())) {
-        try {
-          auto existing = port->data().value<VolumeDataPtr>();
-          auto fresh = it.value().value<VolumeDataPtr>();
-          if (existing && fresh && existing != fresh) {
-            existing->setImageData(
-              vtkSmartPointer<vtkImageData>(fresh->imageData()));
-            existing->setLabel(fresh->label());
-            existing->setUnits(fresh->units());
-            port->setData(PortData(std::any(existing), it.value().type()));
-            continue;
-          }
-        } catch (const std::bad_any_cast&) {
-        }
-      }
-
-      port->setData(it.value());
-    }
-  };
-  if (QThread::currentThread() == thread()) {
-    applyOutputs();
-  } else {
-    QMetaObject::invokeMethod(this, applyOutputs,
-                              Qt::BlockingQueuedConnection);
-  }
+  applyOutputs(outputs);
 
   markCurrent();
   setExecState(NodeExecState::Idle);

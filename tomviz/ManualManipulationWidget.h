@@ -4,22 +4,26 @@
 #ifndef tomvizManualManipulationWidget_h
 #define tomvizManualManipulationWidget_h
 
-#include "CustomPythonTransformWidget.h"
+#include "CustomPythonNodeWidget.h"
+#include "PortData.h"
+
 #include <vtkSmartPointer.h>
+
+#include <QMap>
 #include <QScopedPointer>
+#include <QString>
 
 class vtkImageData;
 class vtkSMProxy;
 
 namespace tomviz {
 
-class ManualManipulationWidget : public pipeline::CustomPythonTransformWidget
+class ManualManipulationWidget : public pipeline::CustomPythonNodeWidget
 {
   Q_OBJECT
 
 public:
-  ManualManipulationWidget(vtkSmartPointer<vtkImageData> image,
-                           vtkSMProxy* sourceColorMap,
+  ManualManipulationWidget(const QMap<QString, pipeline::PortData>& inputs,
                            QWidget* parent = nullptr);
   ~ManualManipulationWidget();
 

@@ -40,13 +40,13 @@ public:
   /// inference.  Only meaningful when declaredType() is ImageData.
   void setEffectiveType(PortType type);
 
-  /// Virtual so subclasses whose transient-ness is intrinsic to the type
+  /// Virtual so subclasses whose persistence is intrinsic to the type
   /// (e.g. PassthroughOutputPort — a pure forwarder with no data of its
-  /// own) can pin the answer regardless of the m_transient flag, so an
+  /// own) can pin the answer regardless of the m_persistent flag, so an
   /// old state file's `persistent: true` can't reintroduce spurious
   /// data-serialization for them.
-  virtual bool isTransient() const;
-  void setTransient(bool transient);
+  virtual bool isPersistent() const;
+  void setPersistent(bool persistent);
 
   virtual PortData data() const;
   void setData(const PortData& data);
@@ -108,7 +108,7 @@ private:
   PortType m_declaredType;
   PortType m_effectiveType;
   PortData m_data;
-  bool m_transient = false;
+  bool m_persistent = true;
   bool m_stale = false;
   QList<Link*> m_links;
   /// Metadata deserialized before setData ran (typical load path:

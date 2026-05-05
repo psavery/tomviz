@@ -768,9 +768,12 @@ void Pipeline::propagateEffectiveTypes(Node* startNode)
 
 void Pipeline::releaseTransientData()
 {
+  // Disabled pending the persistent/transient lifecycle redesign.
+  return;
+
   for (auto* node : m_nodes) {
     for (auto* output : node->outputPorts()) {
-      if (!output->isTransient() || !output->hasData()) {
+      if (output->isPersistent() || !output->hasData()) {
         continue;
       }
 
