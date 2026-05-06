@@ -5,6 +5,7 @@
 #define tomvizPipelineLegacyPythonTransform_h
 
 #include "CustomNodeWidgetRegistry.h"
+#include "ParameterBindingUtils.h"
 #include "TransformNode.h"
 
 #include <QJsonArray>
@@ -77,6 +78,9 @@ private:
   // description — captured at parseJSON time so deserialize can
   // resolve a saved option index back to its value.
   QMap<QString, QJsonArray> m_enumOptions;
+  // Parameter bindings declared via the JSON `bindToSink` hint.
+  // Resolved at widget-open time, never persisted.
+  QMap<QString, ParameterBinding> m_parameterBindings;
   QString m_customWidgetID;
   QStringList m_resultNames;
   QStringList m_resultTypes;

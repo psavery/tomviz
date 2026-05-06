@@ -7,6 +7,7 @@
 #include "CustomPythonNodeWidget.h"
 #include "ExternalNodeExecutor.h"
 #include "OutputPort.h"
+#include "ParameterBindingUtils.h"
 #include "PythonNodeEditorWidget.h"
 
 namespace tomviz {
@@ -160,6 +161,8 @@ EditNodeWidget* PythonSource::createPropertiesWidget(QWidget* parent)
               emit parametersApplied();
             }
           });
+
+  wireParameterBindings(this, widget, m_backend.parameterBindings());
 
   return widget;
 }

@@ -372,6 +372,8 @@ set(SOURCES
   pipeline/sinks/ThresholdSinkWidget.h
   pipeline/sinks/SegmentSinkWidget.cxx
   pipeline/sinks/SegmentSinkWidget.h
+  pipeline/ParameterBindingUtils.cxx
+  pipeline/ParameterBindingUtils.h
   pipeline/ParameterInterfaceBuilder.cxx
   pipeline/ParameterInterfaceBuilder.h
   pipeline/CustomPythonNodeWidget.cxx

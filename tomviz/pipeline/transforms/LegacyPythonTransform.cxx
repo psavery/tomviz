@@ -7,6 +7,7 @@
 #include "ExternalNodeExecutor.h"
 #include "InputPort.h"
 #include "OutputPort.h"
+#include "ParameterBindingUtils.h"
 #include "PythonNodeUtils.h"
 #include "PythonNodeWrapper.h"
 #include "VolumeOutputPort.h"
@@ -236,6 +237,8 @@ EditNodeWidget* LegacyPythonTransform::createPropertiesWidget(
             }
           });
 
+  wireParameterBindings(this, widget, m_parameterBindings);
+
   return widget;
 }
 
@@ -333,6 +336,7 @@ void LegacyPythonTransform::parseJSON()
   m_datasetInputNames.clear();
   m_parameterTypes.clear();
   m_enumOptions.clear();
+  m_parameterBindings = parseParameterBindings(obj);
   if (obj.contains("parameters")) {
     QJsonArray params = obj.value("parameters").toArray();
     for (const auto& paramVal : params) {

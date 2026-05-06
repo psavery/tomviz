@@ -6,6 +6,7 @@
 #include "CustomNodeWidgetRegistry.h"
 #include "CustomPythonNodeWidget.h"
 #include "ExternalNodeExecutor.h"
+#include "ParameterBindingUtils.h"
 #include "PythonNodeEditorWidget.h"
 
 #include <QString>
@@ -177,6 +178,8 @@ EditNodeWidget* PythonTransform::createPropertiesWidget(QWidget* parent)
               emit parametersApplied();
             }
           });
+
+  wireParameterBindings(this, widget, m_backend.parameterBindings());
 
   return widget;
 }

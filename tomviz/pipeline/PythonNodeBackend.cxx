@@ -138,6 +138,11 @@ QMap<QString, QVariant> PythonNodeBackend::parameters() const
   return m_parameters;
 }
 
+QMap<QString, ParameterBinding> PythonNodeBackend::parameterBindings() const
+{
+  return m_parameterBindings;
+}
+
 QStringList PythonNodeBackend::inputNames() const
 {
   QStringList names;
@@ -176,12 +181,14 @@ void PythonNodeBackend::parseDescription()
   m_parameters.clear();
   m_parameterTypes.clear();
   m_enumOptions.clear();
+  m_parameterBindings.clear();
 
   QJsonDocument doc = QJsonDocument::fromJson(m_jsonDescription.toUtf8());
   if (!doc.isObject()) {
     return;
   }
   QJsonObject obj = doc.object();
+  m_parameterBindings = parseParameterBindings(obj);
 
   m_operatorName = obj.value(QStringLiteral("name")).toString();
   m_defaultLabel = obj.value(QStringLiteral("label")).toString();

@@ -93,7 +93,8 @@
       "minimum": 0,
       "maximum": 1000000,
       "visible_if": "transform_source == 'generate'",
-      "enable_if": "reference == 'slice_index'"
+      "enable_if": "reference == 'slice_index'",
+      "bindToSink": { "type": "SliceSink", "property": "slice" }
     },
     {
       "name": "apply_to_all_arrays",

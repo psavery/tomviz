@@ -4,6 +4,7 @@
 #ifndef tomvizPipelinePythonNodeBackend_h
 #define tomvizPipelinePythonNodeBackend_h
 
+#include "ParameterBindingUtils.h"
 #include "PortData.h"
 #include "PortType.h"
 
@@ -97,6 +98,11 @@ public:
   QVariant parameter(const QString& name) const;
   QMap<QString, QVariant> parameters() const;
 
+  /// Bindings declared via the JSON `bindToSink` hint, parsed at
+  /// description time. Resolved to live signal/slot wiring at
+  /// widget-open time by ParameterBindingUtils::wireParameterBindings.
+  QMap<QString, ParameterBinding> parameterBindings() const;
+
   // ---- serialize / deserialize --------------------------------------
   /// Append the backend's serialized fields (description, script,
   /// arguments) to @a base and return the merged object. Designed to
@@ -173,6 +179,7 @@ private:
   QMap<QString, QVariant> m_parameters;
   QMap<QString, QString> m_parameterTypes;
   QMap<QString, QJsonArray> m_enumOptions;
+  QMap<QString, ParameterBinding> m_parameterBindings;
 };
 
 } // namespace pipeline
