@@ -43,6 +43,8 @@ public:
   bool initialize(vtkSMViewProxy* view) override;
   bool finalize() override;
 
+  void clearVisualization() override;
+
   QJsonObject serialize() const override;
   bool deserialize(const QJsonObject& json) override;
 

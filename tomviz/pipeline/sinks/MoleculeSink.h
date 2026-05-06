@@ -37,6 +37,8 @@ public:
   bool initialize(vtkSMViewProxy* view) override;
   bool finalize() override;
 
+  void clearVisualization() override;
+
   QWidget* createSinkPropertiesWidget(QWidget* parent) override;
 
   QJsonObject serialize() const override;

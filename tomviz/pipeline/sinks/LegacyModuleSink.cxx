@@ -136,6 +136,9 @@ bool LegacyModuleSink::initialize(vtkSMViewProxy* view)
 
 bool LegacyModuleSink::finalize()
 {
+  if (m_viewProxy) {
+    emit renderNeeded();
+  }
   m_renderView = nullptr;
   m_viewProxy = nullptr;
   // The detached CTF (if the user enabled "Separate Color Map") is
@@ -278,6 +281,21 @@ void LegacyModuleSink::addClippingPlane(vtkPlane*)
 
 void LegacyModuleSink::removeClippingPlane(vtkPlane*)
 {
+}
+
+void LegacyModuleSink::clearVisualization()
+{
+}
+
+void LegacyModuleSink::resetVisualization()
+{
+  clearVisualization();
+  emit renderNeeded();
+}
+
+void LegacyModuleSink::onInputDisconnected(InputPort*)
+{
+  resetVisualization();
 }
 
 QList<LegacyModuleSink*> LegacyModuleSink::siblingSinks(

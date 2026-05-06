@@ -172,6 +172,13 @@ bool ClipSink::finalize()
   return LegacyModuleSink::finalize();
 }
 
+void ClipSink::clearVisualization()
+{
+  if (m_widget) {
+    m_widget->Off();
+  }
+}
+
 bool ClipSink::consume(const QMap<QString, PortData>& inputs)
 {
   if (!validateInput(inputs, "volume")) {

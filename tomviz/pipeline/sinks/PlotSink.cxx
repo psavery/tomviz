@@ -76,7 +76,16 @@ bool PlotSink::finalize()
   removeAllPlots();
   m_chart = nullptr;
   m_contextView = nullptr;
-  return true;
+  return LegacyModuleSink::finalize();
+}
+
+void PlotSink::clearVisualization()
+{
+  removeAllPlots();
+  m_table = nullptr;
+  if (m_contextView) {
+    m_contextView->Update();
+  }
 }
 
 bool PlotSink::consume(const QMap<QString, PortData>& inputs)

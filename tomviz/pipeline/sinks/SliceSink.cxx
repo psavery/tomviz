@@ -152,6 +152,13 @@ bool SliceSink::finalize()
   return LegacyModuleSink::finalize();
 }
 
+void SliceSink::clearVisualization()
+{
+  if (m_widget) {
+    m_widget->Off();
+  }
+}
+
 bool SliceSink::consume(const QMap<QString, PortData>& inputs)
 {
   if (!validateInput(inputs, "volume")) {
@@ -181,6 +188,14 @@ bool SliceSink::consume(const QMap<QString, PortData>& inputs)
 
     // Apply thick slicing
     m_widget->SetSliceThickness(m_sliceThickness);
+
+    // SetEnabled() touches the renderer and Qt GL state; consume() runs
+    // on the pipeline worker thread, so defer to the GUI thread.
+    QMetaObject::invokeMethod(this, [this]() {
+      if (m_widget) {
+        m_widget->SetEnabled(visibility() ? 1 : 0);
+      }
+    }, Qt::QueuedConnection);
   } else {
     // No widget yet (no view initialized) — just store dimensions for later
     if (m_slice < 0 && isOrtho()) {

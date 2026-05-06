@@ -151,6 +151,11 @@ bool SegmentSink::finalize()
   return LegacyModuleSink::finalize();
 }
 
+void SegmentSink::clearVisualization()
+{
+  m_actor->SetVisibility(0);
+}
+
 bool SegmentSink::runSegmentation(vtkImageData* input)
 {
   m_segmentedData->DeepCopy(input);

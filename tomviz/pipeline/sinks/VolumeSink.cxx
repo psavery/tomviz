@@ -111,6 +111,11 @@ bool VolumeSink::finalize()
   return LegacyModuleSink::finalize();
 }
 
+void VolumeSink::clearVisualization()
+{
+  m_volume->SetVisibility(0);
+}
+
 bool VolumeSink::consume(const QMap<QString, PortData>& inputs)
 {
   if (!validateInput(inputs, "volume")) {

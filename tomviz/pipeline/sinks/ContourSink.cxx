@@ -85,6 +85,11 @@ bool ContourSink::finalize()
   return LegacyModuleSink::finalize();
 }
 
+void ContourSink::clearVisualization()
+{
+  m_actor->SetVisibility(0);
+}
+
 bool ContourSink::consume(const QMap<QString, PortData>& inputs)
 {
   if (!validateInput(inputs, "volume")) {

@@ -91,6 +91,14 @@ bool ThresholdSink::finalize()
   return LegacyModuleSink::finalize();
 }
 
+void ThresholdSink::clearVisualization()
+{
+  if (m_thresholdRepresentation) {
+    vtkSMPropertyHelper(m_thresholdRepresentation, "Visibility").Set(0);
+    m_thresholdRepresentation->UpdateVTKObjects();
+  }
+}
+
 bool ThresholdSink::consume(const QMap<QString, PortData>& inputs)
 {
   if (!validateInput(inputs, "volume")) {

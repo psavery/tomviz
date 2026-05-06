@@ -29,8 +29,23 @@ static bool isTerminalNode(pipeline::Node* node)
          dynamic_cast<pipeline::SinkGroupNode*>(node);
 }
 
-/// Append a transform at the given targetPort, moving sink/group links to the
-/// new transform's output.
+/// First output port of @a transform whose type is compatible with @a
+/// sinkInput's accepted types, or nullptr if none exists.
+static pipeline::OutputPort* findCompatibleOutputPort(
+  pipeline::TransformNode* transform, pipeline::InputPort* sinkInput)
+{
+  for (auto* out : transform->outputPorts()) {
+    if (pipeline::isPortTypeCompatible(out->type(),
+                                       sinkInput->acceptedTypes())) {
+      return out;
+    }
+  }
+  return nullptr;
+}
+
+/// Append a transform at the given targetPort, moving sink/group links to a
+/// compatible output of the new transform.  Sinks with no compatible output
+/// on the new transform are left connected to @a targetPort.
 static void appendTransformAtPort(
   pipeline::Pipeline* pip,
   pipeline::TransformNode* transform,
@@ -39,21 +54,29 @@ static void appendTransformAtPort(
   pip->addNode(transform);
   pip->createLink(targetPort, transform->inputPorts()[0]);
 
-  // Re-link: move all terminal node links from old tip to new transform's output
-  auto* newTip = transform->outputPorts()[0];
-  QList<pipeline::Link*> linksToMove;
+  struct Move
+  {
+    pipeline::Link* link;
+    pipeline::OutputPort* newOut;
+  };
+  QList<Move> moves;
   for (auto* link : targetPort->links()) {
     if (link->to()->node() == transform) {
       continue; // skip the link we just created
     }
-    if (isTerminalNode(link->to()->node())) {
-      linksToMove.append(link);
+    if (!isTerminalNode(link->to()->node())) {
+      continue;
     }
+    auto* newOut = findCompatibleOutputPort(transform, link->to());
+    if (!newOut) {
+      continue;
+    }
+    moves.append({ link, newOut });
   }
-  for (auto* link : linksToMove) {
-    auto* sinkInput = link->to();
-    pip->removeLink(link);
-    pip->createLink(newTip, sinkInput);
+  for (const auto& m : moves) {
+    auto* sinkInput = m.link->to();
+    pip->removeLink(m.link);
+    pip->createLink(m.newOut, sinkInput);
   }
 }
 
@@ -68,15 +91,19 @@ static pipeline::DeferredLinkInfo appendTransformAtPortDeferred(
   pip->createLink(targetPort, transform->inputPorts()[0]);
 
   pipeline::DeferredLinkInfo deferred;
-  auto* newTip = transform->outputPorts()[0];
   for (auto* link : targetPort->links()) {
     if (link->to()->node() == transform) {
       continue; // skip the link we just created
     }
-    if (isTerminalNode(link->to()->node())) {
-      deferred.linksToBreak.append({ targetPort, link->to() });
-      deferred.linksToCreate.append({ newTip, link->to() });
+    if (!isTerminalNode(link->to()->node())) {
+      continue;
     }
+    auto* newOut = findCompatibleOutputPort(transform, link->to());
+    if (!newOut) {
+      continue;
+    }
+    deferred.linksToBreak.append({ targetPort, link->to() });
+    deferred.linksToCreate.append({ newOut, link->to() });
   }
   return deferred;
 }

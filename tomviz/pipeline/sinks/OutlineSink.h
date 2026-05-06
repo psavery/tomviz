@@ -65,6 +65,8 @@ public:
 
   void onMetadataChanged() override;
 
+  void clearVisualization() override;
+
 protected:
   bool consume(const QMap<QString, PortData>& inputs) override;
 

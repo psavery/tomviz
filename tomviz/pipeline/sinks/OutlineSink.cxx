@@ -425,6 +425,12 @@ bool OutlineSink::deserialize(const QJsonObject& json)
   return true;
 }
 
+void OutlineSink::clearVisualization()
+{
+  m_actor->SetVisibility(0);
+  m_gridAxes->SetVisibility(0);
+}
+
 void OutlineSink::onMetadataChanged()
 {
   auto vol = volumeData();

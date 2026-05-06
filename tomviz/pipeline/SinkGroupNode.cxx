@@ -7,6 +7,7 @@
 #include "Link.h"
 #include "PassthroughOutputPort.h"
 #include "SinkNode.h"
+#include "sinks/LegacyModuleSink.h"
 
 #include <QJsonArray>
 #include <QJsonObject>
@@ -28,11 +29,20 @@ void SinkGroupNode::addPassthrough(const QString& name, PortType type)
 
   // Keep the proxy wired to the current upstream output port.
   connect(input, &InputPort::connectionChanged, this,
-          [input, output]() {
+          [this, input, output]() {
             if (input->link() && input->link()->from()) {
               output->setSource(input->link()->from());
             } else {
               output->setSource(nullptr);
+              // Child sinks' immediate input links are unchanged, so
+              // their own InputPort::connectionChanged won't fire.
+              // Push the cleanup through so they don't keep showing
+              // data that no longer flows.
+              for (auto* sink : sinks()) {
+                if (auto* legacy = qobject_cast<LegacyModuleSink*>(sink)) {
+                  legacy->resetVisualization();
+                }
+              }
             }
           });
 }

@@ -107,6 +107,12 @@ bool RulerSink::finalize()
   return LegacyModuleSink::finalize();
 }
 
+void RulerSink::clearVisualization()
+{
+  m_lineActor->SetVisibility(0);
+  m_textActor->SetVisibility(0);
+}
+
 bool RulerSink::consume(const QMap<QString, PortData>& inputs)
 {
   if (!validateInput(inputs, "volume")) {

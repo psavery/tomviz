@@ -17,8 +17,13 @@ InputPort* SinkNode::addInput(const QString& name, PortTypes acceptedTypes)
   auto* port = addInputPort(name, acceptedTypes);
   connectUpstreamIntermediate(port);
   // Re-connect when the link changes (new connection / disconnection).
-  connect(port, &InputPort::connectionChanged, this,
-          [this, port]() { connectUpstreamIntermediate(port); });
+  connect(port, &InputPort::connectionChanged, this, [this, port]() {
+    if (port->link()) {
+      connectUpstreamIntermediate(port);
+    } else {
+      onInputDisconnected(port);
+    }
+  });
   return port;
 }
 

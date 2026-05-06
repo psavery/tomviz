@@ -92,6 +92,20 @@ public:
   virtual void addClippingPlane(vtkPlane* plane);
   virtual void removeClippingPlane(vtkPlane* plane);
 
+  /// Hide every prop this sink owns without touching the user-facing
+  /// visibility flag.  Called when an input link is removed so the
+  /// renderer doesn't keep showing stale data.  The next successful
+  /// consume() reapplies visibility through each subclass's existing
+  /// SetVisibility(visibility() ? 1 : 0) calls.  Default no-op.
+  virtual void clearVisualization();
+
+  /// Public entrypoint that clears the visualization and requests a
+  /// repaint.  Used by group nodes to propagate upstream loss-of-data
+  /// downstream: their child sinks' input links are unchanged, but the
+  /// data flowing through is gone, so they need the same cleanup as a
+  /// direct input disconnect.
+  void resetVisualization();
+
   /// Return sibling LegacyModuleSinks connected to the same upstream
   /// OutputPort as this sink's given input port (excluding this node).
   QList<LegacyModuleSink*> siblingSinks(
@@ -142,6 +156,8 @@ protected:
   /// so SetColor is a no-op and m_volumeProperty's MTime never bumps
   /// otherwise.
   void postConsume(bool success) override;
+
+  void onInputDisconnected(InputPort* port) override;
 
 private:
   /// Reset camera on first consume if no other sink has rendered to this view.

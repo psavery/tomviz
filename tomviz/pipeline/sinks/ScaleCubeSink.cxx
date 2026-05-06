@@ -84,6 +84,12 @@ bool ScaleCubeSink::finalize()
   return LegacyModuleSink::finalize();
 }
 
+void ScaleCubeSink::clearVisualization()
+{
+  m_cubeRep->SetHandleVisibility(0);
+  m_cubeRep->SetLabelVisibility(0);
+}
+
 bool ScaleCubeSink::consume(const QMap<QString, PortData>& inputs)
 {
   if (!validateInput(inputs, "volume")) {
@@ -123,6 +129,10 @@ bool ScaleCubeSink::consume(const QMap<QString, PortData>& inputs)
     m_cubeRep->SetLengthUnit(m_lengthUnit.toStdString().c_str());
     emit lengthUnitChanged(m_lengthUnit);
   }
+
+  m_cubeRep->SetHandleVisibility(visibility() ? 1 : 0);
+  m_cubeRep->SetLabelVisibility(
+    (visibility() && m_annotationVisibility) ? 1 : 0);
 
   emit renderNeeded();
   return true;

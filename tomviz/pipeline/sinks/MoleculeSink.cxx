@@ -62,6 +62,11 @@ bool MoleculeSink::finalize()
   return LegacyModuleSink::finalize();
 }
 
+void MoleculeSink::clearVisualization()
+{
+  m_actor->SetVisibility(0);
+}
+
 bool MoleculeSink::consume(const QMap<QString, PortData>& inputs)
 {
   if (!validateInput(inputs, "molecule")) {

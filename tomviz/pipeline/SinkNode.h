@@ -37,6 +37,10 @@ protected:
   /// onIntermediateData() paths. Default no-op.
   virtual void postConsume(bool /*success*/) {}
 
+  /// Hook fired when an input port loses its incoming link.
+  /// Default no-op.
+  virtual void onInputDisconnected(InputPort* /*port*/) {}
+
 private slots:
   void onIntermediateData();
 
