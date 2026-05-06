@@ -15,7 +15,7 @@ class TransformNode;
 ///  - Ctrl held → add node unconnected
 ///  - Active link selected → insert between nodes
 ///  - Otherwise → append at tip output port
-///  - If hasPropertiesWidget() → show TransformEditDialog with deferred links
+///  - If hasPropertiesWidget() → show NodeEditDialog with deferred links
 ///  - Otherwise → complete insertion and execute
 ///
 /// Returns true on success.  On failure the transform is deleted.

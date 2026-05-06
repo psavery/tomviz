@@ -252,7 +252,7 @@ void RulerSink::endPointsUpdated()
   emit renderNeeded();
 }
 
-QWidget* RulerSink::createPropertiesWidget(QWidget* parent)
+QWidget* RulerSink::createSinkPropertiesWidget(QWidget* parent)
 {
   if (!m_rulerSource) {
     return nullptr;

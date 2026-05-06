@@ -269,6 +269,21 @@ bool Node::execute()
   return true;
 }
 
+bool Node::hasPropertiesWidget() const
+{
+  return false;
+}
+
+bool Node::propertiesWidgetNeedsInput() const
+{
+  return false;
+}
+
+EditNodeWidget* Node::createPropertiesWidget(QWidget* /*parent*/)
+{
+  return nullptr;
+}
+
 void Node::setIntermediateOutputs(const QMap<QString, PortData>& updates)
 {
   for (auto it = updates.constBegin(); it != updates.constEnd(); ++it) {

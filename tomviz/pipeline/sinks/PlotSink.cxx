@@ -229,7 +229,7 @@ void PlotSink::setYLogScale(bool log)
   }
 }
 
-QWidget* PlotSink::createPropertiesWidget(QWidget* parent)
+QWidget* PlotSink::createSinkPropertiesWidget(QWidget* parent)
 {
   auto* widget = new QWidget(parent);
   auto* layout = new QFormLayout;

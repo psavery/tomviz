@@ -3,7 +3,6 @@
 
 #include "TransformNode.h"
 
-#include "EditTransformWidget.h"
 #include "InputPort.h"
 #include "OutputPort.h"
 
@@ -27,22 +26,6 @@ InputPort* TransformNode::addInput(const QString& name,
 OutputPort* TransformNode::addOutput(const QString& name, PortType type)
 {
   return addOutputPort(name, type);
-}
-
-bool TransformNode::hasPropertiesWidget() const
-{
-  return false;
-}
-
-bool TransformNode::propertiesWidgetNeedsInput() const
-{
-  return false;
-}
-
-EditTransformWidget* TransformNode::createPropertiesWidget(
-  QWidget* /*parent*/)
-{
-  return nullptr;
 }
 
 QJsonObject TransformNode::serialize() const

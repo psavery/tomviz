@@ -278,11 +278,12 @@ bool ExternalNodeExecutor::populateOutputs(Node* target, int targetNodeId,
                << outputPath;
     return false;
   }
-  for (auto it = outputs.constBegin(); it != outputs.constEnd(); ++it) {
-    if (auto* port = target->outputPort(it.key())) {
-      port->setData(it.value());
-    }
-  }
+  // Route through Node::applyOutputs so volume payloads reuse the
+  // existing VolumeData instance instead of replacing it. That preserves
+  // the color map across re-executions — without this, every external
+  // re-run would swap in a fresh VolumeData carrying a default
+  // ColorMap and the user's choice would be lost.
+  target->applyOutputs(outputs);
   return true;
 }
 

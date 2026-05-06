@@ -51,7 +51,7 @@ public:
 
   bool hasPropertiesWidget() const override;
   bool propertiesWidgetNeedsInput() const override;
-  EditTransformWidget* createPropertiesWidget(QWidget* parent) override;
+  EditNodeWidget* createPropertiesWidget(QWidget* parent) override;
 
   QJsonObject serialize() const override;
   bool deserialize(const QJsonObject& json) override;

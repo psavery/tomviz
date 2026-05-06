@@ -24,6 +24,7 @@
 #include "Utilities.h"
 #include "vtkOMETiffReader.h"
 
+#include "pipeline/OutputPort.h"
 #include "pipeline/Pipeline.h"
 #include "pipeline/PortData.h"
 #include "pipeline/PortType.h"
@@ -110,6 +111,20 @@ bool hasData(vtkSMProxy* reader)
     return false;
   }
   return true;
+}
+
+void applyDefaultColorMapPreset(tomviz::pipeline::OutputPort* port)
+{
+  if (!port) {
+    return;
+  }
+  auto vol = tomviz::pipeline::getOutputData<tomviz::pipeline::VolumeDataPtr>(
+    port->node());
+  if (!vol) {
+    return;
+  }
+  tomviz::ColorMap::instance().applyPreset(vol->colorMap());
+  vol->rescaleColorMap();
 }
 } // namespace
 
@@ -492,27 +507,45 @@ pipeline::SourceNode* LoadDataReaction::createFromParaViewReader(
   return nullptr;
 }
 
-void LoadDataReaction::sourceNodeAdded(pipeline::SourceNode* source,
-                                       bool defaultModules, bool /* child */,
-                                       bool /* createCameraOrbit */)
+void LoadDataReaction::addSourceToPipeline(pipeline::SourceNode* source)
 {
   if (!source) {
     return;
   }
+  auto* pip = ActiveObjects::instance().pipeline();
+  if (!pip) {
+    return;
+  }
+  pip->addNode(source);
+}
 
+void LoadDataReaction::completeSourceSetup(pipeline::SourceNode* source,
+                                           bool defaultModules)
+{
+  if (!source) {
+    return;
+  }
   auto* pip = ActiveObjects::instance().pipeline();
   if (!pip) {
     return;
   }
 
-  pip->addNode(source);
-
-  // Initialize color/opacity maps with default preset and data range
-  auto volumeData =
-    pipeline::getOutputData<pipeline::VolumeDataPtr>(source);
-  if (volumeData) {
-    ColorMap::instance().applyPreset(volumeData->colorMap());
-    volumeData->rescaleColorMap();
+  // Apply the default color map preset as soon as the source has volume
+  // data on its primary output. File-loaded sources already have data
+  // when we get here (setOutputData ran before sourceNodeAdded); sources
+  // that produce their data on first execute (PythonSource via the
+  // editor dialog) get a single-shot listener that fires on the first
+  // dataChanged and then auto-disconnects, so subsequent re-executions
+  // leave any user-chosen color map alone.
+  if (!source->outputPorts().isEmpty()) {
+    auto* port = source->outputPorts().first();
+    if (port->hasData()) {
+      applyDefaultColorMapPreset(port);
+    } else {
+      QObject::connect(port, &pipeline::OutputPort::dataChanged, port,
+                       [port]() { applyDefaultColorMapPreset(port); },
+                       Qt::SingleShotConnection);
+    }
   }
 
   // Get view for visualization
@@ -553,10 +586,20 @@ void LoadDataReaction::sourceNodeAdded(pipeline::SourceNode* source,
       pip->createLink(group->outputPorts()[0], volume->inputPorts()[0]);
     }
   }
+}
+
+void LoadDataReaction::sourceNodeAdded(pipeline::SourceNode* source,
+                                       bool defaultModules, bool /* child */,
+                                       bool /* createCameraOrbit */)
+{
+  addSourceToPipeline(source);
+  completeSourceSetup(source, defaultModules);
 
   // Defer so the event loop can process pending signals before executing.
   // ThreadedExecutor handles the case where it's already running.
-  QTimer::singleShot(0, pip, [pip]() { pip->execute(); });
+  if (auto* pip = ActiveObjects::instance().pipeline()) {
+    QTimer::singleShot(0, pip, [pip]() { pip->execute(); });
+  }
 }
 
 QJsonObject LoadDataReaction::readerProperties(vtkSMProxy* reader)

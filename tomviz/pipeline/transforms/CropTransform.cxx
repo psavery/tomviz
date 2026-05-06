@@ -3,7 +3,7 @@
 
 #include "CropTransform.h"
 
-#include "EditTransformWidget.h"
+#include "EditNodeWidget.h"
 #include "InputPort.h"
 #include "data/VolumeData.h"
 #include "SelectVolumeWidget.h"
@@ -20,14 +20,14 @@
 
 namespace {
 
-class CropWidget : public tomviz::pipeline::EditTransformWidget
+class CropWidget : public tomviz::pipeline::EditNodeWidget
 {
   Q_OBJECT
 
 public:
   CropWidget(tomviz::pipeline::CropTransform* op,
              tomviz::pipeline::VolumeDataPtr volumeData, QWidget* p)
-    : tomviz::pipeline::EditTransformWidget(p), m_operator(op)
+    : tomviz::pipeline::EditNodeWidget(p), m_operator(op)
   {
     double displayPosition[3] = { 0, 0, 0 };
     double origin[3];
@@ -123,7 +123,7 @@ bool CropTransform::propertiesWidgetNeedsInput() const
   return true;
 }
 
-EditTransformWidget* CropTransform::createPropertiesWidget(QWidget* parent)
+EditNodeWidget* CropTransform::createPropertiesWidget(QWidget* parent)
 {
   auto* inputPort = this->inputPorts()[0];
   if (!inputPort || !inputPort->hasData()) {

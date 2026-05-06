@@ -3,7 +3,7 @@
 
 #include "SetTiltAnglesTransform.h"
 
-#include "EditTransformWidget.h"
+#include "EditNodeWidget.h"
 #include "InputPort.h"
 #include "data/VolumeData.h"
 
@@ -37,13 +37,13 @@
 
 namespace {
 
-class SetTiltAnglesWidget : public tomviz::pipeline::EditTransformWidget
+class SetTiltAnglesWidget : public tomviz::pipeline::EditNodeWidget
 {
   Q_OBJECT
 public:
   SetTiltAnglesWidget(tomviz::pipeline::SetTiltAnglesTransform* op,
                       tomviz::pipeline::VolumeDataPtr volumeData, QWidget* p)
-    : EditTransformWidget(p), m_op(op)
+    : EditNodeWidget(p), m_op(op)
   {
     QMap<size_t, double> tiltAngles = m_op->tiltAnglesMap();
     QHBoxLayout* baseLayout = new QHBoxLayout;
@@ -464,7 +464,7 @@ bool SetTiltAnglesTransform::propertiesWidgetNeedsInput() const
   return true;
 }
 
-EditTransformWidget* SetTiltAnglesTransform::createPropertiesWidget(
+EditNodeWidget* SetTiltAnglesTransform::createPropertiesWidget(
   QWidget* parent)
 {
   auto* inputPort = this->inputPorts()[0];

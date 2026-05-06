@@ -92,7 +92,7 @@ bool TranslateAlignTransform::propertiesWidgetNeedsInput() const
   return true;
 }
 
-EditTransformWidget* TranslateAlignTransform::createPropertiesWidget(
+EditNodeWidget* TranslateAlignTransform::createPropertiesWidget(
   QWidget* parent)
 {
   auto* inputPort = this->inputPorts()[0];

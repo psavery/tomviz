@@ -454,7 +454,7 @@ void ContourSink::updateColorArray()
 
 // --- Properties Widget ---
 
-QWidget* ContourSink::createPropertiesWidget(QWidget* parent)
+QWidget* ContourSink::createSinkPropertiesWidget(QWidget* parent)
 {
   auto* widget = new QWidget(parent);
   auto* layout = new QVBoxLayout;

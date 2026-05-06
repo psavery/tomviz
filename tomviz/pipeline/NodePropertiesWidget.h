@@ -1,10 +1,10 @@
 /* This source file is part of the Tomviz project, https://tomviz.org/.
    It is released under the 3-Clause BSD License, see "LICENSE". */
 
-#ifndef tomvizPipelineTransformPropertiesWidget_h
-#define tomvizPipelineTransformPropertiesWidget_h
+#ifndef tomvizPipelineNodePropertiesWidget_h
+#define tomvizPipelineNodePropertiesWidget_h
 
-#include "EditTransformWidget.h"
+#include "EditNodeWidget.h"
 
 #include <QMap>
 #include <QString>
@@ -14,17 +14,17 @@ namespace tomviz {
 namespace pipeline {
 
 /// A JSON-driven parameter editing widget built by ParameterInterfaceBuilder.
-/// Does not own any buttons — the wrapper (TransformPropertiesPanel or
-/// TransformEditDialog) provides Apply/OK/Cancel.
-class TransformPropertiesWidget
-  : public EditTransformWidget
+/// Does not own any buttons — the wrapper (NodePropertiesPanel or
+/// NodeEditDialog) provides Apply/OK/Cancel.
+class NodePropertiesWidget
+  : public EditNodeWidget
 {
   Q_OBJECT
 
 public:
-  TransformPropertiesWidget(const QString& jsonDescription,
-                            const QMap<QString, QVariant>& currentValues,
-                            QWidget* parent = nullptr);
+  NodePropertiesWidget(const QString& jsonDescription,
+                       const QMap<QString, QVariant>& currentValues,
+                       QWidget* parent = nullptr);
 
   QMap<QString, QVariant> values() const;
 
@@ -32,7 +32,7 @@ public:
 
 signals:
   /// Emitted by applyChangesToOperator(), carrying the current values.
-  /// The transform connects to this signal to update its parameters.
+  /// The node connects to this signal to update its parameters.
   void applyRequested(const QMap<QString, QVariant>& values);
 
 private:

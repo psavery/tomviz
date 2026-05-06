@@ -498,7 +498,7 @@ void LegacyModuleSink::resetCameraIfFirstSink()
   }
 }
 
-QWidget* LegacyModuleSink::createPropertiesWidget(QWidget* /*parent*/)
+QWidget* LegacyModuleSink::createSinkPropertiesWidget(QWidget* /*parent*/)
 {
   return nullptr;
 }

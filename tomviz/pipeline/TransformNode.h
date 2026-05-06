@@ -16,8 +16,6 @@ class QWidget;
 namespace tomviz {
 namespace pipeline {
 
-class EditTransformWidget;
-
 class TransformNode : public Node
 {
   Q_OBJECT
@@ -33,15 +31,6 @@ public:
 
   bool execute() override;
 
-  /// Whether this transform provides a properties widget.
-  virtual bool hasPropertiesWidget() const;
-
-  /// Whether the properties widget needs current input port data to display.
-  virtual bool propertiesWidgetNeedsInput() const;
-
-  /// Create the properties widget. Caller owns the returned widget.
-  virtual EditTransformWidget* createPropertiesWidget(QWidget* parent);
-
   /// Serialize this transform's persistent state to JSON.
   /// Forwards to Node::serialize(). Subclasses call this base and add
   /// their transform-specific fields.
@@ -51,12 +40,6 @@ public:
   /// *Operator::serialize()) to this transform. Returns false on
   /// unrecoverable errors. Forwards to Node::deserialize().
   bool deserialize(const QJsonObject& json) override;
-
-signals:
-  /// Emitted when the user applies new parameter values via the properties
-  /// widget. The node has already been marked stale; connect this to
-  /// pipeline re-execution.
-  void parametersApplied();
 
 protected:
   virtual QMap<QString, PortData> transform(

@@ -1,14 +1,14 @@
 /* This source file is part of the Tomviz project, https://tomviz.org/.
    It is released under the 3-Clause BSD License, see "LICENSE". */
 
-#include "TransformEditDialog.h"
+#include "NodeEditDialog.h"
 
-#include "EditTransformWidget.h"
+#include "EditNodeWidget.h"
 #include "InputPort.h"
 #include "Link.h"
+#include "Node.h"
 #include "OutputPort.h"
 #include "Pipeline.h"
-#include "TransformNode.h"
 
 #include "Utilities.h"
 
@@ -25,51 +25,47 @@
 namespace tomviz {
 namespace pipeline {
 
-TransformEditDialog::TransformEditDialog(TransformNode* transform,
-                                         Pipeline* pipeline, QWidget* parent)
-  : QDialog(parent), m_transform(transform), m_pipeline(pipeline),
+NodeEditDialog::NodeEditDialog(Node* node, Pipeline* pipeline, QWidget* parent)
+  : QDialog(parent), m_node(node), m_pipeline(pipeline),
     m_isNewInsertion(false)
 {
   init();
 }
 
-TransformEditDialog::TransformEditDialog(TransformNode* transform,
-                                         Pipeline* pipeline,
-                                         const DeferredLinkInfo& deferred,
-                                         QWidget* parent)
-  : QDialog(parent), m_transform(transform), m_pipeline(pipeline),
+NodeEditDialog::NodeEditDialog(Node* node, Pipeline* pipeline,
+                               const DeferredLinkInfo& deferred,
+                               QWidget* parent)
+  : QDialog(parent), m_node(node), m_pipeline(pipeline),
     m_deferred(deferred), m_isNewInsertion(true)
 {
   init();
 }
 
-TransformEditDialog::~TransformEditDialog()
+NodeEditDialog::~NodeEditDialog()
 {
   saveGeometry();
 
   // Restore the parametersApplied → execute() auto-wiring that was
   // disconnected in init(), unless the node was removed (cancel in insertion
   // mode).
-  if (m_transform && m_pipeline &&
-      m_pipeline->nodes().contains(m_transform)) {
-    m_transform->setEditing(false);
-    connect(m_transform, &TransformNode::parametersApplied, m_pipeline,
+  if (m_node && m_pipeline && m_pipeline->nodes().contains(m_node)) {
+    m_node->setEditing(false);
+    connect(m_node, &Node::parametersApplied, m_pipeline,
             [pip = m_pipeline]() { pip->execute(); });
   }
 }
 
-TransformNode* TransformEditDialog::transform() const
+Node* NodeEditDialog::node() const
 {
-  return m_transform;
+  return m_node;
 }
 
-void TransformEditDialog::init()
+void NodeEditDialog::init()
 {
-  m_transform->setEditing(true);
+  m_node->setEditing(true);
 
   // Suppress the auto-execute wiring so the dialog controls execution.
-  QObject::disconnect(m_transform, &TransformNode::parametersApplied,
-                      m_pipeline, nullptr);
+  QObject::disconnect(m_node, &Node::parametersApplied, m_pipeline, nullptr);
 
   auto* layout = new QVBoxLayout(this);
   layout->setContentsMargins(5, 5, 5, 5);
@@ -83,11 +79,11 @@ void TransformEditDialog::init()
   m_buttonBox->button(QDialogButtonBox::Ok)->setDefault(false);
 
   connect(m_buttonBox, &QDialogButtonBox::accepted, this,
-          &TransformEditDialog::onOkay);
+          &NodeEditDialog::onOkay);
   connect(m_buttonBox, &QDialogButtonBox::rejected, this,
-          &TransformEditDialog::onCancel);
+          &NodeEditDialog::onCancel);
   connect(m_buttonBox->button(QDialogButtonBox::Apply), &QPushButton::clicked,
-          this, &TransformEditDialog::onApply);
+          this, &NodeEditDialog::onApply);
 
   // Content area (properties widget or warning)
   setupContent();
@@ -111,14 +107,14 @@ void TransformEditDialog::init()
   }
 }
 
-bool TransformEditDialog::inputsReady() const
+bool NodeEditDialog::inputsReady() const
 {
-  if (!m_transform->propertiesWidgetNeedsInput()) {
+  if (!m_node->propertiesWidgetNeedsInput()) {
     return true;
   }
 
   // Widget needs input data — all inputs must be connected with current data
-  for (auto* input : m_transform->inputPorts()) {
+  for (auto* input : m_node->inputPorts()) {
     if (!input->link() || input->isStale() || !input->hasData()) {
       return false;
     }
@@ -127,7 +123,7 @@ bool TransformEditDialog::inputsReady() const
   return true;
 }
 
-void TransformEditDialog::setupContent()
+void NodeEditDialog::setupContent()
 {
   auto* layout = qobject_cast<QVBoxLayout*>(this->layout());
 
@@ -137,9 +133,9 @@ void TransformEditDialog::setupContent()
     warning->setWordWrap(true);
     warning->setAlignment(Qt::AlignCenter);
     warning->setText(
-      tr("This transform's properties widget requires connected, current "
+      tr("This node's properties widget requires connected, current "
          "input data.\n\nPlease ensure all input ports are connected and "
-         "upstream transforms have been executed."));
+         "upstream nodes have been executed."));
     warning->setStyleSheet(
       "QLabel { color: #b45309; background: #fef3c7; border: 1px solid "
       "#fcd34d; border-radius: 4px; padding: 12px; }");
@@ -147,13 +143,13 @@ void TransformEditDialog::setupContent()
     return;
   }
 
-  m_editWidget = m_transform->createPropertiesWidget(this);
+  m_editWidget = m_node->createPropertiesWidget(this);
   if (m_editWidget) {
     layout->addWidget(m_editWidget, 1);
   }
 }
 
-void TransformEditDialog::onApply()
+void NodeEditDialog::onApply()
 {
   if (m_editWidget) {
     m_editWidget->applyChangesToOperator();
@@ -163,13 +159,13 @@ void TransformEditDialog::onApply()
     completeInsertion();
   }
 
-  // Mark the transform stale so the pipeline re-executes it with the
+  // Mark the node stale so the pipeline re-executes it with the
   // updated parameters (and cascades staleness downstream).
-  m_transform->markStale();
+  m_node->markStale();
   m_pipeline->execute();
 }
 
-void TransformEditDialog::onOkay()
+void NodeEditDialog::onOkay()
 {
   if (m_editWidget) {
     m_editWidget->applyChangesToOperator();
@@ -179,25 +175,26 @@ void TransformEditDialog::onOkay()
     completeInsertion();
   }
 
-  m_transform->markStale();
+  m_node->markStale();
   m_pipeline->execute();
   accept();
 }
 
-void TransformEditDialog::onCancel()
+void NodeEditDialog::onCancel()
 {
   if (m_isNewInsertion && !m_insertionCompleted) {
-    // Remove the transform and its input links.
-    // Output links were never created, so the pipeline remains valid.
-    m_pipeline->removeNode(m_transform);
-    m_transform = nullptr;
+    // Remove the node and its links. For transforms the input link
+    // exists; for sources there are no inputs. Output links were
+    // never created, so the pipeline remains valid.
+    m_pipeline->removeNode(m_node);
+    m_node = nullptr;
     emit insertionCanceled();
   }
 
   reject();
 }
 
-void TransformEditDialog::showEvent(QShowEvent* event)
+void NodeEditDialog::showEvent(QShowEvent* event)
 {
   QDialog::showEvent(event);
 
@@ -226,32 +223,32 @@ void TransformEditDialog::showEvent(QShowEvent* event)
   activateWindow();
 }
 
-void TransformEditDialog::saveGeometry()
+void NodeEditDialog::saveGeometry()
 {
-  if (!m_transform) {
+  if (!m_node) {
     return;
   }
   QSettings* settings = pqApplicationCore::instance()->settings();
   QString key =
-    QString("Edit%1TransformDialogGeometry").arg(m_transform->label());
+    QString("Edit%1NodeDialogGeometry").arg(m_node->label());
   settings->setValue(key, QVariant(geometry()));
 }
 
-void TransformEditDialog::restoreGeometry()
+void NodeEditDialog::restoreGeometry()
 {
-  if (!m_transform) {
+  if (!m_node) {
     return;
   }
   QSettings* settings = pqApplicationCore::instance()->settings();
   QString key =
-    QString("Edit%1TransformDialogGeometry").arg(m_transform->label());
+    QString("Edit%1NodeDialogGeometry").arg(m_node->label());
   QVariant saved = settings->value(key);
   if (!saved.isNull()) {
     resize(saved.toRect().size());
   }
 }
 
-void TransformEditDialog::completeInsertion()
+void NodeEditDialog::completeInsertion()
 {
   // Break old links
   for (const auto& ep : m_deferred.linksToBreak) {
@@ -271,7 +268,7 @@ void TransformEditDialog::completeInsertion()
 
   m_insertionCompleted = true;
   m_isNewInsertion = false;
-  emit insertionCompleted(m_transform);
+  emit insertionCompleted(m_node);
 }
 
 } // namespace pipeline

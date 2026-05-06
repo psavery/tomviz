@@ -4,7 +4,7 @@
 #ifndef tomvizAlignWidget_h
 #define tomvizAlignWidget_h
 
-#include "pipeline/EditTransformWidget.h"
+#include "pipeline/EditNodeWidget.h"
 
 #include <vtkNew.h>
 #include <vtkSmartPointer.h>
@@ -42,7 +42,7 @@ class SpinBox;
 class ViewMode;
 class QVTKGLWidget;
 
-class AlignWidget : public pipeline::EditTransformWidget
+class AlignWidget : public pipeline::EditNodeWidget
 {
   Q_OBJECT
 

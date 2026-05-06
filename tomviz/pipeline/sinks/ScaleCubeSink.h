@@ -36,7 +36,7 @@ public:
   QJsonObject serialize() const override;
   bool deserialize(const QJsonObject& json) override;
 
-  QWidget* createPropertiesWidget(QWidget* parent) override;
+  QWidget* createSinkPropertiesWidget(QWidget* parent) override;
 
   double sideLength() const;
   void setSideLength(double length);

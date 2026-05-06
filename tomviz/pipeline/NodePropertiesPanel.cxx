@@ -1,12 +1,12 @@
 /* This source file is part of the Tomviz project, https://tomviz.org/.
    It is released under the 3-Clause BSD License, see "LICENSE". */
 
-#include "TransformPropertiesPanel.h"
+#include "NodePropertiesPanel.h"
 
-#include "EditTransformWidget.h"
+#include "EditNodeWidget.h"
 #include "InputPort.h"
+#include "Node.h"
 #include "Pipeline.h"
-#include "TransformNode.h"
 
 #include <QDialogButtonBox>
 #include <QPushButton>
@@ -16,29 +16,27 @@
 namespace tomviz {
 namespace pipeline {
 
-TransformPropertiesPanel::TransformPropertiesPanel(TransformNode* transform,
-                                                   Pipeline* pipeline,
-                                                   QWidget* parent)
-  : QWidget(parent), m_transform(transform), m_pipeline(pipeline)
+NodePropertiesPanel::NodePropertiesPanel(Node* node, Pipeline* pipeline,
+                                         QWidget* parent)
+  : QWidget(parent), m_node(node), m_pipeline(pipeline)
 {
   // Suppress the auto-execute wiring so this panel controls execution.
-  QObject::disconnect(m_transform, &TransformNode::parametersApplied,
-                      m_pipeline, nullptr);
+  QObject::disconnect(m_node, &Node::parametersApplied, m_pipeline, nullptr);
 
   auto* layout = new QVBoxLayout(this);
   layout->setContentsMargins(0, 0, 0, 0);
 
-  // Skip widget creation if the transform needs input data that isn't
+  // Skip widget creation if the node needs input data that isn't
   // available yet (e.g., nodeAdded fires before createLink).
-  if (transform->propertiesWidgetNeedsInput()) {
-    for (auto* input : transform->inputPorts()) {
+  if (node->propertiesWidgetNeedsInput()) {
+    for (auto* input : node->inputPorts()) {
       if (!input->link() || !input->hasData()) {
         return;
       }
     }
   }
 
-  m_editWidget = transform->createPropertiesWidget(this);
+  m_editWidget = node->createPropertiesWidget(this);
   if (m_editWidget) {
     auto* scrollArea = new QScrollArea(this);
     scrollArea->setFrameShape(QFrame::NoFrame);
@@ -50,7 +48,7 @@ TransformPropertiesPanel::TransformPropertiesPanel(TransformNode* transform,
       QDialogButtonBox::Apply, Qt::Horizontal, this);
     auto* applyBtn = buttonBox->button(QDialogButtonBox::Apply);
     connect(applyBtn, &QPushButton::clicked,
-            this, &TransformPropertiesPanel::apply);
+            this, &NodePropertiesPanel::apply);
     layout->addWidget(buttonBox);
 
     // Disable Apply while the pipeline is executing.
@@ -64,23 +62,22 @@ TransformPropertiesPanel::TransformPropertiesPanel(TransformNode* transform,
   }
 }
 
-TransformPropertiesPanel::~TransformPropertiesPanel()
+NodePropertiesPanel::~NodePropertiesPanel()
 {
-  // Restore the auto-wiring if the transform is still in the pipeline.
-  if (m_transform && m_pipeline &&
-      m_pipeline->nodes().contains(m_transform)) {
-    connect(m_transform, &TransformNode::parametersApplied, m_pipeline,
+  // Restore the auto-wiring if the node is still in the pipeline.
+  if (m_node && m_pipeline && m_pipeline->nodes().contains(m_node)) {
+    connect(m_node, &Node::parametersApplied, m_pipeline,
             [pip = m_pipeline]() { pip->execute(); });
   }
 }
 
-void TransformPropertiesPanel::apply()
+void NodePropertiesPanel::apply()
 {
   if (m_editWidget) {
     m_editWidget->applyChangesToOperator();
   }
-  if (m_transform) {
-    m_transform->markStale();
+  if (m_node) {
+    m_node->markStale();
   }
   if (m_pipeline) {
     m_pipeline->execute();

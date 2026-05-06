@@ -230,7 +230,7 @@ void ScaleCubeSink::onMetadataChanged()
   }
 }
 
-QWidget* ScaleCubeSink::createPropertiesWidget(QWidget* parent)
+QWidget* ScaleCubeSink::createSinkPropertiesWidget(QWidget* parent)
 {
   auto* widget = new QWidget(parent);
   auto* layout = new QFormLayout(widget);

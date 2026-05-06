@@ -8,8 +8,10 @@ ARRAY_TYPES = (collections.abc.Sequence, np.ndarray)
 
 
 class Dataset(AbstractDataset):
-    def __init__(self, arrays, active=None):
+    def __init__(self, arrays=None, active=None):
         # Holds the map of scalars name => array
+        if arrays is None:
+            arrays = {}
         self.arrays = arrays
         self.tilt_angles = None
         self.tilt_axis = None
@@ -54,6 +56,10 @@ class Dataset(AbstractDataset):
 
     def set_scalars(self, name, array):
         self.arrays[name] = array
+        # Mirror internal_dataset.Dataset: the first scalar added to an
+        # otherwise-empty dataset becomes the active one.
+        if self._active_name is None:
+            self._active_name = name
 
     @property
     def spacing(self):

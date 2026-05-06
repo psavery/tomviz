@@ -1,11 +1,11 @@
 /* This source file is part of the Tomviz project, https://tomviz.org/.
    It is released under the 3-Clause BSD License, see "LICENSE". */
 
-#include "PythonTransformEditorWidget.h"
+#include "PythonNodeEditorWidget.h"
 
 #include "CustomPythonNodeWidget.h"
 #include "ExternalNodeExecutor.h"
-#include "TransformPropertiesWidget.h"
+#include "NodePropertiesWidget.h"
 
 #include <pqPythonSyntaxHighlighter.h>
 
@@ -26,12 +26,12 @@
 namespace tomviz {
 namespace pipeline {
 
-PythonTransformEditorWidget::PythonTransformEditorWidget(
+PythonNodeEditorWidget::PythonNodeEditorWidget(
   const QString& label, const QString& script, const QString& jsonDescription,
   const QMap<QString, QVariant>& currentValues, const QString& executorType,
   const QString& executorEnvPath,
   CustomPythonNodeWidget* customParamsWidget, QWidget* parent)
-  : EditTransformWidget(parent), m_customParamsWidget(customParamsWidget)
+  : EditNodeWidget(parent), m_customParamsWidget(customParamsWidget)
 {
   auto* mainLayout = new QVBoxLayout(this);
   mainLayout->setContentsMargins(0, 0, 0, 0);
@@ -94,8 +94,8 @@ PythonTransformEditorWidget::PythonTransformEditorWidget(
         }
       }
 
-      m_paramsWidget = new TransformPropertiesWidget(jsonDescription,
-                                                     currentValues, paramsTab);
+      m_paramsWidget = new NodePropertiesWidget(jsonDescription,
+                                                currentValues, paramsTab);
       paramsLayout->addWidget(m_paramsWidget, 1);
     }
 
@@ -167,7 +167,7 @@ PythonTransformEditorWidget::PythonTransformEditorWidget(
   m_tabWidget->setCurrentIndex(1);
 }
 
-void PythonTransformEditorWidget::applyChangesToOperator()
+void PythonNodeEditorWidget::applyChangesToOperator()
 {
   QMap<QString, QVariant> values;
   if (m_paramsWidget) {
@@ -179,7 +179,7 @@ void PythonTransformEditorWidget::applyChangesToOperator()
                envPath);
 }
 
-void PythonTransformEditorWidget::showScriptTab()
+void PythonNodeEditorWidget::showScriptTab()
 {
   m_tabWidget->setCurrentIndex(0);
 }

@@ -148,7 +148,7 @@ void OutlineSink::setColor(double r, double g, double b)
   emit renderNeeded();
 }
 
-QWidget* OutlineSink::createPropertiesWidget(QWidget* parent)
+QWidget* OutlineSink::createSinkPropertiesWidget(QWidget* parent)
 {
   auto* widget = new QWidget(parent);
   auto* panelLayout = new QVBoxLayout(widget);

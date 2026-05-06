@@ -350,7 +350,7 @@ void VolumeSink::removeAllClippingPlanes()
 
 // --- Properties widget ---
 
-QWidget* VolumeSink::createPropertiesWidget(QWidget* parent)
+QWidget* VolumeSink::createSinkPropertiesWidget(QWidget* parent)
 {
   auto* widget = new VolumeSinkWidget(parent);
   int insertRow = 0;

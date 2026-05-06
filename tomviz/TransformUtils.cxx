@@ -14,7 +14,7 @@
 #include "pipeline/Pipeline.h"
 #include "pipeline/SinkGroupNode.h"
 #include "pipeline/SinkNode.h"
-#include "pipeline/TransformEditDialog.h"
+#include "pipeline/NodeEditDialog.h"
 #include "pipeline/TransformNode.h"
 
 #include <QApplication>
@@ -81,7 +81,7 @@ static pipeline::DeferredLinkInfo appendTransformAtPortDeferred(
   return deferred;
 }
 
-/// Show a TransformEditDialog for a newly inserted transform with deferred
+/// Show a NodeEditDialog for a newly inserted transform with deferred
 /// link info.
 static void showInsertionDialog(
   pipeline::TransformNode* transform,
@@ -89,7 +89,7 @@ static void showInsertionDialog(
   const pipeline::DeferredLinkInfo& deferred,
   QWidget* parent)
 {
-  auto* dialog = new pipeline::TransformEditDialog(
+  auto* dialog = new pipeline::NodeEditDialog(
     transform, pip, deferred, parent);
   dialog->setAttribute(Qt::WA_DeleteOnClose);
   dialog->setWindowTitle(

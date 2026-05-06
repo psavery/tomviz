@@ -34,7 +34,10 @@ class Dataset(AbstractDataset):
     any in-app pipeline node that hands a Python script a vtkImageData
     payload."""
 
-    def __init__(self, data_object):
+    def __init__(self, data_object=None):
+        if data_object is None:
+            from vtk import vtkImageData
+            data_object = vtkImageData()
         self._data_object = data_object
         self._tilt_axis = 2
         # Used by active_scalars setter on a still-empty vtkImageData

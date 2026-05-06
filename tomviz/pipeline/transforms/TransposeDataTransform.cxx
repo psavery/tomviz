@@ -3,7 +3,7 @@
 
 #include "TransposeDataTransform.h"
 
-#include "EditTransformWidget.h"
+#include "EditNodeWidget.h"
 #include "data/VolumeData.h"
 
 #include <vtkDataArray.h>
@@ -19,14 +19,14 @@
 
 namespace {
 
-class TransposeDataWidget : public tomviz::pipeline::EditTransformWidget
+class TransposeDataWidget : public tomviz::pipeline::EditNodeWidget
 {
   Q_OBJECT
 
 public:
   TransposeDataWidget(tomviz::pipeline::TransposeDataTransform* op,
                       QWidget* p)
-    : tomviz::pipeline::EditTransformWidget(p), m_operator(op),
+    : tomviz::pipeline::EditNodeWidget(p), m_operator(op),
       m_transposeTypesCombo(nullptr)
   {
     auto* transposeLabel = new QLabel("Transpose to:", this);
@@ -113,7 +113,7 @@ bool TransposeDataTransform::hasPropertiesWidget() const
   return true;
 }
 
-EditTransformWidget* TransposeDataTransform::createPropertiesWidget(
+EditNodeWidget* TransposeDataTransform::createPropertiesWidget(
   QWidget* parent)
 {
   return new TransposeDataWidget(this, parent);

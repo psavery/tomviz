@@ -37,7 +37,7 @@ public:
   bool initialize(vtkSMViewProxy* view) override;
   bool finalize() override;
 
-  QWidget* createPropertiesWidget(QWidget* parent) override;
+  QWidget* createSinkPropertiesWidget(QWidget* parent) override;
 
   QJsonObject serialize() const override;
   bool deserialize(const QJsonObject& json) override;

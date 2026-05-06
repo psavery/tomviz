@@ -1,10 +1,10 @@
 /* This source file is part of the Tomviz project, https://tomviz.org/.
    It is released under the 3-Clause BSD License, see "LICENSE". */
 
-#ifndef tomvizPipelinePythonTransformEditorWidget_h
-#define tomvizPipelinePythonTransformEditorWidget_h
+#ifndef tomvizPipelinePythonNodeEditorWidget_h
+#define tomvizPipelinePythonNodeEditorWidget_h
 
-#include "EditTransformWidget.h"
+#include "EditNodeWidget.h"
 
 #include <QMap>
 #include <QString>
@@ -20,24 +20,24 @@ class QWidget;
 namespace tomviz {
 namespace pipeline {
 
-class TransformPropertiesWidget;
+class NodePropertiesWidget;
 class CustomPythonNodeWidget;
 
-/// Tabbed editor widget for LegacyPythonTransform operators.
+/// Tabbed editor widget for Python source / transform nodes.
 /// Tab 1: Python script editor with syntax highlighting.
 /// Tab 2: Operator description + JSON-driven parameter controls.
 /// Tab 3: Execution strategy — Internal (default) or External (run via
 ///        the `tomviz-pipeline` CLI in a foreign Python env).
 ///
 /// applyChangesToOperator() commits the label, script text, parameter
-/// values, and execution-strategy choice back to the transform.
-class PythonTransformEditorWidget
-  : public EditTransformWidget
+/// values, and execution-strategy choice back to the node.
+class PythonNodeEditorWidget
+  : public EditNodeWidget
 {
   Q_OBJECT
 
 public:
-  PythonTransformEditorWidget(
+  PythonNodeEditorWidget(
     const QString& label, const QString& script,
     const QString& jsonDescription,
     const QMap<QString, QVariant>& currentValues,
@@ -65,7 +65,7 @@ private:
   QLineEdit* m_nameEdit = nullptr;
   QTabWidget* m_tabWidget = nullptr;
   QTextEdit* m_scriptEdit = nullptr;
-  TransformPropertiesWidget* m_paramsWidget = nullptr;
+  NodePropertiesWidget* m_paramsWidget = nullptr;
   CustomPythonNodeWidget* m_customParamsWidget = nullptr;
   QComboBox* m_executorCombo = nullptr;
   QLabel* m_envPathLabel = nullptr;

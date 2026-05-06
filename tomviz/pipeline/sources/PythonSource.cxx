@@ -3,8 +3,11 @@
 
 #include "PythonSource.h"
 
+#include "CustomNodeWidgetRegistry.h"
+#include "CustomPythonNodeWidget.h"
 #include "ExternalNodeExecutor.h"
 #include "OutputPort.h"
+#include "PythonNodeEditorWidget.h"
 
 namespace tomviz {
 namespace pipeline {
@@ -66,6 +69,99 @@ QMap<QString, QVariant> PythonSource::parameters() const
 QString PythonSource::operatorName() const
 {
   return m_backend.operatorName();
+}
+
+bool PythonSource::hasPropertiesWidget() const
+{
+  return true;
+}
+
+EditNodeWidget* PythonSource::createPropertiesWidget(QWidget* parent)
+{
+  CustomPythonNodeWidget* customWidget = nullptr;
+
+  auto widgetID = m_backend.customWidgetID();
+  if (!widgetID.isEmpty()) {
+    if (const auto* info = findCustomNodeWidget(widgetID)) {
+      if (info->create) {
+        customWidget = info->create(collectInputs(), parent);
+        if (customWidget) {
+          customWidget->setValues(m_backend.parameters());
+          customWidget->setScript(m_backend.scriptSource());
+        }
+      }
+    }
+  }
+
+  QString currentType;
+  QString currentEnvPath;
+  if (auto* ext = qobject_cast<ExternalNodeExecutor*>(nodeExecutor())) {
+    currentType = ExternalNodeExecutor::typeString();
+    currentEnvPath = ext->envPath();
+  }
+
+  auto* widget = new PythonNodeEditorWidget(
+    label(), m_backend.scriptSource(), m_backend.jsonDescription(),
+    m_backend.parameters(), currentType, currentEnvPath, customWidget,
+    parent);
+
+  connect(widget, &PythonNodeEditorWidget::applied, this,
+          [this, customWidget](const QString& newLabel,
+                               const QString& newScript,
+                               const QMap<QString, QVariant>& values,
+                               const QString& executorType,
+                               const QString& executorEnvPath) {
+            bool changed = false;
+
+            if (label() != newLabel) {
+              setLabel(newLabel);
+              changed = true;
+            }
+
+            if (m_backend.scriptSource() != newScript) {
+              m_backend.setScript(newScript);
+              changed = true;
+            }
+
+            QMap<QString, QVariant> finalValues = values;
+            if (customWidget) {
+              customWidget->getValues(finalValues);
+              customWidget->writeSettings();
+            }
+
+            for (auto it = finalValues.constBegin();
+                 it != finalValues.constEnd(); ++it) {
+              if (m_backend.parameter(it.key()) != it.value()) {
+                changed = true;
+              }
+              m_backend.setParameter(it.key(), it.value());
+            }
+
+            auto* currentExternal =
+              qobject_cast<ExternalNodeExecutor*>(nodeExecutor());
+            if (executorType.isEmpty()) {
+              if (nodeExecutor() != nullptr) {
+                setNodeExecutor(nullptr);
+                changed = true;
+              }
+            } else if (executorType == ExternalNodeExecutor::typeString()) {
+              if (currentExternal) {
+                if (currentExternal->envPath() != executorEnvPath) {
+                  currentExternal->setEnvPath(executorEnvPath);
+                  changed = true;
+                }
+              } else {
+                setNodeExecutor(new ExternalNodeExecutor(executorEnvPath));
+                changed = true;
+              }
+            }
+
+            if (changed) {
+              emit parametersApplied();
+            }
+          });
+
+  return widget;
 }
 
 bool PythonSource::execute()

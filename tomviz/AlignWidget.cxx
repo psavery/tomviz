@@ -350,7 +350,7 @@ private:
 
 AlignWidget::AlignWidget(pipeline::TranslateAlignTransform* op,
                          vtkSmartPointer<vtkImageData> imageData, QWidget* p)
-  : pipeline::EditTransformWidget(p)
+  : pipeline::EditNodeWidget(p)
 {
   m_timer = new QTimer(this);
   m_operator = op;

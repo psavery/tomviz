@@ -11,7 +11,7 @@
 #include "ModuleFactory.h"
 #include "MoleculeSource.h"
 #include "../Pipeline.h"
-#include "PythonGeneratedDatasetReaction.h"
+#include "../PythonGeneratedDatasetReaction.h"
 
 #include "pipeline/PortData.h"
 #include "pipeline/PortType.h"

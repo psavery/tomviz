@@ -25,6 +25,7 @@ class QWidget;
 namespace tomviz {
 namespace pipeline {
 
+class EditNodeWidget;
 class InputPort;
 class NodeExecutor;
 class OutputPort;
@@ -90,6 +91,22 @@ public:
   virtual void triggerAction();
 
   virtual bool execute();
+
+  /// Whether this node provides an editor widget (script + parameters
+  /// + execution settings) usable from the properties panel and the
+  /// edit dialog. Defaults to false; subclasses that have user-editable
+  /// parameters (transforms, schema-v2 sources, ...) override.
+  virtual bool hasPropertiesWidget() const;
+
+  /// Whether the editor widget needs current data on the input ports
+  /// to render — e.g. an interactive widget overlay. Source nodes have
+  /// no inputs and always return false.
+  virtual bool propertiesWidgetNeedsInput() const;
+
+  /// Build the editor widget. The caller (NodeEditDialog or
+  /// NodePropertiesPanel) takes ownership and provides Apply/OK/Cancel.
+  /// Returns nullptr when hasPropertiesWidget() is false.
+  virtual EditNodeWidget* createPropertiesWidget(QWidget* parent);
 
   /// Per-node executor strategy. Null means "use the pipeline-level
   /// fallback" (InternalNodeExecutor singleton). Setting a non-null
@@ -183,6 +200,11 @@ signals:
   void executionCanceled();
   void executionCompleted();
 
+  /// Emitted when the user applies new parameter values via the editor
+  /// widget. The node has already been marked stale by the caller;
+  /// connect this to pipeline re-execution.
+  void parametersApplied();
+
 public:
   /// Reset the canceled/completed flags. Public so a NodeExecutor can
   /// prime them at the start of an execution.
@@ -194,20 +216,22 @@ public:
   /// TransformNode::execute does internally.
   void setExecState(NodeExecState state);
 
+  /// Apply a map of output port name → PortData to this node's output
+  /// ports as the final step of execute(). When both the existing and
+  /// incoming payloads are volume-shaped, reuses the existing VolumeData
+  /// instance (replaces its vtkImageData / label / units in place) so
+  /// downstream references like color maps survive a re-run. Marshals
+  /// to the node's owning thread when called from a worker thread.
+  /// Public for the same reason as setExecState — out-of-process
+  /// executors need to drive this path too.
+  void applyOutputs(const QMap<QString, PortData>& outputs);
+
 protected:
   void setSupportsCancel(bool b);
   void setSupportsCompletion(bool b);
   InputPort* addInputPort(const QString& name, PortTypes acceptedTypes);
   OutputPort* addOutputPort(const QString& name, PortType type);
   void addOutputPort(OutputPort* port);
-
-  /// Apply a map of output port name → PortData to this node's output
-  /// ports as the final step of execute(). When both the existing and
-  /// incoming payloads are volume-shaped, reuses the existing VolumeData
-  /// instance (replaces its vtkImageData / label / units in place) so
-  /// downstream references like color maps survive a re-run. Marshals to
-  /// the node's owning thread when called from a worker thread.
-  void applyOutputs(const QMap<QString, PortData>& outputs);
 
 private:
   QString m_label;

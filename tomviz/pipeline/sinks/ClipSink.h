@@ -94,7 +94,7 @@ public:
   /// Access the clipping plane for use by other sinks/modules.
   vtkPlane* clippingPlane() const;
 
-  QWidget* createPropertiesWidget(QWidget* parent) override;
+  QWidget* createSinkPropertiesWidget(QWidget* parent) override;
 
   void onMetadataChanged() override;
 

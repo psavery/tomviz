@@ -1,7 +1,7 @@
 /* This source file is part of the Tomviz project, https://tomviz.org/.
    It is released under the 3-Clause BSD License, see "LICENSE". */
 
-#include "TransformPropertiesWidget.h"
+#include "NodePropertiesWidget.h"
 
 #include "ParameterInterfaceBuilder.h"
 
@@ -10,10 +10,10 @@
 namespace tomviz {
 namespace pipeline {
 
-TransformPropertiesWidget::TransformPropertiesWidget(
+NodePropertiesWidget::NodePropertiesWidget(
   const QString& jsonDescription,
   const QMap<QString, QVariant>& currentValues, QWidget* parent)
-  : EditTransformWidget(parent)
+  : EditNodeWidget(parent)
 {
   auto* layout = new QVBoxLayout(this);
   layout->setContentsMargins(0, 0, 0, 0);
@@ -26,7 +26,7 @@ TransformPropertiesWidget::TransformPropertiesWidget(
   layout->addWidget(m_innerWidget);
 }
 
-QMap<QString, QVariant> TransformPropertiesWidget::values() const
+QMap<QString, QVariant> NodePropertiesWidget::values() const
 {
   if (!m_innerWidget) {
     return {};
@@ -34,7 +34,7 @@ QMap<QString, QVariant> TransformPropertiesWidget::values() const
   return ParameterInterfaceBuilder::parameterValues(m_innerWidget);
 }
 
-void TransformPropertiesWidget::applyChangesToOperator()
+void NodePropertiesWidget::applyChangesToOperator()
 {
   emit applyRequested(values());
 }

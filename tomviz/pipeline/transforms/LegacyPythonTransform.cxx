@@ -10,8 +10,8 @@
 #include "PythonNodeUtils.h"
 #include "PythonNodeWrapper.h"
 #include "VolumeOutputPort.h"
-#include "PythonTransformEditorWidget.h"
-#include "TransformPropertiesWidget.h"
+#include "PythonNodeEditorWidget.h"
+#include "NodePropertiesWidget.h"
 #include "data/VolumeData.h"
 
 // Qt defines 'slots' as a macro which conflicts with Python's object.h.
@@ -140,7 +140,7 @@ bool LegacyPythonTransform::propertiesWidgetNeedsInput() const
   return info && info->needsData;
 }
 
-EditTransformWidget* LegacyPythonTransform::createPropertiesWidget(
+EditNodeWidget* LegacyPythonTransform::createPropertiesWidget(
   QWidget* parent)
 {
   CustomPythonNodeWidget* customWidget = nullptr;
@@ -168,11 +168,11 @@ EditTransformWidget* LegacyPythonTransform::createPropertiesWidget(
     currentEnvPath = ext->envPath();
   }
 
-  auto* widget = new PythonTransformEditorWidget(
+  auto* widget = new PythonNodeEditorWidget(
     label(), m_script, m_jsonDescription, m_parameters, currentType,
     currentEnvPath, customWidget, parent);
 
-  connect(widget, &PythonTransformEditorWidget::applied, this,
+  connect(widget, &PythonNodeEditorWidget::applied, this,
           [this, customWidget](const QString& newLabel,
                                const QString& newScript,
                                const QMap<QString, QVariant>& values,

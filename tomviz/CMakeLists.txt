@@ -17,6 +17,8 @@ set(SOURCES
   AddAlignReaction.h
   AddExpressionReaction.cxx
   AddExpressionReaction.h
+  AddPythonSourceReaction.cxx
+  AddPythonSourceReaction.h
   AddPythonTransformReaction.cxx
   AddRenderViewContextMenuBehavior.cxx
   AddRenderViewContextMenuBehavior.h
@@ -174,8 +176,8 @@ set(SOURCES
   PtychoDialog.h
   PtychoRunner.cxx
   PtychoRunner.h
-  PythonGeneratedDatasetReaction.cxx
-  PythonGeneratedDatasetReaction.h
+  legacy/PythonGeneratedDatasetReaction.cxx
+  legacy/PythonGeneratedDatasetReaction.h
   PythonReader.cxx
   PythonReader.h
   PythonUtilities.cxx
@@ -374,16 +376,16 @@ set(SOURCES
   pipeline/ParameterInterfaceBuilder.h
   pipeline/CustomPythonNodeWidget.cxx
   pipeline/CustomPythonNodeWidget.h
-  pipeline/EditTransformWidget.cxx
-  pipeline/EditTransformWidget.h
-  pipeline/TransformPropertiesWidget.cxx
-  pipeline/TransformPropertiesWidget.h
-  pipeline/PythonTransformEditorWidget.cxx
-  pipeline/PythonTransformEditorWidget.h
-  pipeline/TransformPropertiesPanel.cxx
-  pipeline/TransformPropertiesPanel.h
-  pipeline/TransformEditDialog.cxx
-  pipeline/TransformEditDialog.h
+  pipeline/EditNodeWidget.cxx
+  pipeline/EditNodeWidget.h
+  pipeline/NodePropertiesWidget.cxx
+  pipeline/NodePropertiesWidget.h
+  pipeline/PythonNodeEditorWidget.cxx
+  pipeline/PythonNodeEditorWidget.h
+  pipeline/NodePropertiesPanel.cxx
+  pipeline/NodePropertiesPanel.h
+  pipeline/NodeEditDialog.cxx
+  pipeline/NodeEditDialog.h
   pipeline/PipelineUtils.cxx
   pipeline/PipelineUtils.h
   pipeline/PipelineControlsWidget.cxx
@@ -715,6 +717,9 @@ set(json_files
   RemoveArrays.json
   Recon_real_time_tomography.json
   InvertData.json
+  ConstantDataset.json
+  RandomParticles.json
+  STEM_probe.json
   )
 
 set(resource_files

@@ -108,7 +108,7 @@ void MoleculeSink::setBondRadius(double radius)
   emit renderNeeded();
 }
 
-QWidget* MoleculeSink::createPropertiesWidget(QWidget* parent)
+QWidget* MoleculeSink::createSinkPropertiesWidget(QWidget* parent)
 {
   auto* widget = new QWidget(parent);
   auto* layout = new QFormLayout;

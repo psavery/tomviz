@@ -398,7 +398,7 @@ void ThresholdSink::updateColorMap()
 
 // --- Properties Widget ---
 
-QWidget* ThresholdSink::createPropertiesWidget(QWidget* parent)
+QWidget* ThresholdSink::createSinkPropertiesWidget(QWidget* parent)
 {
   auto* widget = new QWidget(parent);
   auto* layout = new QVBoxLayout;

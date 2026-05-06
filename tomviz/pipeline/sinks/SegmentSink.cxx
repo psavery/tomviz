@@ -293,7 +293,7 @@ void SegmentSink::setRepresentationString(const QString& rep)
 
 // --- Properties Widget ---
 
-QWidget* SegmentSink::createPropertiesWidget(QWidget* parent)
+QWidget* SegmentSink::createSinkPropertiesWidget(QWidget* parent)
 {
   auto* widget = new QWidget(parent);
   auto* layout = new QVBoxLayout;

@@ -28,7 +28,7 @@ public:
   TransposeType transposeType() const { return m_transposeType; }
 
   bool hasPropertiesWidget() const override;
-  EditTransformWidget* createPropertiesWidget(QWidget* parent) override;
+  EditNodeWidget* createPropertiesWidget(QWidget* parent) override;
 
   QJsonObject serialize() const override;
   bool deserialize(const QJsonObject& json) override;

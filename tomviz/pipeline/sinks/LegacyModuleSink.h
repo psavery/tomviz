@@ -71,7 +71,7 @@ public:
 
   /// Create a widget for editing this sink's properties. Returns nullptr by
   /// default. Caller owns the returned widget.
-  virtual QWidget* createPropertiesWidget(QWidget* parent);
+  virtual QWidget* createSinkPropertiesWidget(QWidget* parent);
 
   bool execute() override;
 

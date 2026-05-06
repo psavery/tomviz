@@ -3,7 +3,7 @@
 
 #include "ArrayWranglerTransform.h"
 
-#include "EditTransformWidget.h"
+#include "EditNodeWidget.h"
 #include "InputPort.h"
 #include "data/VolumeData.h"
 
@@ -22,14 +22,14 @@
 
 namespace {
 
-class ArrayWranglerWidget : public tomviz::pipeline::EditTransformWidget
+class ArrayWranglerWidget : public tomviz::pipeline::EditNodeWidget
 {
   Q_OBJECT
 
 public:
   ArrayWranglerWidget(tomviz::pipeline::ArrayWranglerTransform* op,
                       tomviz::pipeline::VolumeDataPtr volumeData, QWidget* p)
-    : tomviz::pipeline::EditTransformWidget(p), m_operator(op),
+    : tomviz::pipeline::EditNodeWidget(p), m_operator(op),
       m_outputTypesCombo(nullptr), m_componentToKeepCombo(nullptr)
   {
     auto* convertLabel = new QLabel("Convert to:", this);
@@ -163,7 +163,7 @@ bool ArrayWranglerTransform::propertiesWidgetNeedsInput() const
   return true;
 }
 
-EditTransformWidget* ArrayWranglerTransform::createPropertiesWidget(
+EditNodeWidget* ArrayWranglerTransform::createPropertiesWidget(
   QWidget* parent)
 {
   auto* inputPort = this->inputPorts()[0];

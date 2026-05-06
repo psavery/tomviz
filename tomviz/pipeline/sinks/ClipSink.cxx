@@ -535,7 +535,7 @@ bool ClipSink::deserialize(const QJsonObject& json)
 
 // --- Properties widget ---
 
-QWidget* ClipSink::createPropertiesWidget(QWidget* parent)
+QWidget* ClipSink::createSinkPropertiesWidget(QWidget* parent)
 {
   auto* widget = new QWidget(parent);
   auto* mainLayout = new QVBoxLayout(widget);

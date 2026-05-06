@@ -35,6 +35,7 @@ contract — :class:`tomviz.operators.Progress` is reused under the hood
 so the multi-port routing of ``self.progress.data = X`` Just Works.
 """
 
+from tomviz._internal import in_application
 from tomviz.operators import Progress
 
 
@@ -67,6 +68,25 @@ class Node:
         Iterative ``produce`` / ``transform`` implementations should
         poll this and return what they have."""
         return self._operator_wrapper.completed
+
+    @staticmethod
+    def create_dataset() -> 'Dataset':  # noqa: F821
+        """Return a new empty :class:`tomviz.dataset.Dataset` of the
+        runtime-appropriate concrete class.
+
+        In-app the result is a VTK-backed dataset (so the C++ port-data
+        extractor can recover the underlying ``vtkImageData``); in CLI
+        and external-executor runs it's the pure-numpy variant. Source
+        nodes that need to emit a fresh dataset should call this and
+        populate the result via the abstract Dataset API
+        (``set_scalars``, ``spacing``, ...). The script then runs
+        unchanged across runtimes.
+        """
+        if in_application():
+            from tomviz.internal_dataset import Dataset
+        else:
+            from tomviz.external_dataset import Dataset
+        return Dataset()
 
 
 class SourceNode(Node):

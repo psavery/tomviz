@@ -558,7 +558,7 @@ void SliceSink::planeNormal(double xyz[3]) const
   }
 }
 
-QWidget* SliceSink::createPropertiesWidget(QWidget* parent)
+QWidget* SliceSink::createSinkPropertiesWidget(QWidget* parent)
 {
   auto* widget = new QWidget(parent);
   auto* mainLayout = new QVBoxLayout(widget);

@@ -66,6 +66,21 @@ public:
                               bool defaultModules = true, bool child = false,
                               bool createCameraOrbit = true);
 
+  /// Add a source node to the active pipeline without setting up the
+  /// default sinks or executing. Useful when a caller needs the source
+  /// in the pipeline ahead of time (e.g. before opening an insertion
+  /// dialog that may still cancel and roll back).
+  static void addSourceToPipeline(pipeline::SourceNode* source);
+
+  /// Finish the work that sourceNodeAdded() does after addNode():
+  /// initialize color maps from the source's volume data, build the
+  /// default sink group + outline + volume/slice sinks (when
+  /// defaultModules is true), and queue a pipeline execution. The
+  /// source must already be in the pipeline (typically via
+  /// addSourceToPipeline()).
+  static void completeSourceSetup(pipeline::SourceNode* source,
+                                  bool defaultModules = true);
+
   /// Create a SourceNode from a ParaView reader proxy.
   static pipeline::SourceNode* createFromParaViewReader(
     vtkSMProxy* reader, bool defaultModules = true, bool child = false,

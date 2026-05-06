@@ -59,8 +59,8 @@
 #include "pipeline/SinkGroupNode.h"
 #include "pipeline/sinks/LegacyModuleSink.h"
 #include "pipeline/data/VolumeData.h"
-#include "pipeline/TransformEditDialog.h"
-#include "pipeline/TransformPropertiesPanel.h"
+#include "pipeline/NodeEditDialog.h"
+#include "pipeline/NodePropertiesPanel.h"
 #include "pipeline/VolumePropertiesWidget.h"
 #include "MoleculeProperties.h"
 #include "CentralWidget.h"
@@ -74,7 +74,7 @@
 #include "ProgressDialogManager.h"
 #include "PtychoRunner.h"
 #include "PyXRFRunner.h"
-#include "PythonGeneratedDatasetReaction.h"
+#include "AddPythonSourceReaction.h"
 #include "PythonUtilities.h"
 #include "RecentFilesMenu.h"
 #include "ReconstructionReaction.h"
@@ -277,16 +277,15 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   connect(&ActiveObjects::instance(), &ActiveObjects::activeLinkChanged,
           this, &MainWindow::onActiveLinkChanged);
 
-  // Double-click on a transform node opens the edit dialog
+  // Double-click on a node with an editor opens the edit dialog
   connect(m_pipelineStrip, &pipeline::PipelineStripWidget::nodeDoubleClicked,
           this, [this](pipeline::Node* node) {
-            auto* xf = dynamic_cast<pipeline::TransformNode*>(node);
-            if (xf && xf->hasPropertiesWidget()) {
-              auto* dlg = new pipeline::TransformEditDialog(
-                xf, pipeline(), this);
+            if (node && node->hasPropertiesWidget()) {
+              auto* dlg = new pipeline::NodeEditDialog(
+                node, pipeline(), this);
               dlg->setAttribute(Qt::WA_DeleteOnClose);
               dlg->setWindowTitle(
-                QString("Edit - %1").arg(xf->label()));
+                QString("Edit - %1").arg(node->label()));
               dlg->show();
             }
           });
@@ -346,13 +345,11 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
               return;
             }
 
-            // If the destination is a TransformNode with a custom UI,
-            // show the dialog before executing.
-            auto* transform =
-              qobject_cast<pipeline::TransformNode*>(destNode);
-            if (transform && transform->hasPropertiesWidget()) {
-              auto* dialog = new pipeline::TransformEditDialog(
-                transform, p, this);
+            // If the destination has a custom UI, show the dialog
+            // before executing.
+            if (destNode && destNode->hasPropertiesWidget()) {
+              auto* dialog = new pipeline::NodeEditDialog(
+                destNode, p, this);
               connect(dialog, &QDialog::rejected, this,
                       [p, link]() { p->removeLink(link); });
               dialog->setAttribute(Qt::WA_DeleteOnClose);
@@ -870,16 +867,19 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
 #endif
   QAction* constantDataAction =
     sampleDataMenu->addAction("Generate Constant Dataset");
-  new PythonGeneratedDatasetReaction(constantDataAction, "Constant Dataset",
-                                     readInPythonScript("ConstantDataset"));
+  new AddPythonSourceReaction(constantDataAction,
+                              readInPythonScript("ConstantDataset"),
+                              readInJSONDescription("ConstantDataset"));
   QAction* randomParticlesAction =
     sampleDataMenu->addAction("Generate Random Particles");
-  new PythonGeneratedDatasetReaction(randomParticlesAction, "Random Particles",
-                                     readInPythonScript("RandomParticles"));
+  new AddPythonSourceReaction(randomParticlesAction,
+                              readInPythonScript("RandomParticles"),
+                              readInJSONDescription("RandomParticles"));
   QAction* probeShapeAction =
     sampleDataMenu->addAction("Generate Electron Beam Shape");
-  new PythonGeneratedDatasetReaction(probeShapeAction, "Electron Beam Shape",
-                                     readInPythonScript("STEM_probe"));
+  new AddPythonSourceReaction(probeShapeAction,
+                              readInPythonScript("STEM_probe"),
+                              readInJSONDescription("STEM_probe"));
   sampleDataMenu->addSeparator();
   QAction* sampleDataLinkAction =
     sampleDataMenu->addAction("Download More Datasets");
@@ -1713,7 +1713,7 @@ void MainWindow::onActiveNodeChanged(pipeline::Node* node)
   // Hide the properties panel while an edit dialog is open for the active
   // node, and restore it when the dialog is dismissed.
   //
-  // Both TransformEditDialog and TransformPropertiesPanel manage the
+  // Both NodeEditDialog and NodePropertiesPanel manage the
   // parametersApplied → execute() auto-wiring.  To avoid them stepping on
   // each other we must guarantee ordering:
   //   editing=true  → destroy the panel *immediately* so its destructor
@@ -1742,7 +1742,7 @@ void MainWindow::onActiveNodeChanged(pipeline::Node* node)
 
   if (auto* sink = dynamic_cast<pipeline::LegacyModuleSink*>(node)) {
     if (!node->isEditing()) {
-      propsWidget = sink->createPropertiesWidget(
+      propsWidget = sink->createSinkPropertiesWidget(
         m_ui->propertiesPanelStackedWidget);
     }
     // React to detached colormap toggling while this sink is selected
@@ -1755,11 +1755,9 @@ void MainWindow::onActiveNodeChanged(pipeline::Node* node)
           updateColorMapDisplay();
         }
       });
-  } else if (auto* transform = dynamic_cast<pipeline::TransformNode*>(node)) {
-    if (transform->hasPropertiesWidget() && !node->isEditing()) {
-      propsWidget = new pipeline::TransformPropertiesPanel(
-        transform, pipeline(), m_ui->propertiesPanelStackedWidget);
-    }
+  } else if (node && node->hasPropertiesWidget() && !node->isEditing()) {
+    propsWidget = new pipeline::NodePropertiesPanel(
+      node, pipeline(), m_ui->propertiesPanelStackedWidget);
   }
 
   if (propsWidget) {

@@ -97,7 +97,7 @@ public:
   /// Cached scalar range from the last consume().
   void scalarRange(double range[2]) const;
 
-  QWidget* createPropertiesWidget(QWidget* parent) override;
+  QWidget* createSinkPropertiesWidget(QWidget* parent) override;
 
   void addClippingPlane(vtkPlane* plane) override;
   void removeClippingPlane(vtkPlane* plane) override;

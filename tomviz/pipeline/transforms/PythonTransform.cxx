@@ -6,7 +6,7 @@
 #include "CustomNodeWidgetRegistry.h"
 #include "CustomPythonNodeWidget.h"
 #include "ExternalNodeExecutor.h"
-#include "PythonTransformEditorWidget.h"
+#include "PythonNodeEditorWidget.h"
 
 #include <QString>
 
@@ -89,7 +89,7 @@ bool PythonTransform::propertiesWidgetNeedsInput() const
   return info && info->needsData;
 }
 
-EditTransformWidget* PythonTransform::createPropertiesWidget(QWidget* parent)
+EditNodeWidget* PythonTransform::createPropertiesWidget(QWidget* parent)
 {
   CustomPythonNodeWidget* customWidget = nullptr;
 
@@ -113,12 +113,12 @@ EditTransformWidget* PythonTransform::createPropertiesWidget(QWidget* parent)
     currentEnvPath = ext->envPath();
   }
 
-  auto* widget = new PythonTransformEditorWidget(
+  auto* widget = new PythonNodeEditorWidget(
     label(), m_backend.scriptSource(), m_backend.jsonDescription(),
     m_backend.parameters(), currentType, currentEnvPath, customWidget,
     parent);
 
-  connect(widget, &PythonTransformEditorWidget::applied, this,
+  connect(widget, &PythonNodeEditorWidget::applied, this,
           [this, customWidget](const QString& newLabel,
                                const QString& newScript,
                                const QMap<QString, QVariant>& values,

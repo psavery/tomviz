@@ -70,7 +70,7 @@ public:
   QString representationString() const;
   void setRepresentationString(const QString& rep);
 
-  QWidget* createPropertiesWidget(QWidget* parent) override;
+  QWidget* createSinkPropertiesWidget(QWidget* parent) override;
 
   void addClippingPlane(vtkPlane* plane) override;
   void removeClippingPlane(vtkPlane* plane) override;
