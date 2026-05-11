@@ -79,9 +79,6 @@ private slots:
   void openUserGuide();
   void openVisIntro();
 
-  /// Load a custom operator from a file
-  void importCustomTransform();
-
   void onFirstWindowShow();
 
   void autosave();

@@ -102,7 +102,6 @@
 #include <QDropEvent>
 #include <QMimeData>
 #include <QDir>
-#include <QFileDialog>
 #include <QFileInfo>
 #include <QIcon>
 #include <QKeySequence>
@@ -587,9 +586,10 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
 
   // Create the custom transforms menu
   m_customTransformsMenu = new QMenu("Custom Transforms", this);
-  m_customTransformsMenu->setEnabled(false);
   m_ui->menubar->insertMenu(m_ui->menuModules->menuAction(),
                             m_customTransformsMenu);
+  connect(m_customTransformsMenu, &QMenu::aboutToShow, this,
+          [this]() { registerCustomOperators(findCustomOperators()); });
 
   // Create the pipeline templates menu
   m_pipelineTemplates = new QMenu("Pipeline templates", this);
@@ -1099,61 +1099,6 @@ void MainWindow::openVisIntro()
 
 // Panel switching is now handled by onNodeSelected() / onPortSelected()
 
-void MainWindow::importCustomTransform()
-{
-  QStringList filters;
-  filters << "Python (*.py)";
-
-  QFileDialog dialog(this);
-  dialog.setFileMode(QFileDialog::ExistingFile);
-  dialog.setNameFilters(filters);
-  dialog.setObjectName("ImportCustomTransform-tomviz");
-  dialog.setAcceptMode(QFileDialog::AcceptOpen);
-
-  if (dialog.exec() == QDialog::Accepted) {
-    QStringList filePaths = dialog.selectedFiles();
-    QString format = dialog.selectedNameFilter();
-    QFileInfo fileInfo(filePaths[0]);
-    QString filePath = fileInfo.absolutePath();
-    QString fileBaseName = fileInfo.baseName();
-    QString pythonSourcePath = QString("%1%2%3.py")
-                                 .arg(filePath)
-                                 .arg(QDir::separator())
-                                 .arg(fileBaseName);
-    QString jsonSourcePath = QString("%1%2%3.json")
-                               .arg(filePath)
-                               .arg(QDir::separator())
-                               .arg(fileBaseName);
-
-    // Get the path to Tomviz
-    QString path = tomviz::userDataPath();
-    if (path.isEmpty()) {
-      return;
-    }
-
-    // Copy the Python file to the tomviz directory if it exists
-    QFileInfo pythonFileInfo(pythonSourcePath);
-    if (pythonFileInfo.exists()) {
-      QString pythonDestPath =
-        QString("%1%2%3.py").arg(path).arg(QDir::separator()).arg(fileBaseName);
-      QFile::copy(pythonSourcePath, pythonDestPath);
-
-      // Copy the JSON file if it exists.
-      QFileInfo jsonFileInfo(jsonSourcePath);
-      if (jsonFileInfo.exists()) {
-        QString jsonDestPath = QString("%1%2%3.json")
-                                 .arg(path)
-                                 .arg(QDir::separator())
-                                 .arg(fileBaseName);
-        QFile::copy(jsonSourcePath, jsonDestPath);
-      }
-
-      // Register custom operators again.
-      registerCustomOperators(findCustomOperators());
-    }
-  }
-}
-
 void MainWindow::showEvent(QShowEvent* e)
 {
   QMainWindow::showEvent(e);
@@ -1376,78 +1321,104 @@ void MainWindow::handleMessage(const QString&, int type)
 void MainWindow::registerCustomOperators(
   std::vector<OperatorDescription> operators)
 {
-  // Always create the Custom Transforms menu so that it is possible to import
-  // new operators.
   m_customTransformsMenu->clear();
 
-  QAction* importCustomTransformAction =
-    m_customTransformsMenu->addAction("Import Custom Transform...");
-  m_customTransformsMenu->addSeparator();
-  connect(importCustomTransformAction, &QAction::triggered, this,
-          &MainWindow::importCustomTransform);
-
-  if (!operators.empty()) {
-    for (const OperatorDescription& op : operators) {
-      QAction* action = m_customTransformsMenu->addAction(op.label);
-      action->setEnabled(op.valid);
-      if (!op.loadError.isNull()) {
-        qWarning().noquote()
-          << QString("An error occurred trying to load an operator from '%1':")
-               .arg(op.pythonPath);
-        qWarning().noquote() << op.loadError;
-        continue;
-      } else if (!op.valid) {
-        qWarning().noquote()
-          << QString("'%1' doesn't contain a valid operator definition.")
-               .arg(op.pythonPath);
-        continue;
-      }
-
-      QString source;
-      QString json;
-      // Read the Python source
-      QFile pythonFile(op.pythonPath);
-      if (pythonFile.open(QIODevice::ReadOnly)) {
-        source = pythonFile.readAll();
-      } else {
-        qCritical() << QString("Unable to read '%1'.").arg(op.pythonPath);
-      }
-      // Read the JSON if we have any
-      if (!op.jsonPath.isNull()) {
-        QFile jsonFile(op.jsonPath);
-        if (jsonFile.open(QIODevice::ReadOnly)) {
-          json = jsonFile.readAll();
-        } else {
-          qCritical() << QString("Unable to read '%1'.").arg(op.jsonPath);
-        }
-      }
-      new AddPythonTransformReaction(action, op.label, source, json);
+  std::vector<const OperatorDescription*> sources;
+  std::vector<const OperatorDescription*> transforms;
+  for (const auto& op : operators) {
+    if (op.type == OperatorDescription::Type::Source) {
+      sources.push_back(&op);
+    } else {
+      transforms.push_back(&op);
     }
   }
-  m_customTransformsMenu->setEnabled(true);
+
+  auto addEntry = [this](const OperatorDescription& op) {
+    QAction* action = m_customTransformsMenu->addAction(op.label);
+    action->setEnabled(op.valid);
+    if (!op.loadError.isNull()) {
+      qWarning().noquote()
+        << QString("An error occurred trying to load an operator from '%1':")
+             .arg(op.pythonPath);
+      qWarning().noquote() << op.loadError;
+      return;
+    } else if (!op.valid) {
+      qWarning().noquote()
+        << QString("'%1' doesn't contain a valid operator definition.")
+             .arg(op.pythonPath);
+      return;
+    }
+
+    QString source;
+    QString json;
+    QFile pythonFile(op.pythonPath);
+    if (pythonFile.open(QIODevice::ReadOnly)) {
+      source = pythonFile.readAll();
+    } else {
+      qCritical() << QString("Unable to read '%1'.").arg(op.pythonPath);
+    }
+    if (!op.jsonPath.isNull()) {
+      QFile jsonFile(op.jsonPath);
+      if (jsonFile.open(QIODevice::ReadOnly)) {
+        json = jsonFile.readAll();
+      } else {
+        qCritical() << QString("Unable to read '%1'.").arg(op.jsonPath);
+      }
+    }
+
+    if (op.type == OperatorDescription::Type::Source) {
+      new AddPythonSourceReaction(action, source, json);
+    } else {
+      new AddPythonTransformReaction(action, op.label, source, json);
+    }
+  };
+
+  if (!sources.empty()) {
+    m_customTransformsMenu->addSection("Sources");
+    for (const auto* op : sources) {
+      addEntry(*op);
+    }
+  }
+  if (!transforms.empty()) {
+    m_customTransformsMenu->addSection("Transforms");
+    for (const auto* op : transforms) {
+      addEntry(*op);
+    }
+  }
 }
 
 std::vector<OperatorDescription> MainWindow::findCustomOperators()
 {
   QStringList paths;
-  // Search in <home>/.tomviz
-  foreach (QString home,
-           QStandardPaths::standardLocations(QStandardPaths::HomeLocation)) {
-    QString path = QString("%1%2.tomviz").arg(home).arg(QDir::separator());
-    if (QFile(path).exists()) {
-      paths.append(path);
+  QByteArray envOverride = qgetenv("TOMVIZ_CUSTOM_TRANSFORMS_PATH");
+  if (!envOverride.isEmpty()) {
+    for (const QString& path : QString::fromLocal8Bit(envOverride)
+                                 .split(QDir::listSeparator(),
+                                        Qt::SkipEmptyParts)) {
+      if (QFileInfo(path).isDir()) {
+        paths.append(path);
+      }
     }
-    path = QString("%1%2tomviz").arg(home).arg(QDir::separator());
-    if (QFile(path).exists()) {
-      paths.append(path);
+  } else {
+    // Search in <home>/.tomviz
+    foreach (QString home,
+             QStandardPaths::standardLocations(QStandardPaths::HomeLocation)) {
+      QString path = QString("%1%2.tomviz").arg(home).arg(QDir::separator());
+      if (QFile(path).exists()) {
+        paths.append(path);
+      }
+      path = QString("%1%2tomviz").arg(home).arg(QDir::separator());
+      if (QFile(path).exists()) {
+        paths.append(path);
+      }
     }
-  }
-  // Search in data locations.
-  // For example on window C:/Users/<USER>/AppData/Local/tomviz
-  for (QString path:
-           QStandardPaths::standardLocations(QStandardPaths::AppDataLocation)) {
-    if (QFile(path).exists()) {
-      paths.append(path);
+    // Search in data locations.
+    // For example on window C:/Users/<USER>/AppData/Local/tomviz
+    for (QString path :
+         QStandardPaths::standardLocations(QStandardPaths::AppDataLocation)) {
+      if (QFile(path).exists()) {
+        paths.append(path);
+      }
     }
   }
 

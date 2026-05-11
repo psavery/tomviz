@@ -7,8 +7,6 @@
 from types import MethodType
 from typing import Any, Callable
 import fnmatch
-import importlib.machinery
-import importlib.util
 import inspect
 import json
 import os
@@ -227,21 +225,15 @@ def transform_method_wrapper(transform_method: Callable,
     return transform_method(*args, **kwargs)
 
 
-def _load_module(operator_dir, python_file):
-    module_name, _ = os.path.splitext(python_file)
-    spec = importlib.machinery.PathFinder.find_spec(module_name, [operator_dir])
-    if spec is None:
-        raise ImportError(f"No module named '{module_name}' found in {operator_dir}")
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = module
-    if spec.loader:
-        spec.loader.exec_module(module)
-    return module
-
-
-def _has_operator(module):
-    return find_transform_from_module(module) is not None or \
-        find_operator_class(module) is not None
+def _classify_from_json(operator_json):
+    # Schema v2 with non-empty inputs is a transform; schema v2 without inputs
+    # is a source. Anything else (no schemaVersion, or v1) is a legacy
+    # transform.
+    if operator_json.get('schemaVersion') == 2:
+        if operator_json.get('inputs'):
+            return 'transform'
+        return 'source'
+    return 'legacy_transform'
 
 
 def _operator_description(operator_dir, filename):
@@ -249,27 +241,18 @@ def _operator_description(operator_dir, filename):
     description = {
         'label': name,
         'pythonPath': os.path.join(operator_dir, filename),
+        'valid': True,
+        'type': 'legacy_transform',
     }
 
-    has_operator = False
-    # Load the module and see if they are valid operators
-    try:
-        module = _load_module(operator_dir, filename)
-        has_operator = _has_operator(module)
-    except Exception:
-        description['loadError'] = traceback.format_exc()
-
-    description['valid'] = has_operator
-
-    # See if we have a JSON file
     json_filepath = os.path.join(operator_dir, '%s.json' % name)
     if os.path.exists(json_filepath):
         description['jsonPath'] = json_filepath
-        # Extract the label from the JSON
         try:
             with open(json_filepath) as fp:
                 operator_json = json.load(fp)
-                description['label'] = operator_json['label']
+            description['label'] = operator_json.get('label', name)
+            description['type'] = _classify_from_json(operator_json)
         except Exception:
             description['loadError'] = traceback.format_exc()
             description['valid'] = False
