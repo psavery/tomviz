@@ -5,6 +5,7 @@
 #define tomvizPipelineLegacyStateLoader_h
 
 #include <QDir>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QMap>
 #include <QString>
@@ -55,6 +56,14 @@ public:
   /// separate files on disk.
   static bool loadFromH5(const QString& filename,
                          bool executePipeline = true);
+
+  /// Load a v1 template: walk @a operators (an "operators" array from a
+  /// legacy .tvsm file), build each as a TransformNode, and chain them
+  /// linearly via createLink on the active pipeline. Any nested child
+  /// dataSources / modules on the operators are intentionally ignored —
+  /// templates are transform-only fragments.
+  static void loadTemplateOperators(const QJsonArray& operators,
+                                    Pipeline* pipeline);
 
   /// Restore the top-level `views`, `layouts`, and `paletteColor`
   /// sections of @a state into the running ParaView session. Shared

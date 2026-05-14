@@ -597,6 +597,34 @@ void LegacyStateLoader::walkDataSource(Node* upstream,
   }
 }
 
+void LegacyStateLoader::loadTemplateOperators(const QJsonArray& operators,
+                                               Pipeline* pipeline)
+{
+  if (!pipeline) {
+    return;
+  }
+  LoadContext ctx;
+  ctx.pipeline = pipeline;
+  TransformNode* prev = nullptr;
+  for (const auto& opVal : operators) {
+    auto op = opVal.toObject();
+    auto* transform = buildOperator(op, ctx);
+    if (!transform) {
+      continue;
+    }
+    pipeline->addNode(transform);
+    if (prev && !prev->outputPorts().isEmpty() &&
+        !transform->inputPorts().isEmpty()) {
+      pipeline->createLink(prev->outputPorts().first(),
+                           transform->inputPorts().first());
+    }
+    // Parameters come from the template, so the node isn't "New" in
+    // the sense the link-completion auto-edit-dialog cares about.
+    transform->setStateNoCascade(NodeState::Stale);
+    prev = transform;
+  }
+}
+
 TransformNode* LegacyStateLoader::buildOperator(const QJsonObject& op,
                                                  LoadContext& ctx)
 {

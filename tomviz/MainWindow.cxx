@@ -344,9 +344,13 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
               return;
             }
 
-            // If the destination has a custom UI, show the dialog
-            // before executing.
-            if (destNode && destNode->hasPropertiesWidget()) {
+            // Auto-open the edit dialog only for nodes the user just
+            // dropped — i.e. NodeState::New. Reconnecting an existing
+            // transform (Stale/Current), or wiring up a template-loaded
+            // transform whose parameters are already set, should not
+            // pop the dialog.
+            if (destNode && destNode->hasPropertiesWidget() &&
+                destNode->state() == pipeline::NodeState::New) {
               auto* dialog = new pipeline::NodeEditDialog(
                 destNode, p, this);
               connect(dialog, &QDialog::rejected, this,
@@ -897,6 +901,11 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   new SaveLoadStateReaction(m_ui->actionSaveStateAs);
   connect(m_ui->actionSaveState, &QAction::triggered, this,
           &MainWindow::saveState);
+
+  connect(m_ui->actionLoadTemplate, &QAction::triggered, this,
+          []() { SaveLoadTemplateReaction::loadTemplateWithDialog(); });
+  connect(m_ui->actionSaveTemplateAs, &QAction::triggered, this,
+          []() { SaveLoadTemplateReaction::saveTemplateAs(); });
 
   auto reaction = new ResetReaction(m_ui->actionReset);
   connect(m_ui->menu_File, &QMenu::aboutToShow, reaction,
@@ -1534,21 +1543,30 @@ void MainWindow::syncPythonToApp()
 void MainWindow::findPipelineTemplates() {
   m_pipelineTemplates->clear();
 
-  // Look in 'share' directory for default templates
-  QDir provided (QApplication::applicationDirPath() + "/../share/tomviz/templates/");
-  // Look for user created templates
-  QDir created (tomviz::userDataPath() + "/templates");
+  // Always include the bundled 'share' directory.
+  QList<QDir> locations;
+  locations.append(QDir(QApplication::applicationDirPath() +
+                        "/../share/tomviz/templates/"));
 
-  QList<QDir> locations = { provided, created };
+  QByteArray envOverride = qgetenv("TOMVIZ_PIPELINE_TEMPLATES_PATH");
+  if (!envOverride.isEmpty()) {
+    for (const QString& path : QString::fromLocal8Bit(envOverride)
+                                 .split(QDir::listSeparator(),
+                                        Qt::SkipEmptyParts)) {
+      if (QFileInfo(path).isDir()) {
+        locations.append(QDir(path));
+      }
+    }
+  } else {
+    locations.append(QDir(tomviz::userDataPath() + "/templates"));
+  }
+
   foreach (QDir dir, locations) {
     foreach (QFileInfo file, dir.entryInfoList()) {
-      QString menuName = file.completeBaseName().replace("_", " ");
-      if (file.isFile()) {
+      if (file.isFile() && file.suffix() == "tvsm") {
+        QString menuName = file.completeBaseName().replace("_", " ");
         QAction* action = m_pipelineTemplates->addAction(menuName);
-        new SaveLoadTemplateReaction(action, true, file.completeBaseName());
-        if (!ModuleManager::instance().hasDataSources()) {
-          action->setEnabled(false);
-        }
+        new SaveLoadTemplateReaction(action, true, file.absoluteFilePath());
       }
     }
   }
