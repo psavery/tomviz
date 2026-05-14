@@ -21,6 +21,9 @@ InputPort* SinkNode::addInput(const QString& name, PortTypes acceptedTypes)
     if (port->link()) {
       connectUpstreamIntermediate(port);
     } else {
+      // Drop the retained input for the disconnected port so its
+      // shared_ptr reference to the upstream payload releases.
+      m_retainedInputs.remove(port->name());
       onInputDisconnected(port);
     }
   });
@@ -55,9 +58,20 @@ bool SinkNode::execute()
 {
   setExecState(NodeExecState::Running);
 
+  // The executor has set each input port's handle to a strong ref to
+  // the upstream payload. Stash those handles (sinks need their input
+  // alive after the executor's in-flight refs go out of scope), and
+  // build the value-copy map that consume() expects.
+  QMap<QString, std::shared_ptr<PortData>> handles;
   QMap<QString, PortData> inputs;
   for (auto* port : inputPorts()) {
-    inputs[port->name()] = port->data();
+    const auto& h = port->handle();
+    if (h) {
+      handles[port->name()] = h;
+      inputs[port->name()] = *h;
+    } else {
+      inputs[port->name()] = port->data();
+    }
   }
 
   prepareConsume(inputs);
@@ -65,6 +79,7 @@ bool SinkNode::execute()
   postConsume(success);
 
   if (success) {
+    m_retainedInputs = handles;
     markCurrent();
     setExecState(NodeExecState::Idle);
   } else {

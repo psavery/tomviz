@@ -10,6 +10,8 @@
 #include <QMap>
 #include <QString>
 
+#include <memory>
+
 namespace tomviz {
 namespace pipeline {
 
@@ -46,6 +48,17 @@ private slots:
 
 private:
   void connectUpstreamIntermediate(InputPort* port);
+
+  /// Retained handles to the input payloads seen during the last
+  /// successful consume(). Two effects: the shared_ptr keeps the
+  /// upstream port's heap PortData alive (so the producer port's
+  /// hasData() stays honest for UI inspection — a value-copy of
+  /// PortData alone would let the heap object die and m_weak expire,
+  /// even though the heavy payload inside the std::any survives), and
+  /// it keeps the heavy payload pinned so the visualization works
+  /// after the executor's in-flight refs have dropped. Cleared on
+  /// disconnect.
+  QMap<QString, std::shared_ptr<PortData>> m_retainedInputs;
 };
 
 } // namespace pipeline

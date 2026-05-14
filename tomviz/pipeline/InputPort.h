@@ -8,6 +8,8 @@
 #include "PortData.h"
 #include "PortType.h"
 
+#include <memory>
+
 namespace tomviz {
 namespace pipeline {
 
@@ -31,12 +33,24 @@ public:
   bool hasData() const;
   bool isStale() const;
 
+  /// Delivery channel for the upstream payload during executor-driven
+  /// runs. The executor calls setHandle() before invoking the consumer
+  /// node and clearHandle() after. Sinks that need their input alive
+  /// past end-of-plan call handle() to grab the shared_ptr and stash
+  /// it in a member. Read paths (data()/hasData()) deliberately ignore
+  /// this — they observe via the upstream output port so UI callers
+  /// outside of execute() see the same picture.
+  const std::shared_ptr<PortData>& handle() const;
+  void setHandle(std::shared_ptr<PortData> handle);
+  void clearHandle();
+
 private:
   friend class Link;
   void setLink(Link* link);
 
   PortTypes m_acceptedTypes;
   Link* m_link = nullptr;
+  std::shared_ptr<PortData> m_handle;
 };
 
 } // namespace pipeline

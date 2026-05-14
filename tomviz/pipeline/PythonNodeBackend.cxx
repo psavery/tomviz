@@ -220,8 +220,11 @@ void PythonNodeBackend::parseDescription()
     spec.name = entry.value(QStringLiteral("name")).toString();
     spec.type =
       portTypeFromString(entry.value(QStringLiteral("type")).toString());
-    spec.persistent =
-      entry.value(QStringLiteral("persistent")).toBool(false);
+    if (entry.contains(QStringLiteral("persistent"))) {
+      spec.persistent =
+        entry.value(QStringLiteral("persistent")).toBool(false);
+      spec.persistentSpecified = true;
+    }
     if (!spec.name.isEmpty() && spec.type != PortType::None) {
       m_outputs.append(spec);
     }
@@ -278,10 +281,11 @@ void PythonNodeBackend::applyDescription(AddInputFn addInput,
   if (addOutput) {
     for (const auto& spec : m_outputs) {
       OutputPort* port = addOutput(spec.name, spec.type);
-      if (port) {
-        // Schema-v2 convention: omitted "persistent" → false. Set
-        // explicitly so the v2 default holds even though the C++
-        // OutputPort default is true.
+      if (port && spec.persistentSpecified) {
+        // Honor an explicit "persistent" flag from the operator JSON.
+        // When omitted, leave whatever default the host node-class
+        // installed (SourceNode → InMemory persistent; TransformNode →
+        // OnDisk persistent during the temporary rollout).
         port->setPersistent(spec.persistent);
       }
     }

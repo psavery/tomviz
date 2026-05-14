@@ -4,11 +4,14 @@
 #include "PipelineControlsWidget.h"
 
 #include "Pipeline.h"
+#include "PipelineSettings.h"
 
+#include <QAction>
 #include <QFrame>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
+#include <QMenu>
 #include <QPainter>
 #include <QTimer>
 #include <QToolButton>
@@ -67,6 +70,13 @@ PipelineControlsWidget::PipelineControlsWidget(QWidget* parent)
     emit dimmingToggled(m_dimmingEnabled);
   });
   layout->addWidget(m_dimmingButton);
+
+  auto* persistenceSeparator = new QFrame(this);
+  persistenceSeparator->setFrameShape(QFrame::VLine);
+  persistenceSeparator->setFrameShadow(QFrame::Sunken);
+  layout->addWidget(persistenceSeparator);
+
+  setupPersistenceButton(layout);
 
   m_spinnerTimer = new QTimer(this);
   m_spinnerTimer->setInterval(50);
@@ -175,6 +185,72 @@ void PipelineControlsWidget::onButtonClicked()
   } else {
     m_pipeline->setPaused(!m_pipeline->isPaused());
   }
+}
+
+void PipelineControlsWidget::setupPersistenceButton(QHBoxLayout* layout)
+{
+  m_persistenceButton = new QToolButton(this);
+  m_persistenceButton->setAutoRaise(true);
+  m_persistenceButton->setIconSize(QSize(20, 20));
+  m_persistenceButton->setPopupMode(QToolButton::InstantPopup);
+
+  auto* menu = new QMenu(m_persistenceButton);
+  auto addModeAction = [menu](const QString& iconPath,
+                              const QString& label,
+                              TransformPersistenceDefault mode) {
+    auto* action = menu->addAction(QIcon(iconPath), label);
+    action->setData(static_cast<int>(mode));
+    return action;
+  };
+  addModeAction(QStringLiteral(":/pipeline/port_persistent_ram.svg"),
+                tr("Persist in Memory"),
+                TransformPersistenceDefault::InMemory);
+  addModeAction(QStringLiteral(":/pipeline/port_persistent_disk.svg"),
+                tr("Persist on Disk"),
+                TransformPersistenceDefault::OnDisk);
+  addModeAction(QStringLiteral(":/pipeline/port_transient.svg"),
+                tr("Transient"), TransformPersistenceDefault::Transient);
+  m_persistenceButton->setMenu(menu);
+  layout->addWidget(m_persistenceButton);
+
+  connect(menu, &QMenu::triggered, this, [](QAction* action) {
+    PipelineSettings::instance().setTransformPersistenceDefault(
+      static_cast<TransformPersistenceDefault>(action->data().toInt()));
+  });
+
+  // Keep the button face in sync with the current setting — both at
+  // construction and if the value is changed elsewhere.
+  syncPersistenceButton(
+    PipelineSettings::instance().transformPersistenceDefault());
+  connect(&PipelineSettings::instance(),
+          &PipelineSettings::transformPersistenceDefaultChanged, this,
+          &PipelineControlsWidget::syncPersistenceButton);
+}
+
+void PipelineControlsWidget::syncPersistenceButton(
+  TransformPersistenceDefault mode)
+{
+  if (!m_persistenceButton) {
+    return;
+  }
+  QString iconPath;
+  QString tooltip;
+  switch (mode) {
+    case TransformPersistenceDefault::InMemory:
+      iconPath = QStringLiteral(":/pipeline/port_persistent_ram.svg");
+      tooltip = tr("Intermediate Data default: Persist in Memory");
+      break;
+    case TransformPersistenceDefault::OnDisk:
+      iconPath = QStringLiteral(":/pipeline/port_persistent_disk.svg");
+      tooltip = tr("Intermediate Data default: Persist on Disk");
+      break;
+    case TransformPersistenceDefault::Transient:
+      iconPath = QStringLiteral(":/pipeline/port_transient.svg");
+      tooltip = tr("Intermediate Data default: Transient");
+      break;
+  }
+  m_persistenceButton->setIcon(QIcon(iconPath));
+  m_persistenceButton->setToolTip(tooltip);
 }
 
 } // namespace pipeline

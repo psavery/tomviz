@@ -3,15 +3,38 @@
 
 #include "ThreadedExecutor.h"
 
+#include "InputPort.h"
 #include "InternalNodeExecutor.h"
+#include "Link.h"
 #include "Node.h"
 #include "NodeExecutor.h"
+#include "OutputPort.h"
+#include "PassthroughOutputPort.h"
 #include "Pipeline.h"
+#include "PortData.h"
 
+#include <QHash>
 #include <QThread>
+
+#include <memory>
 
 namespace tomviz {
 namespace pipeline {
+
+namespace {
+
+OutputPort* resolveSourceOutput(OutputPort* output)
+{
+  while (auto* pt = qobject_cast<PassthroughOutputPort*>(output)) {
+    output = pt->source();
+    if (!output) {
+      return nullptr;
+    }
+  }
+  return output;
+}
+
+} // namespace
 
 class ExecutionWorker : public QObject
 {
@@ -27,6 +50,14 @@ public:
 public slots:
   void run(const QList<Node*>& nodes, Pipeline* pipeline)
   {
+    Q_UNUSED(pipeline);
+
+    // Per-plan strong-ref retainer; see DefaultExecutor::execute for the
+    // detailed rationale. Local to this slot so it drops as soon as the
+    // plan finishes, evicting any transient outputs that no consumer
+    // (e.g. a sink) decided to retain.
+    QHash<OutputPort*, std::shared_ptr<PortData>> inflight;
+
     for (auto* node : nodes) {
       if (m_cancelFlag.load()) {
         emit canceled();
@@ -40,13 +71,35 @@ public slots:
         return;
       }
 
-      if (node->state() == NodeState::Current) {
-        continue;
-      }
+      // No "skip Current" filter here — see DefaultExecutor for the
+      // rationale. The plan is trusted to contain only nodes that need
+      // to run.
 
       // Skip nodes whose inputs are stale due to upstream failure/cancellation
       if (node->anyInputStale()) {
         continue;
+      }
+
+      // Deliver upstream handles to this node's input ports — see
+      // DefaultExecutor for the detailed rationale.
+      for (auto* input : node->inputPorts()) {
+        auto* link = input->link();
+        if (!link || !link->from()) {
+          continue;
+        }
+        auto* source = resolveSourceOutput(link->from());
+        if (!source) {
+          continue;
+        }
+        auto it = inflight.constFind(source);
+        if (it == inflight.constEnd()) {
+          if (auto h = source->take()) {
+            it = inflight.insert(source, h);
+          }
+        }
+        if (it != inflight.constEnd()) {
+          input->setHandle(it.value());
+        }
       }
 
       auto* nx = node->nodeExecutor();
@@ -60,16 +113,26 @@ public slots:
       m_currentNode.store(nullptr);
       emit nodeFinished(node, success);
 
+      for (auto* input : node->inputPorts()) {
+        input->clearHandle();
+      }
+
       if (!success) {
         // Mark downstream nodes stale so they are skipped.
         node->markStale();
+        continue;
+      }
+
+      for (auto* output : node->outputPorts()) {
+        if (output->links().isEmpty()) {
+          continue;
+        }
+        if (auto handle = output->take()) {
+          inflight.insert(output, handle);
+        }
       }
     }
 
-    // releaseTransientData must run on the main thread since it may
-    // interact with Qt objects, but for simplicity we call it here —
-    // the data is only read after the finished signal is delivered.
-    pipeline->releaseTransientData();
     emit executionDone(true);
   }
 

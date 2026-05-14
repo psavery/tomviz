@@ -320,15 +320,19 @@ bool writePersistentPayloads(pipeline::Pipeline* pipeline,
       }
       writer.createGroup(portGroup);
 
+      // Use materialize() rather than data(): the port may be OnDisk
+      // persistent and currently evicted, in which case data() would
+      // return empty and the save would silently miss the payload.
+      // materialize() loads from the disk cache as needed.
+      pipeline::PortData payload = port->materialize();
       bool wrote = false;
       if (isVolume) {
-        wrote = writeVolumePayload(writer, portGroup, port->data());
+        wrote = writeVolumePayload(writer, portGroup, payload);
       } else if (isTable) {
-        auto table = port->data().value<vtkSmartPointer<vtkTable>>();
+        auto table = payload.value<vtkSmartPointer<vtkTable>>();
         wrote = writeTablePayload(writer, portGroup, table.GetPointer());
       } else if (isMolecule) {
-        auto molecule =
-          port->data().value<vtkSmartPointer<vtkMolecule>>();
+        auto molecule = payload.value<vtkSmartPointer<vtkMolecule>>();
         wrote =
           writeMoleculePayload(writer, portGroup, molecule.GetPointer());
       }

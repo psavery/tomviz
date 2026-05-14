@@ -5,6 +5,8 @@
 
 #include "InputPort.h"
 #include "OutputPort.h"
+#include "PipelineSettings.h"
+#include "PortDataMetadata.h"
 
 namespace tomviz {
 namespace pipeline {
@@ -25,7 +27,36 @@ InputPort* TransformNode::addInput(const QString& name,
 
 OutputPort* TransformNode::addOutput(const QString& name, PortType type)
 {
-  return addOutputPort(name, type);
+  auto* port = addOutputPort(name, type);
+  applyDefaultPersistence(port);
+  return port;
+}
+
+void TransformNode::applyDefaultPersistence(OutputPort* port)
+{
+  if (!port) {
+    return;
+  }
+  // Defer to the application-wide default. Schema-v2 / explicit
+  // setPersistent() callers (e.g. operator JSON with `persistent: true`)
+  // still override afterwards.
+  switch (PipelineSettings::instance().transformPersistenceDefault()) {
+    case TransformPersistenceDefault::InMemory:
+      // Set the mode before enabling persistence so the single
+      // reconcile triggered by setPersistent runs with the new mode
+      // already in place — avoids an InMemory acquire/evict round
+      // trip when the target mode is OnDisk.
+      port->setPersistenceMode(PersistenceMode::InMemory);
+      port->setPersistent(true);
+      break;
+    case TransformPersistenceDefault::OnDisk:
+      port->setPersistenceMode(PersistenceMode::OnDisk);
+      port->setPersistent(true);
+      break;
+    case TransformPersistenceDefault::Transient:
+      // Default-constructed port is already transient; nothing to do.
+      break;
+  }
 }
 
 QJsonObject TransformNode::serialize() const
@@ -64,6 +95,12 @@ bool TransformNode::execute()
     setExecState(NodeExecState::Failed);
     return false;
   }
+
+  // Inherit presentation metadata (colormap, gradient opacity, …)
+  // from inputs to outputs while both PortData maps are alive in
+  // local scope. The dispatch is payload-type-aware and lives in
+  // pipeline/PortDataMetadata; this call site stays generic.
+  inheritOutputMetadata(this, inputs, outputs);
 
   applyOutputs(outputs);
 

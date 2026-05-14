@@ -40,6 +40,8 @@ void PassthroughOutputPort::setSource(OutputPort* source)
             this, &OutputPort::staleChanged);
     connect(m_source, &OutputPort::effectiveTypeChanged,
             this, &OutputPort::effectiveTypeChanged);
+    connect(m_source, &OutputPort::dataLocationChanged,
+            this, &OutputPort::dataLocationChanged);
   }
 }
 
@@ -52,6 +54,14 @@ PortData PassthroughOutputPort::data() const
 {
   if (m_source) {
     return m_source->data();
+  }
+  return PortData();
+}
+
+PortData PassthroughOutputPort::materialize()
+{
+  if (m_source) {
+    return m_source->materialize();
   }
   return PortData();
 }
@@ -70,6 +80,14 @@ bool PassthroughOutputPort::isStale() const
     return m_source->isStale();
   }
   return true;
+}
+
+DataLocation PassthroughOutputPort::dataLocation() const
+{
+  if (m_source) {
+    return m_source->dataLocation();
+  }
+  return DataLocation::None;
 }
 
 bool PassthroughOutputPort::canAcceptLink(InputPort* to) const

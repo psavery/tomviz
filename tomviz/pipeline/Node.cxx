@@ -560,6 +560,14 @@ QJsonObject Node::serialize() const
       entry[QStringLiteral("type")] =
         portTypeToString(port->declaredType());
       entry[QStringLiteral("persistent")] = port->isPersistent();
+      // Persistence medium. Only meaningful when persistent==true.
+      // Omitted for the default (InMemory) so older readers (and the
+      // ones that only look at the bool) keep working.
+      if (port->isPersistent() &&
+          port->persistenceMode() != PersistenceMode::InMemory) {
+        entry[QStringLiteral("persistenceMode")] =
+          persistenceModeToString(port->persistenceMode());
+      }
       auto metadata = port->serialize();
       if (!metadata.isEmpty()) {
         entry[QStringLiteral("metadata")] = metadata;
@@ -649,6 +657,10 @@ bool Node::deserialize(const QJsonObject& json)
       if (entry.contains(QStringLiteral("persistent"))) {
         port->setPersistent(
           entry.value(QStringLiteral("persistent")).toBool());
+      }
+      if (entry.contains(QStringLiteral("persistenceMode"))) {
+        port->setPersistenceMode(persistenceModeFromString(
+          entry.value(QStringLiteral("persistenceMode")).toString()));
       }
       if (entry.contains(QStringLiteral("metadata"))) {
         port->deserialize(

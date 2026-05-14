@@ -604,7 +604,66 @@ ExecutionFuture* Pipeline::execute()
   }
 
   auto* future = new ExecutionFuture(this);
-  auto order = topologicalSort();
+
+  // Compute the plan by treating each leaf (no downstream consumers)
+  // as a target and merging the per-target execution orders. This
+  // routes through executionOrder()'s logic, so a Current node whose
+  // required output has been evicted (transient data dropped after the
+  // last run) is re-included only when a downstream consumer in the
+  // plan actually needs that output. Without this, the executor's
+  // simple "skip Current" filter would let stale-looking-but-evicted
+  // intermediates feed an empty payload into downstream sinks.
+  QList<Node*> order;
+  QSet<Node*> inOrder;
+  for (auto* node : m_nodes) {
+    if (!node->downstreamNodes().isEmpty()) {
+      continue;
+    }
+    auto sub = executionOrder(node);
+    for (auto* n : sub) {
+      if (!inOrder.contains(n)) {
+        inOrder.insert(n);
+        order.append(n);
+      }
+    }
+  }
+  // executionOrder() returns each per-leaf plan topo-sorted internally,
+  // but merging two such lists may leave the result out of order when
+  // a node appears in both. Re-sort the union to guarantee global
+  // topological order.
+  if (!order.isEmpty()) {
+    QMap<Node*, int> inDegree;
+    for (auto* n : order) {
+      inDegree[n] = 0;
+    }
+    for (auto* n : order) {
+      for (auto* up : n->upstreamNodes()) {
+        if (inOrder.contains(up)) {
+          inDegree[n]++;
+        }
+      }
+    }
+    QQueue<Node*> ready;
+    for (auto it = inDegree.constBegin(); it != inDegree.constEnd(); ++it) {
+      if (it.value() == 0) {
+        ready.enqueue(it.key());
+      }
+    }
+    QList<Node*> sorted;
+    while (!ready.isEmpty()) {
+      Node* n = ready.dequeue();
+      sorted.append(n);
+      for (auto* d : n->downstreamNodes()) {
+        if (!inOrder.contains(d)) {
+          continue;
+        }
+        if (--inDegree[d] == 0) {
+          ready.enqueue(d);
+        }
+      }
+    }
+    order = sorted;
+  }
 
   connect(m_executor, &PipelineExecutor::executionComplete, future,
           [this, future](bool success) {
@@ -666,22 +725,53 @@ QList<Node*> Pipeline::executionOrder(Node* target)
     return {};
   }
 
-  // DFS upstream collecting Stale/New nodes, stopping at Current nodes
+  // Whether target itself needs to (re-)run. Current targets with all
+  // outputs still materialized have nothing to do; Current targets
+  // whose outputs have been evicted (transient data dropped after the
+  // last execution) must re-run to repopulate.
+  auto needsRerun = [](Node* node) {
+    if (node->state() != NodeState::Current) {
+      return true;
+    }
+    for (auto* output : node->outputPorts()) {
+      if (!output->hasData()) {
+        return true;
+      }
+    }
+    return false;
+  };
+
   QSet<Node*> needed;
   QStack<Node*> stack;
-  stack.push(target);
+  if (needsRerun(target)) {
+    stack.push(target);
+  }
 
   while (!stack.isEmpty()) {
     Node* current = stack.pop();
     if (needed.contains(current)) {
       continue;
     }
-    if (current->state() == NodeState::Current) {
-      continue;
-    }
     needed.insert(current);
-    for (auto* upstream : current->upstreamNodes()) {
-      if (!needed.contains(upstream)) {
+
+    // Step to each upstream producer by walking the specific link feeding
+    // this input. A Current upstream is re-included only when the output
+    // we actually depend on has been evicted — other evicted outputs on
+    // the same node don't matter.
+    for (auto* input : current->inputPorts()) {
+      auto* link = input->link();
+      if (!link || !link->from()) {
+        continue;
+      }
+      auto* upstreamOutput = link->from();
+      auto* upstream = upstreamOutput->node();
+      if (!upstream || needed.contains(upstream)) {
+        continue;
+      }
+      bool upstreamNeedsRerun =
+        upstream->state() != NodeState::Current ||
+        !upstreamOutput->hasData();
+      if (upstreamNeedsRerun) {
         stack.push(upstream);
       }
     }
@@ -761,34 +851,6 @@ void Pipeline::propagateEffectiveTypes(Node* startNode)
             queue.enqueue(downstream);
           }
         }
-      }
-    }
-  }
-}
-
-void Pipeline::releaseTransientData()
-{
-  // Disabled pending the persistent/transient lifecycle redesign.
-  return;
-
-  for (auto* node : m_nodes) {
-    for (auto* output : node->outputPorts()) {
-      if (output->isPersistent() || !output->hasData()) {
-        continue;
-      }
-
-      // Check if all downstream consumers are Current
-      bool allCurrent = true;
-      for (auto* link : output->links()) {
-        Node* downstream = link->to()->node();
-        if (downstream && downstream->state() != NodeState::Current) {
-          allCurrent = false;
-          break;
-        }
-      }
-
-      if (allCurrent) {
-        output->clearData();
       }
     }
   }

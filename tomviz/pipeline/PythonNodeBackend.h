@@ -168,6 +168,8 @@ private:
     QString name;
     PortType type = PortType::None;
     bool persistent = false; // outputs only; ignored for inputs
+    bool persistentSpecified =
+      false; // whether the operator JSON explicitly carried "persistent"
   };
   QList<PortSpec> m_inputs;
   QList<PortSpec> m_outputs;

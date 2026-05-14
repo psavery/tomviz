@@ -249,6 +249,13 @@ set(SOURCES
   pipeline/transforms/TranslateAlignTransform.cxx
   pipeline/PortData.cxx
   pipeline/PortData.h
+  pipeline/PortDataDiskCache.cxx
+  pipeline/PortDataDiskCache.h
+  pipeline/PortDataMetadata.cxx
+  pipeline/PortDataMetadata.h
+  pipeline/PersistenceMode.h
+  pipeline/PipelineSettings.cxx
+  pipeline/PipelineSettings.h
   pipeline/PortType.h
   pipeline/NodeState.h
   pipeline/Port.cxx

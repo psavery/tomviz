@@ -521,6 +521,62 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
       }
     });
 
+  // Context menu on ports: per-port persistence override, grouped
+  // under a "Persistency" submenu so the top-level menu has room for
+  // upcoming port-level actions.
+  m_pipelineStrip->setPortMenuProvider(
+    [this](pipeline::OutputPort* port, QMenu& menu) {
+      if (!port) {
+        return;
+      }
+      auto* p = pipeline();
+      auto* persistencyMenu = menu.addMenu(QStringLiteral("Persistency"));
+      auto addModeAction =
+        [persistencyMenu, port, p](const QString& iconPath,
+                                    const QString& label, bool persistent,
+                                    pipeline::PersistenceMode mode) {
+          auto* action = persistencyMenu->addAction(
+            QIcon(iconPath), label, [port, persistent, mode, p]() {
+              // Enabling persistence: set the medium first so the
+              // single reconcile triggered by setPersistent runs with
+              // the target mode already in place. Disabling: skip the
+              // mode entirely (transient ports ignore it, and setting
+              // it first would trigger an unnecessary InMemory-branch
+              // reload on a port that we're about to evict anyway).
+              if (persistent) {
+                port->setPersistenceMode(mode);
+                port->setPersistent(true);
+              } else {
+                port->setPersistent(false);
+              }
+              // If the user just asked to retain this port's data but
+              // the data was already deallocated (e.g. previously
+              // transient and consumed), the only way to obtain it is
+              // to re-run the producer. Trigger that here at the UI
+              // layer so the pipeline core stays free of policy.
+              if (persistent && p && port->node() &&
+                  !port->hasData()) {
+                p->execute(port->node());
+              }
+            });
+          action->setCheckable(true);
+          // Mark the currently-active mode so the user sees what's set.
+          bool isCurrent =
+            (port->isPersistent() == persistent) &&
+            (!persistent || port->persistenceMode() == mode);
+          action->setChecked(isCurrent);
+        };
+      addModeAction(QStringLiteral(":/pipeline/port_persistent_ram.svg"),
+                    QStringLiteral("Persist in Memory"), true,
+                    pipeline::PersistenceMode::InMemory);
+      addModeAction(QStringLiteral(":/pipeline/port_persistent_disk.svg"),
+                    QStringLiteral("Persist on Disk"), true,
+                    pipeline::PersistenceMode::OnDisk);
+      addModeAction(QStringLiteral(":/pipeline/port_transient.svg"),
+                    QStringLiteral("Transient"), false,
+                    pipeline::PersistenceMode::InMemory);
+    });
+
   // Sync tip output port from ActiveObjects to the strip widget and colormap
   connect(&ActiveObjects::instance(),
           &ActiveObjects::activeTipOutputPortChanged,

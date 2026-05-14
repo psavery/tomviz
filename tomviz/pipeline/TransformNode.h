@@ -44,6 +44,13 @@ public:
 protected:
   virtual QMap<QString, PortData> transform(
     const QMap<QString, PortData>& inputs) = 0;
+
+  /// Apply the application-wide persistence default
+  /// (PipelineSettings::transformPersistenceDefault) to @a port.
+  /// Subclasses that bypass addOutput() and construct an OutputPort
+  /// subclass directly should call this on the port they install so
+  /// the global default takes effect uniformly across all transforms.
+  void applyDefaultPersistence(OutputPort* port);
 };
 
 } // namespace pipeline

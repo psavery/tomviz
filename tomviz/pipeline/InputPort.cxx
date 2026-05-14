@@ -61,6 +61,21 @@ bool InputPort::isStale() const
   return false;
 }
 
+const std::shared_ptr<PortData>& InputPort::handle() const
+{
+  return m_handle;
+}
+
+void InputPort::setHandle(std::shared_ptr<PortData> handle)
+{
+  m_handle = std::move(handle);
+}
+
+void InputPort::clearHandle()
+{
+  m_handle.reset();
+}
+
 void InputPort::setLink(Link* link)
 {
   m_link = link;

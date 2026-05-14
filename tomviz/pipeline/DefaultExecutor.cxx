@@ -3,13 +3,42 @@
 
 #include "DefaultExecutor.h"
 
+#include "InputPort.h"
 #include "InternalNodeExecutor.h"
+#include "Link.h"
 #include "Node.h"
 #include "NodeExecutor.h"
+#include "OutputPort.h"
+#include "PassthroughOutputPort.h"
 #include "Pipeline.h"
+#include "PortData.h"
+
+#include <QHash>
+
+#include <memory>
 
 namespace tomviz {
 namespace pipeline {
+
+namespace {
+
+/// Walk through any chain of PassthroughOutputPorts to reach the
+/// original data-owning OutputPort. SinkGroupNode's passthroughs carry
+/// no data of their own — the executor's in-flight map is keyed by the
+/// upstream producer, so consumers behind a passthrough need the
+/// resolved source to find their handle.
+OutputPort* resolveSourceOutput(OutputPort* output)
+{
+  while (auto* pt = qobject_cast<PassthroughOutputPort*>(output)) {
+    output = pt->source();
+    if (!output) {
+      return nullptr;
+    }
+  }
+  return output;
+}
+
+} // namespace
 
 DefaultExecutor::DefaultExecutor(QObject* parent)
   : PipelineExecutor(parent)
@@ -19,6 +48,15 @@ void DefaultExecutor::execute(const QList<Node*>& nodes, Pipeline* pipeline)
 {
   m_running = true;
   m_cancelRequested = false;
+
+  // Keeps published transient outputs alive across the plan window. After
+  // a producer node executes, we take() its outputs into this map so that
+  // consumers reading via inputPort->data() (or sinks stashing copies)
+  // see live data. The map drops at end-of-plan, so transient outputs
+  // with no long-lived holder evict automatically. Leaf outputs (no
+  // outgoing links) are intentionally not taken from — they remain pinned
+  // inside the port so the data survives until a consumer is attached.
+  QHash<OutputPort*, std::shared_ptr<PortData>> inflight;
 
   for (auto* node : nodes) {
     if (m_cancelRequested) {
@@ -35,9 +73,14 @@ void DefaultExecutor::execute(const QList<Node*>& nodes, Pipeline* pipeline)
       return;
     }
 
-    if (node->state() == NodeState::Current) {
-      continue;
-    }
+    // No "skip Current" filter here: the plan handed to the executor is
+    // already trimmed by Pipeline::executionOrder, which deliberately
+    // re-includes Current nodes whose required outputs were evicted
+    // (transient data dropped after the last run). Filtering at runtime
+    // would silently drop those re-runs and feed downstream consumers
+    // empty payloads — most visibly in SinkGroupNode chains, where the
+    // passthrough output's hasData() reflects an upstream that the
+    // executor just skipped.
 
     // Skip nodes with invalid (type-incompatible) input links
     if (node->hasInvalidInputLinks()) {
@@ -51,6 +94,32 @@ void DefaultExecutor::execute(const QList<Node*>& nodes, Pipeline* pipeline)
       continue;
     }
 
+    // Deliver an upstream-payload handle to each input port before the
+    // node runs. The handle is copied from the in-flight map (lazily
+    // taken if the producer wasn't itself in the plan, e.g. a
+    // Current+populated persistent source whose data hasn't been
+    // taken yet this plan). Sinks copy this handle into their own
+    // member; transforms read through it and discard.
+    for (auto* input : node->inputPorts()) {
+      auto* link = input->link();
+      if (!link || !link->from()) {
+        continue;
+      }
+      auto* source = resolveSourceOutput(link->from());
+      if (!source) {
+        continue;
+      }
+      auto it = inflight.constFind(source);
+      if (it == inflight.constEnd()) {
+        if (auto h = source->take()) {
+          it = inflight.insert(source, h);
+        }
+      }
+      if (it != inflight.constEnd()) {
+        input->setHandle(it.value());
+      }
+    }
+
     auto* nx = node->nodeExecutor();
     if (!nx) {
       nx = &InternalNodeExecutor::instance();
@@ -60,13 +129,35 @@ void DefaultExecutor::execute(const QList<Node*>& nodes, Pipeline* pipeline)
     bool success = nx->execute(node);
     emit nodeExecutionFinished(node, success);
 
+    // Drop the delivered handles — the consumer kept its own copy if
+    // it wanted retention. Leaving them on the input port would pin
+    // upstream data alive for the lifetime of the InputPort and
+    // defeat transient eviction.
+    for (auto* input : node->inputPorts()) {
+      input->clearHandle();
+    }
+
     if (!success) {
       // Mark downstream nodes stale so they are skipped.
       node->markStale();
+      continue;
+    }
+
+    // Take fresh publications into the in-flight map so they survive past
+    // the producer's execute(). Persistent ports yield a shared copy
+    // without losing their own hold; transient ports hand over their
+    // strong ref. Skip ports with no outgoing links — those are leaves,
+    // and the port's own strong ref is exactly what we want to preserve.
+    for (auto* output : node->outputPorts()) {
+      if (output->links().isEmpty()) {
+        continue;
+      }
+      if (auto handle = output->take()) {
+        inflight.insert(output, handle);
+      }
     }
   }
 
-  pipeline->releaseTransientData();
   m_running = false;
   emit executionComplete(true);
 }

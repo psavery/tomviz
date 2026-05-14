@@ -51,6 +51,26 @@ static void paintTintedIcon(QPainter& painter, const QIcon& icon,
   painter.drawPixmap(rect, pix);
 }
 
+// Draw a circular badge centered on @a cornerCenter — used to anchor
+// the persistent / has-data corner cues to a port square's corner so
+// they read as attached to it rather than floating on top of it.
+static void paintCornerBadge(QPainter& painter, const QIcon& icon,
+                             const QPoint& cornerCenter, int size,
+                             const QColor& color, const QColor& bgColor)
+{
+  if (icon.isNull() || size <= 0) {
+    return;
+  }
+  QRect badgeRect(cornerCenter.x() - size / 2,
+                  cornerCenter.y() - size / 2, size, size);
+  painter.setBrush(bgColor);
+  painter.setPen(QPen(color, 0.5));
+  painter.drawEllipse(badgeRect);
+  // Smaller inset so the icon fills more of the badge.
+  QRect iconRect = badgeRect.adjusted(1, 1, -1, -1);
+  paintTintedIcon(painter, icon, iconRect, color);
+}
+
 // Build a QPainterPath through a sequence of points, rounding each interior
 // corner with a quadratic B��zier curve.  The radius is clamped so it never
 // exceeds half the length of an adjacent segment.
@@ -884,6 +904,16 @@ void PipelineStripWidget::connectPipeline()
             QOverload<>::of(&QWidget::update));
     connect(node, &Node::breakpointChanged, this,
             QOverload<>::of(&QWidget::update));
+    // Port-level badges (persistent pin, data-location memory/disk)
+    // depend on OutputPort state that the existing node-level signals
+    // don't surface — subscribe directly so the badges refresh when
+    // data is published, evicted, or swapped between memory and disk.
+    for (auto* port : node->outputPorts()) {
+      connect(port, &OutputPort::dataChanged, this,
+              QOverload<>::of(&QWidget::update));
+      connect(port, &OutputPort::dataLocationChanged, this,
+              [this](DataLocation) { update(); });
+    }
     auto* sink = qobject_cast<LegacyModuleSink*>(node);
     if (sink) {
       connect(sink, &LegacyModuleSink::visibilityChanged, this,
@@ -1318,6 +1348,45 @@ void PipelineStripWidget::paintPortCard(QPainter& painter,
   QColor iconColor = selected ? palette().highlightedText().color() : color;
   paintTintedIcon(painter, pIcon, pIconRect, iconColor);
 
+  // Corner badges on the icon square, anchored to the corners (badges
+  // are centered on the corner point so half straddles outside, half
+  // inside — they read as attached to the square rather than floating
+  // over it):
+  //  - top-right: pin if the port is persistent (regardless of medium)
+  //  - bottom-right: where the payload currently is
+  //      InMemory  → RAM stick
+  //      OnDisk    → disk
+  //      None      → nothing
+  if (!isDim) {
+    int badge = 12;
+    QColor badgeBg = palette().window().color();
+    QColor badgeFg = color; // port type color
+    if (port->isPersistent()) {
+      static QIcon pinIcon(
+        QStringLiteral(":/pipeline/port_persistent_pin.svg"));
+      paintCornerBadge(painter, pinIcon,
+                       QPoint(sqRect.right(), sqRect.top()), badge,
+                       badgeFg, badgeBg);
+    }
+    static QIcon ramIcon(QStringLiteral(":/pipeline/port_data_ram.svg"));
+    static QIcon diskIcon(
+      QStringLiteral(":/pipeline/port_data_disk.svg"));
+    switch (port->dataLocation()) {
+      case DataLocation::InMemory:
+        paintCornerBadge(painter, ramIcon,
+                         QPoint(sqRect.right(), sqRect.bottom()), badge,
+                         badgeFg, badgeBg);
+        break;
+      case DataLocation::OnDisk:
+        paintCornerBadge(painter, diskIcon,
+                         QPoint(sqRect.right(), sqRect.bottom()), badge,
+                         badgeFg, badgeBg);
+        break;
+      case DataLocation::None:
+        break;
+    }
+  }
+
   int x = r.left() + sqEdge + 6; // 2px extra inset from icon square
 
   // Port name
@@ -1737,6 +1806,40 @@ void PipelineStripWidget::paintOutputDots(QPainter& painter,
                      OutputSquareIconSize, OutputSquareIconSize);
       QColor iconColor = isSelected ? palette().highlightedText().color() : color;
       paintTintedIcon(painter, icon, iconRect, iconColor);
+
+      // Corner badges, same cues as the expanded port card: pin
+      // (persistent) at top-right, RAM (has data) at bottom-right.
+      // Anchored to the corner of the square (centered on the corner
+      // point).
+      if (!isPortDimmed(outputs[i])) {
+        int badge = 12;
+        QColor badgeBg = palette().window().color();
+        QColor badgeFg = portTypeColor(outputs[i]);
+        QPoint topRight(pos.x() + half, pos.y() - half);
+        QPoint bottomRight(pos.x() + half, pos.y() + half);
+        if (outputs[i]->isPersistent()) {
+          static QIcon pinIcon(
+            QStringLiteral(":/pipeline/port_persistent_pin.svg"));
+          paintCornerBadge(painter, pinIcon, topRight, badge,
+                           badgeFg, badgeBg);
+        }
+        static QIcon ramIcon(
+          QStringLiteral(":/pipeline/port_data_ram.svg"));
+        static QIcon diskIcon(
+          QStringLiteral(":/pipeline/port_data_disk.svg"));
+        switch (outputs[i]->dataLocation()) {
+          case DataLocation::InMemory:
+            paintCornerBadge(painter, ramIcon, bottomRight, badge,
+                             badgeFg, badgeBg);
+            break;
+          case DataLocation::OnDisk:
+            paintCornerBadge(painter, diskIcon, bottomRight, badge,
+                             badgeFg, badgeBg);
+            break;
+          case DataLocation::None:
+            break;
+        }
+      }
     }
   }
   painter.setBrush(Qt::NoBrush);
@@ -2445,6 +2548,25 @@ void PipelineStripWidget::mousePressEvent(QMouseEvent* event)
       }
     }
 
+    // Port card three-dot menu — open without changing selection,
+    // mirroring the NodeCard menu-button behavior above.
+    if (idx >= 0 && m_layout[idx].type == LayoutItem::PortCard) {
+      const QRect& portRect = m_layout[idx].rect;
+      int hitWidth = HeaderIconSize;
+      QRect portMenuRect(portRect.right() - hitWidth, portRect.top(),
+                         hitWidth, portRect.height());
+      if (portMenuRect.contains(event->pos()) && m_portMenuProvider) {
+        QMenu menu(this);
+        m_portMenuProvider(m_layout[idx].port, menu);
+        if (!menu.isEmpty()) {
+          QPoint globalPos = mapToGlobal(
+            QPoint(portMenuRect.right(), portMenuRect.bottom()));
+          menu.exec(globalPos);
+        }
+        return;
+      }
+    }
+
     if (idx >= 0) {
       selectItem(idx);
     } else {
@@ -2538,6 +2660,22 @@ void PipelineStripWidget::keyPressEvent(QKeyEvent* event)
 
 void PipelineStripWidget::contextMenuEvent(QContextMenuEvent* event)
 {
+  // Minimized output port squares hang BELOW their NodeCard rect, so
+  // hitTest() may not see them. Check explicitly first — a right-click
+  // on a square should pop the port menu, not the enclosing node's
+  // (or no) menu.
+  if (auto* port = outputPortHitTest(event->pos())) {
+    if (m_portMenuProvider) {
+      setSelectedPort(port);
+      QMenu menu(this);
+      m_portMenuProvider(port, menu);
+      if (!menu.isEmpty()) {
+        menu.exec(event->globalPos());
+      }
+      return;
+    }
+  }
+
   int idx = hitTest(event->pos());
 
   if (idx >= 0) {

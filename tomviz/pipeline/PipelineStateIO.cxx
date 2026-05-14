@@ -292,19 +292,20 @@ bool PipelineStateIO::load(Pipeline* pipeline, const QJsonObject& state,
   }
 
   // Pass 3: a node was saved as Current because its outputs carried
-  // data at save time. In .tvsm and in .tvh5 files where voxels weren't
-  // (yet) reconstructed, persistent output ports are empty after load —
-  // so the restored "Current" state is a lie. Downgrade those nodes to
-  // Stale; markStale cascades through the links created in pass 2 so
-  // downstream nodes also re-execute. Nodes that genuinely have data
-  // (e.g. future .tvh5 loader populating voxels before this point)
-  // stay Current.
+  // data at save time. Transient ports never serialize their payload,
+  // and persistent ports may be empty too (.tvsm, or .tvh5 files where
+  // voxels weren't yet reconstructed) — so the restored "Current"
+  // state is a lie whenever an output that downstream depends on (or
+  // a persistent output that should round-trip its payload) is empty.
+  // Downgrade those nodes to Stale; markStale cascades through the
+  // links created in pass 2 so downstream nodes also re-execute.
   for (auto* node : pipeline->nodes()) {
     if (node->state() != NodeState::Current) {
       continue;
     }
     for (auto* port : node->outputPorts()) {
-      if (port->isPersistent() && !port->hasData()) {
+      bool needsData = port->isPersistent() || !port->links().isEmpty();
+      if (needsData && !port->hasData()) {
         node->markStale();
         break;
       }

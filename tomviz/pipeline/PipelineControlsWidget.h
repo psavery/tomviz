@@ -4,8 +4,11 @@
 #ifndef tomvizPipelineControlsWidget_h
 #define tomvizPipelineControlsWidget_h
 
+#include "PipelineSettings.h"
+
 #include <QWidget>
 
+class QHBoxLayout;
 class QLabel;
 class QToolButton;
 class QTimer;
@@ -34,6 +37,8 @@ private:
   void updateState();
   void onButtonClicked();
   void paintSpinner(QPainter& painter, const QRect& rect);
+  void setupPersistenceButton(QHBoxLayout* layout);
+  void syncPersistenceButton(TransformPersistenceDefault mode);
 
   Pipeline* m_pipeline = nullptr;
   QToolButton* m_button = nullptr;
@@ -44,6 +49,7 @@ private:
   bool m_stopping = false;
   bool m_dimmingEnabled = false;
   QToolButton* m_dimmingButton = nullptr;
+  QToolButton* m_persistenceButton = nullptr;
 
   static constexpr int SpinnerSize = 14;
 };

@@ -19,7 +19,13 @@ QIcon SourceNode::icon() const
 
 OutputPort* SourceNode::addOutput(const QString& name, PortType type)
 {
-  return addOutputPort(name, type);
+  // Source outputs default to persistent: the root payload is typically
+  // expensive to recreate (file read, network fetch, simulator run), so
+  // we pin it for the lifetime of the node rather than re-executing on
+  // every downstream re-attach.
+  auto* port = addOutputPort(name, type);
+  port->setPersistent(true);
+  return port;
 }
 
 void SourceNode::setOutputData(const QString& portName, const PortData& data)

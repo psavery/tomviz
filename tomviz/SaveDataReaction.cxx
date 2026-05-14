@@ -206,8 +206,12 @@ void SaveDataReaction::updateEnableState()
     return;
   }
 
-  auto portData = tipPort->data();
-  parentAction()->setEnabled(pipeline::isVolumeType(portData.type()));
+  // Use the port's declared type rather than the payload's — this
+  // path runs whenever the menu enable-state refreshes, including
+  // while the port's data is evicted to disk; we don't want to
+  // trigger a load just to decide whether the action should be
+  // active.
+  parentAction()->setEnabled(pipeline::isVolumeType(tipPort->type()));
 }
 
 void SaveDataReaction::onTriggered()
@@ -266,7 +270,10 @@ bool SaveDataReaction::saveData(const QString& filename)
     return false;
   }
 
-  auto portData = tipPort->data();
+  // Saving is the explicit "I need the data" path — materialize so
+  // OnDisk-persistent payloads are loaded from cache before we read
+  // the volume bytes.
+  auto portData = tipPort->materialize();
   if (!pipeline::isVolumeType(portData.type())) {
     qCritical("SaveDataReaction: only volume data can be saved.");
     return false;

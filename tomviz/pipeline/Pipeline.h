@@ -95,9 +95,6 @@ public:
   void cancelExecution();
   QList<Node*> executionOrder(Node* target);
 
-  // Transient cleanup
-  void releaseTransientData();
-
   /// Recompute effective types starting from @a startNode and propagating
   /// downstream.  Rechecks link validity for all affected links.
   void propagateEffectiveTypes(Node* startNode);

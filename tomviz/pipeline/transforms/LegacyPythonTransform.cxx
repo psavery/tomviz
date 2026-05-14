@@ -54,8 +54,15 @@ LegacyPythonTransform::LegacyPythonTransform(QObject* parent)
 {
   // Always have volume in/out.  Use VolumeOutputPort so that
   // setIntermediateData() can deep-copy live updates from Python.
+  // Going through addOutputPort(OutputPort*) bypasses
+  // TransformNode::addOutput, so apply the persistence default
+  // manually — otherwise legacy operators (GaussianFilter et al.)
+  // ignore the application-wide setting.
   addInput("volume", PortType::ImageData);
-  addOutputPort(new VolumeOutputPort("volume", PortType::ImageData));
+  auto* volumeOutput =
+    new VolumeOutputPort("volume", PortType::ImageData);
+  addOutputPort(volumeOutput);
+  applyDefaultPersistence(volumeOutput);
 }
 
 void LegacyPythonTransform::setJSONDescription(const QString& json)

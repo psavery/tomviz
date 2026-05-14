@@ -372,6 +372,12 @@ TEST_F(PipelineLibTest, ExecutionFromTarget)
   pipeline->addNode(source);
 
   auto* t1 = new DoubleTransform();
+  // Pin t1's output so the value survives end-of-plan and the test
+  // can read it back directly. Force InMemory explicitly because the
+  // current TransformNode default is OnDisk, and the int payloads
+  // these tests use aren't round-trippable through Tvh5Format.
+  t1->outputPort("out")->setPersistent(true);
+  t1->outputPort("out")->setPersistenceMode(PersistenceMode::InMemory);
   pipeline->addNode(t1);
   auto* t2 = new DoubleTransform();
   pipeline->addNode(t2);
@@ -453,13 +459,12 @@ TEST_F(PipelineLibTest, BreakpointStopsExecution)
 
 TEST_F(PipelineLibTest, TransientDataRelease)
 {
-  // Pipeline::releaseTransientData is currently a no-op pending the
-  // persistent/transient lifecycle redesign. The previous behavior
-  // (clear transient ports whose downstream consumers are all Current)
-  // broke UI affordances that read from output ports lazily. This
-  // test now just verifies that data flows end-to-end and that a
-  // transient port keeps its data after execution — when release
-  // semantics are reinstated, this test will be revisited.
+  // A transient transform output is kept alive while any consumer
+  // retains its shared_ptr handle. The sink stashes that handle in
+  // m_retainedInputs, so the producer port reports hasData() == true
+  // for as long as the sink is connected. Once the sink is removed,
+  // its retained input drops, the wrapping heap PortData is freed,
+  // and the producer port reports hasData() == false.
   auto* source = new SourceNode();
   source->addOutput("out", PortType::ImageData);
   pipeline->addNode(source);
@@ -480,9 +485,219 @@ TEST_F(PipelineLibTest, TransientDataRelease)
 
   EXPECT_TRUE(future->isFinished());
   EXPECT_TRUE(future->succeeded());
+  // Sink retains the input handle; transient producer stays alive.
   EXPECT_TRUE(transform->outputPort("out")->hasData());
+  // Source output is persistent by default — independently alive.
+  EXPECT_TRUE(source->outputPort("out")->hasData());
+  // Sink consumed the data successfully.
   EXPECT_TRUE(sink->consumed);
   EXPECT_EQ(sink->lastValue, 8);
+
+  // Removing the sink drops its retained handle. With no consumer
+  // holding, the transient producer port evicts.
+  auto* transformOutput = transform->outputPort("out");
+  pipeline->removeNode(sink);
+  EXPECT_FALSE(transformOutput->hasData());
+}
+
+TEST_F(PipelineLibTest, OnDiskEvictsOnLastHandleRelease)
+{
+  // Use a real volume payload — the OnDisk path round-trips through
+  // Tvh5Format, which needs an actual vtkImageData (not a wrapped int).
+  auto* source = new SphereSource();
+  source->setDimensions(4, 4, 4);
+  pipeline->addNode(source);
+
+  auto* port = source->outputPort("volume");
+  port->setPersistenceMode(PersistenceMode::OnDisk);
+
+  ASSERT_TRUE(source->execute());
+  ASSERT_TRUE(port->hasData());
+  auto originalRange =
+    port->data().value<VolumeDataPtr>()->scalarRange();
+
+  // Simulate an executor cycle: take the strong ref, then let it drop.
+  // For OnDisk the take moves m_strong out, so when the local handle
+  // dies the deleter fires and swaps to disk.
+  {
+    auto handle = port->take();
+    ASSERT_TRUE(handle);
+  }
+
+  // Port should still report hasData() — it's on disk now, not gone.
+  EXPECT_TRUE(port->hasData());
+
+  // data() is non-loading — it should report missing now.
+  EXPECT_FALSE(port->data().isValid());
+  // materialize() triggers a synchronous reload from disk.
+  auto reloaded = port->materialize().value<VolumeDataPtr>();
+  ASSERT_TRUE(reloaded && reloaded->isValid());
+  auto reloadedRange = reloaded->scalarRange();
+  EXPECT_NEAR(originalRange[0], reloadedRange[0], 0.01);
+  EXPECT_NEAR(originalRange[1], reloadedRange[1], 0.01);
+}
+
+TEST_F(PipelineLibTest, OnDiskReSetDataOverwrites)
+{
+  // After eviction, calling setData with a different payload should
+  // overwrite the on-disk content next time it evicts.
+  auto* source = new SphereSource();
+  source->setDimensions(4, 4, 4);
+  pipeline->addNode(source);
+
+  auto* port = source->outputPort("volume");
+  port->setPersistenceMode(PersistenceMode::OnDisk);
+
+  ASSERT_TRUE(source->execute());
+
+  // First eviction cycle.
+  { auto h = port->take(); }
+  ASSERT_TRUE(port->hasData());
+
+  // Replace with a different volume.
+  source->setDimensions(6, 6, 6);
+  ASSERT_TRUE(source->execute());
+  auto newRange = port->data().value<VolumeDataPtr>()->scalarRange();
+
+  // Second eviction.
+  { auto h = port->take(); }
+  ASSERT_TRUE(port->hasData());
+
+  // Reload should produce the new payload, not the original.
+  auto reloaded = port->materialize().value<VolumeDataPtr>();
+  ASSERT_TRUE(reloaded && reloaded->isValid());
+  EXPECT_EQ(reloaded->dimensions()[0], 6);
+  EXPECT_EQ(reloaded->dimensions()[1], 6);
+  EXPECT_EQ(reloaded->dimensions()[2], 6);
+  auto reloadedRange = reloaded->scalarRange();
+  EXPECT_NEAR(newRange[0], reloadedRange[0], 0.01);
+  EXPECT_NEAR(newRange[1], reloadedRange[1], 0.01);
+}
+
+TEST_F(PipelineLibTest, OnDiskPortDestructionCleansFile)
+{
+  // The cache QTemporaryFile is owned by the port; destroying the port
+  // should remove it. We can't observe the file directly without the
+  // port's private state, but we can at least exercise the destructor
+  // path and confirm nothing crashes.
+  auto* source = new SphereSource();
+  source->setDimensions(4, 4, 4);
+  pipeline->addNode(source);
+  auto* port = source->outputPort("volume");
+  port->setPersistenceMode(PersistenceMode::OnDisk);
+  ASSERT_TRUE(source->execute());
+
+  { auto h = port->take(); }
+  ASSERT_TRUE(port->hasData());
+
+  // Destroy the source node — its port destructor sets m_destroying
+  // and releases m_strong; QTemporaryFile cleans up the cache file.
+  pipeline->removeNode(source);
+}
+
+TEST_F(PipelineLibTest, PersistenceModeSwitchInMemoryToTransient)
+{
+  // InMemory port with no consumer pinning: switching to transient
+  // must release the port's hold so the data isn't kept alive
+  // indefinitely.
+  auto* source = new SphereSource();
+  source->setDimensions(4, 4, 4);
+  pipeline->addNode(source);
+  auto* port = source->outputPort("volume");  // already persistent InMemory
+  ASSERT_TRUE(source->execute());
+  ASSERT_TRUE(port->hasData());
+
+  port->setPersistent(false);
+
+  EXPECT_FALSE(port->hasData());
+}
+
+TEST_F(PipelineLibTest, PersistenceModeSwitchInMemoryToOnDisk)
+{
+  // InMemory → OnDisk with no consumer: the port should release its
+  // strong ref, which fires the universal deleter; under the new mode
+  // it writes the payload to disk.
+  auto* source = new SphereSource();
+  source->setDimensions(4, 4, 4);
+  pipeline->addNode(source);
+  auto* port = source->outputPort("volume");
+  ASSERT_TRUE(source->execute());
+  auto originalRange =
+    port->data().value<VolumeDataPtr>()->scalarRange();
+
+  port->setPersistenceMode(PersistenceMode::OnDisk);
+
+  // Still reports data — it's on disk now, not gone.
+  EXPECT_TRUE(port->hasData());
+
+  // Reload from disk and verify equivalent payload.
+  auto reloaded = port->materialize().value<VolumeDataPtr>();
+  ASSERT_TRUE(reloaded && reloaded->isValid());
+  auto reloadedRange = reloaded->scalarRange();
+  EXPECT_NEAR(originalRange[0], reloadedRange[0], 0.01);
+  EXPECT_NEAR(originalRange[1], reloadedRange[1], 0.01);
+}
+
+TEST_F(PipelineLibTest, PersistenceModeSwitchOnDiskToInMemory)
+{
+  // OnDisk with data evicted to disk → switch to InMemory should
+  // load the data back and pin it.
+  auto* source = new SphereSource();
+  source->setDimensions(4, 4, 4);
+  pipeline->addNode(source);
+  auto* port = source->outputPort("volume");
+  port->setPersistenceMode(PersistenceMode::OnDisk);
+  ASSERT_TRUE(source->execute());
+
+  // Force an eviction cycle to land the data on disk.
+  { auto h = port->take(); }
+  ASSERT_TRUE(port->hasData());
+
+  // Now switch back to InMemory — the port should load and pin.
+  port->setPersistenceMode(PersistenceMode::InMemory);
+
+  EXPECT_TRUE(port->hasData());
+  auto reloaded = port->data().value<VolumeDataPtr>();
+  ASSERT_TRUE(reloaded && reloaded->isValid());
+}
+
+TEST_F(PipelineLibTest, PersistenceModeSwitchOnDiskToTransient)
+{
+  // OnDisk with data on disk → switch to transient should drop the
+  // port's hold AND clear the cache file (transient = no persistence).
+  auto* source = new SphereSource();
+  source->setDimensions(4, 4, 4);
+  pipeline->addNode(source);
+  auto* port = source->outputPort("volume");
+  port->setPersistenceMode(PersistenceMode::OnDisk);
+  ASSERT_TRUE(source->execute());
+  { auto h = port->take(); }
+  ASSERT_TRUE(port->hasData());
+
+  port->setPersistent(false);
+
+  EXPECT_FALSE(port->hasData());
+}
+
+TEST_F(PipelineLibTest, OnDiskStateFileRoundTrip)
+{
+  // persistenceMode should survive save/load through PipelineStateIO.
+  auto* source = new SphereSource();
+  source->setDimensions(4, 4, 4);
+  pipeline->addNode(source);
+  auto* port = source->outputPort("volume");
+  port->setPersistenceMode(PersistenceMode::OnDisk);
+
+  QJsonObject json;
+  ASSERT_TRUE(PipelineStateIO::save(pipeline, json));
+
+  auto newPipeline = std::make_unique<Pipeline>();
+  ASSERT_TRUE(PipelineStateIO::load(newPipeline.get(), json));
+  ASSERT_FALSE(newPipeline->nodes().isEmpty());
+  auto* loadedPort = newPipeline->nodes().first()->outputPort("volume");
+  ASSERT_TRUE(loadedPort);
+  EXPECT_TRUE(loadedPort->isPersistent());
+  EXPECT_EQ(loadedPort->persistenceMode(), PersistenceMode::OnDisk);
 }
 
 TEST_F(PipelineLibTest, FanInMultipleInputs)
@@ -1321,10 +1536,10 @@ TEST_F(PipelinePythonTest, PythonTransformV2)
   // ImageData output "volume", takes a `factor` double parameter, and
   // multiplies all voxels by factor.
   //
-  // The output is declared persistent so its data survives the
-  // post-execute releaseTransientData pass (the test has no downstream
-  // consumer, which under the current lifecycle counts as "all
-  // consumers Current" and would otherwise drop the payload).
+  // The output is declared persistent so the test can read it back
+  // directly via the port: without a downstream consumer this output
+  // would otherwise be a leaf and remain pinned anyway, but pinning
+  // explicitly makes the intent clear.
   QString jsonStr = R"({
     "schemaVersion": 2,
     "name": "MultiplyBy",
@@ -1379,9 +1594,12 @@ class MultiplyBy(tomviz.nodes.TransformNode):
   EXPECT_NEAR(outputRange[1], inputRange[1] * 2.0, 0.01);
 }
 
-TEST_F(PipelinePythonTest, PythonTransformV2DefaultsTransientOutput)
+TEST_F(PipelinePythonTest, PythonTransformV2DefaultsToTransformNodeDefault)
 {
-  // The schema-v2 convention: omitted `persistent` ⇒ transient.
+  // Schema-v2 convention: an omitted `persistent` field defers to the
+  // host node-class's default. Currently TransformNode defaults to
+  // OnDisk persistent (TEMPORARY rollout — flip this test back when
+  // TransformNode::addOutput goes back to transient).
   QString jsonStr = R"({
     "schemaVersion": 2,
     "name": "Identity",
@@ -1390,7 +1608,9 @@ TEST_F(PipelinePythonTest, PythonTransformV2DefaultsTransientOutput)
   })";
   auto* transform = new PythonTransform();
   transform->setJSONDescription(jsonStr);
-  EXPECT_FALSE(transform->outputPort("out")->isPersistent());
+  auto* port = transform->outputPort("out");
+  EXPECT_TRUE(port->isPersistent());
+  EXPECT_EQ(port->persistenceMode(), PersistenceMode::OnDisk);
   delete transform;
 }
 
@@ -1533,8 +1753,8 @@ TEST_F(PipelinePythonTest, InvertDataV2OperatorEndToEnd)
   auto* transform = new PythonTransform();
   transform->setJSONDescription(jsonStr);
   transform->setScript(scriptStr);
-  // Mark the output persistent so its payload survives the
-  // releaseTransientData pass (no downstream sink in this test).
+  // Mark the output persistent so the test can read it back directly
+  // off the port (no downstream sink in this test).
   transform->outputPort("volume")->setPersistent(true);
   pipeline->addNode(transform);
 

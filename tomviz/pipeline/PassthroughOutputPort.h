@@ -29,8 +29,10 @@ public:
   OutputPort* source() const;
 
   PortData data() const override;
+  PortData materialize() override;
   bool hasData() const override;
   bool isStale() const override;
+  DataLocation dataLocation() const override;
 
   /// A passthrough owns no data of its own — it forwards from m_source.
   /// Always report non-persistent so state-file writers skip it (no
