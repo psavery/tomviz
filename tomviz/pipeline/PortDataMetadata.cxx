@@ -3,6 +3,7 @@
 
 #include "PortDataMetadata.h"
 
+#include "ColorMap.h"
 #include "PortType.h"
 #include "data/VolumeData.h"
 
@@ -13,11 +14,25 @@
 namespace tomviz {
 namespace pipeline {
 
+void applySegmentationColorMap(VolumeData& vol)
+{
+  // Always build a fresh colormap from the output's actual scalars —
+  // the label set can change between executions, so inheriting from
+  // upstream or reusing a prior preset would yield wrong colors.
+  vol.initColorMap();
+  auto preset = tomviz::buildSegmentationPreset(vol.scalars());
+  if (!preset.isEmpty()) {
+    tomviz::applyPresetToProxy(preset, vol.colorMap());
+  }
+}
+
 namespace {
 
 /// Volume-specific inheritance: copy colormap + gradient opacity from
 /// the first volume-typed input that has them onto each volume-typed
-/// output that doesn't.
+/// output that doesn't. LabelMap outputs are handled separately —
+/// they always get a freshly-built segmentation colormap from their
+/// own scalars, never an inherited one.
 void inheritVolumeMetadata(const QMap<QString, PortData>& inputs,
                            const QMap<QString, PortData>& outputs)
 {
@@ -32,7 +47,14 @@ void inheritVolumeMetadata(const QMap<QString, PortData>& inputs,
     } catch (const std::bad_any_cast&) {
       continue;
     }
-    if (!outVolume || outVolume->hasColorMap()) {
+    if (!outVolume) {
+      continue;
+    }
+    if (outIt.value().type() == PortType::LabelMap) {
+      applySegmentationColorMap(*outVolume);
+      continue;
+    }
+    if (outVolume->hasColorMap()) {
       // Already initialized (e.g. the producer reused an existing
       // VolumeData) — leave its colormap alone.
       continue;

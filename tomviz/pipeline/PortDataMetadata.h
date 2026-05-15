@@ -14,6 +14,14 @@ class QObject;
 namespace tomviz {
 namespace pipeline {
 
+class VolumeData;
+
+/// Build and apply a fresh segmentation-style colormap to @a vol based
+/// on its current active scalars. Used for LabelMap outputs, where the
+/// label set can vary between executions and inheriting from upstream
+/// would yield wrong colors.
+void applySegmentationColorMap(VolumeData& vol);
+
 /// Copy presentation metadata (e.g. colormap, gradient opacity) from
 /// each input PortData onto the matching output PortData whenever the
 /// payload kind supports it and the output doesn't already carry its

@@ -1628,9 +1628,7 @@ void PipelineStripWidget::paintInputDots(QPainter& painter,
       // Use the first accepted type's color for unconnected inputs
       PortTypes accepted = inPort->acceptedTypes();
       PortType primaryType = PortType::None;
-      for (auto t : { PortType::ImageData, PortType::TiltSeries,
-                      PortType::Volume, PortType::Image, PortType::Scalar,
-                      PortType::Array, PortType::Table, PortType::Molecule }) {
+      for (auto t : kAllPortTypes) {
         if (accepted.testFlag(t)) {
           primaryType = t;
           break;
@@ -2267,6 +2265,8 @@ QIcon PipelineStripWidget::portTypeIcon(OutputPort* port) const
     case PortType::ImageData:
     case PortType::Volume:
       return QIcon(QStringLiteral(":/pipeline/port_imagedata.svg"));
+    case PortType::LabelMap:
+      return QIcon(QStringLiteral(":/pipeline/port_labelmap.svg"));
     case PortType::Table:
       return QIcon(QStringLiteral(":/pipeline/port_table.svg"));
     case PortType::Molecule:
@@ -2287,6 +2287,8 @@ QColor PipelineStripWidget::portTypeColor(PortType type) const
       return QColor(57, 73, 171);  // indigo (tilt series)
     case PortType::Volume:
       return QColor(171, 71, 188); // orchid (reconstructed volume)
+    case PortType::LabelMap:
+      return QColor(76, 175, 80);  // green (categorical/segmentation)
     case PortType::Table:
       return QColor(0, 172, 172); // teal
     case PortType::Molecule:

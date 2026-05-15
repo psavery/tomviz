@@ -59,9 +59,6 @@
 #include <QToolButton>
 #include <QVBoxLayout>
 
-#include <cmath>
-#include <set>
-
 #include <QDebug>
 
 namespace tomviz {
@@ -860,6 +857,9 @@ void HistogramWidget::onCreateSegmentationColormapClicked()
     return;
   }
 
+  // Up-front diagnostics — the utility returns empty for the same
+  // failure modes, but we want to tell the user *why* before falling
+  // through to the silent path.
   auto dataType = scalars->GetDataType();
   if (dataType == VTK_FLOAT || dataType == VTK_DOUBLE) {
     QMessageBox::warning(
@@ -869,69 +869,20 @@ void HistogramWidget::onCreateSegmentationColormapClicked()
     return;
   }
 
-  // Collect unique values from the data
-  std::set<double> uniqueValues;
-  auto numTuples = scalars->GetNumberOfTuples();
-  for (vtkIdType i = 0; i < numTuples; ++i) {
-    uniqueValues.insert(scalars->GetTuple1(i));
-  }
-
-  if (uniqueValues.empty()) {
-    return;
-  }
-
   static const int maxSegments = 256;
-  if (static_cast<int>(uniqueValues.size()) > maxSegments) {
+  auto preset = buildSegmentationPreset(scalars, maxSegments);
+  if (preset.isEmpty()) {
+    // Only remaining post-dtype failure mode is too many unique
+    // values; tell the user.
     QMessageBox::warning(
       this, "Too Many Unique Values",
-      QString("The data contains %1 unique values. Segmentation colormaps "
-              "work best with discrete labeled data (max %2 segments).")
-        .arg(uniqueValues.size())
+      QString("Segmentation colormaps work best with discrete labeled "
+              "data (max %1 segments).")
         .arg(maxSegments));
     return;
   }
 
-  // Generate distinct colors using golden angle hue spacing in HSV
-  static const double goldenAngle = 137.508;
-  QJsonArray colors;
-  int idx = 0;
-  for (double val : uniqueValues) {
-    double hue = std::fmod(idx * goldenAngle, 360.0) / 360.0;
-    double sat = 0.65 + 0.35 * ((idx % 3) / 2.0);
-    double brightness = 0.75 + 0.25 * ((idx + 1) % 2);
-
-    // HSV to RGB conversion
-    double c = brightness * sat;
-    double x = c * (1.0 - std::abs(std::fmod(hue * 6.0, 2.0) - 1.0));
-    double m = brightness - c;
-
-    double r, g, b;
-    double h6 = hue * 6.0;
-    if (h6 < 1.0) {
-      r = c; g = x; b = 0;
-    } else if (h6 < 2.0) {
-      r = x; g = c; b = 0;
-    } else if (h6 < 3.0) {
-      r = 0; g = c; b = x;
-    } else if (h6 < 4.0) {
-      r = 0; g = x; b = c;
-    } else if (h6 < 5.0) {
-      r = x; g = 0; b = c;
-    } else {
-      r = c; g = 0; b = x;
-    }
-
-    colors.append(val);
-    colors.append(r + m);
-    colors.append(g + m);
-    colors.append(b + m);
-    ++idx;
-  }
-
-  QJsonObject newPreset{ { "name", "Segmentation" },
-                         { "colorSpace", "Step" },
-                         { "colors", colors } };
-  m_presetDialog->addNewPreset(newPreset);
+  m_presetDialog->addNewPreset(preset);
   applyCurrentPreset();
 }
 

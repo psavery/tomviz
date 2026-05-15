@@ -100,6 +100,10 @@ private:
   vtkNew<vtkPiecewiseFunction> m_gradientOpacity;
 
   int m_activeScalars = -1;
+  // True once nearest-interpolation + lighting have been auto-applied
+  // for a LabelMap input on this instance. Latches so user overrides
+  // stick across subsequent executions.
+  bool m_labelMapDefaultsApplied = false;
 };
 
 } // namespace pipeline

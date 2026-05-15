@@ -56,6 +56,7 @@
 #include "pipeline/InputPort.h"
 #include "pipeline/Link.h"
 #include "pipeline/PortData.h"
+#include "pipeline/PortDataMetadata.h"
 #include "pipeline/SinkGroupNode.h"
 #include "pipeline/sinks/LegacyModuleSink.h"
 #include "pipeline/data/VolumeData.h"
@@ -440,12 +441,7 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
           for (auto* inPort : sink->inputPorts()) {
             // Use the first accepted type flag as the passthrough type.
             pipeline::PortType pt = pipeline::PortType::ImageData;
-            for (auto t :
-                 { pipeline::PortType::ImageData,
-                   pipeline::PortType::TiltSeries,
-                   pipeline::PortType::Volume, pipeline::PortType::Image,
-                   pipeline::PortType::Table,
-                   pipeline::PortType::Molecule }) {
+            for (auto t : pipeline::kAllPortTypes) {
               if (inPort->acceptedTypes().testFlag(t)) {
                 pt = t;
                 break;
@@ -1899,6 +1895,16 @@ bool MainWindow::ensureColorMapForPort(pipeline::Node* node,
   }
   if (!vol) {
     return false;
+  }
+
+  // LabelMap ports never inherit a colormap: each execution gets a
+  // freshly-built segmentation preset based on its own label set. Skip
+  // rescale too — the segmentation preset's node positions are already
+  // in data-coordinate space and rescaling would shift them.
+  if (port->type() == pipeline::PortType::LabelMap) {
+    bool created = !vol->hasColorMap();
+    pipeline::applySegmentationColorMap(*vol);
+    return created;
   }
 
   pipeline::VolumeDataPtr upstream;

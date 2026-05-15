@@ -127,6 +127,18 @@ bool VolumeSink::consume(const QMap<QString, PortData>& inputs)
     return false;
   }
 
+  // First-time setup for a LabelMap input: linear interpolation
+  // smears across discrete label boundaries (visually wrong) and the
+  // unlit volumetric look hides 3-D structure of segmentation regions.
+  // Flip both to sensible defaults on the first encounter and latch so
+  // user overrides stick.
+  if (!m_labelMapDefaultsApplied &&
+      inputs["volume"].type() == PortType::LabelMap) {
+    setInterpolationType(VTK_NEAREST_INTERPOLATION);
+    setLighting(true);
+    m_labelMapDefaultsApplied = true;
+  }
+
   m_volumeMapper->SetInputData(volume->imageData());
   applyActiveScalars();
   m_volume->SetVisibility(visibility() ? 1 : 0);
@@ -448,6 +460,7 @@ QJsonObject VolumeSink::serialize() const
   json["rayJittering"] = jittering();
   json["solidity"] = solidity();
   json["activeScalars"] = activeScalarsToName(m_activeScalars);
+  json["labelMapDefaultsApplied"] = m_labelMapDefaultsApplied;
 
   QJsonObject light;
   light["enabled"] = lighting();
@@ -488,6 +501,10 @@ bool VolumeSink::deserialize(const QJsonObject& json)
   if (json.contains("activeScalars")) {
     readActiveScalars(json, m_activeScalars);
   }
+  // Pre-feature state files won't have the key; assume their saved
+  // settings are intentional and skip the auto-override.
+  m_labelMapDefaultsApplied =
+    json["labelMapDefaultsApplied"].toBool(true);
   return true;
 }
 

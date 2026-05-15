@@ -24,9 +24,7 @@ namespace {
 QJsonArray portTypesToJson(PortTypes types)
 {
   QJsonArray arr;
-  for (PortType t : { PortType::ImageData, PortType::TiltSeries,
-                      PortType::Volume, PortType::Image, PortType::Scalar,
-                      PortType::Array, PortType::Table, PortType::Molecule }) {
+  for (PortType t : kAllPortTypes) {
     if (types.testFlag(t)) {
       arr.append(portTypeToString(t));
     }

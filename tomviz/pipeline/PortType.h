@@ -13,47 +13,68 @@ namespace pipeline {
 /// Port data types.
 ///
 /// Volume-like hierarchy:
-///   ImageData  — any volumetric data (agnostic about tilt angles)
+///   ImageData  — any volumetric data (base type)
 ///   TiltSeries — volumetric data WITH tilt angles  (subtype of ImageData)
 ///   Volume     — volumetric data WITHOUT tilt angles (subtype of ImageData)
+///   LabelMap   — categorical/segmentation volume    (subtype of ImageData)
 enum class PortType
 {
   None = 0,
   ImageData = 1,
   TiltSeries = 2,
   Volume = 4,
-  Image = 8,
-  Scalar = 16,
-  Array = 32,
-  Table = 64,
-  Molecule = 128
+  LabelMap = 8,
+  Image = 16,
+  Scalar = 32,
+  Array = 64,
+  Table = 128,
+  Molecule = 256
 };
 
 Q_DECLARE_FLAGS(PortTypes, PortType)
 Q_DECLARE_OPERATORS_FOR_FLAGS(PortTypes)
 
-/// True if @a type is any volume-like type (ImageData, TiltSeries, Volume).
+/// Canonical list of all concrete port types. Iterate this instead of
+/// hand-rolling brace-enum loops at call sites.
+inline constexpr PortType kAllPortTypes[] = {
+  PortType::ImageData, PortType::TiltSeries, PortType::Volume,
+  PortType::LabelMap,  PortType::Image,      PortType::Scalar,
+  PortType::Array,     PortType::Table,      PortType::Molecule
+};
+
+/// Returns the base type of @a t, or PortType::None if @a t has no base.
+/// TiltSeries, Volume, and LabelMap all derive from ImageData.
+inline PortType baseType(PortType t)
+{
+  switch (t) {
+    case PortType::TiltSeries:
+    case PortType::Volume:
+    case PortType::LabelMap:
+      return PortType::ImageData;
+    default:
+      return PortType::None;
+  }
+}
+
+/// True if @a type is any volume-like type (ImageData or any subtype of it).
 inline bool isVolumeType(PortType type)
 {
-  return type == PortType::ImageData || type == PortType::TiltSeries ||
-         type == PortType::Volume;
+  return type == PortType::ImageData ||
+         baseType(type) == PortType::ImageData;
 }
 
 /// Subtype-aware compatibility check.
 ///
 /// Returns true if an output of @a outputType can connect to an input that
-/// accepts @a acceptedTypes.  ImageData is a supertype: an input that accepts
-/// ImageData also accepts TiltSeries and Volume.
+/// accepts @a acceptedTypes. An input that accepts a base type also accepts
+/// any of its subtypes.
 inline bool isPortTypeCompatible(PortType outputType, PortTypes acceptedTypes)
 {
-  // Direct match (works for all types)
-  if (acceptedTypes.testFlag(outputType))
+  if (acceptedTypes.testFlag(outputType)) {
     return true;
-  // ImageData is supertype of TiltSeries and Volume
-  if (acceptedTypes.testFlag(PortType::ImageData) &&
-      (outputType == PortType::TiltSeries || outputType == PortType::Volume))
-    return true;
-  return false;
+  }
+  PortType base = baseType(outputType);
+  return base != PortType::None && acceptedTypes.testFlag(base);
 }
 
 /// PortType ↔ string conversions used by the state-file schema.
@@ -68,6 +89,8 @@ inline QString portTypeToString(PortType type)
       return QStringLiteral("TiltSeries");
     case PortType::Volume:
       return QStringLiteral("Volume");
+    case PortType::LabelMap:
+      return QStringLiteral("LabelMap");
     case PortType::Image:
       return QStringLiteral("Image");
     case PortType::Scalar:
@@ -90,6 +113,8 @@ inline PortType portTypeFromString(const QString& s)
     return PortType::TiltSeries;
   if (s == QLatin1String("Volume"))
     return PortType::Volume;
+  if (s == QLatin1String("LabelMap"))
+    return PortType::LabelMap;
   if (s == QLatin1String("Image"))
     return PortType::Image;
   if (s == QLatin1String("Scalar"))
