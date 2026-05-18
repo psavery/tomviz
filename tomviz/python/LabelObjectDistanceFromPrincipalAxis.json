@@ -30,6 +30,6 @@
       ]
     }
   ],
-  "inputType": "ImageData",
+  "inputType": "LabelMap",
   "outputType": "ImageData"
 }

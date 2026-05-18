@@ -26,5 +26,5 @@
     }
   ],
   "inputType": "ImageData",
-  "outputType": "Volume"
+  "outputType": "LabelMap"
 }

@@ -10,6 +10,6 @@
       "type": "table"
     }
   ],
-  "inputType": "ImageData",
-  "outputType": "ImageData"
+  "inputType": "LabelMap",
+  "outputType": "LabelMap"
 }
