@@ -629,12 +629,12 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   auto dataBrokerSaveReaction =
     new DataBrokerSaveReaction(m_ui->actionExportToDataBroker, this);
 
-  // Workflows menu
+  // Sources menu
   auto pyXRFRunner = new PyXRFRunner(this);
-  connect(m_ui->actionPyXRFWorkflow, &QAction::triggered, pyXRFRunner,
+  connect(m_ui->actionPyXRFSource, &QAction::triggered, pyXRFRunner,
           &PyXRFRunner::start);
   auto ptychoRunner = new PtychoRunner(this);
-  connect(m_ui->actionPtychoWorkflow, &QAction::triggered, ptychoRunner,
+  connect(m_ui->actionPtychoSource, &QAction::triggered, ptychoRunner,
           &PtychoRunner::start);
 
   // Build Data Transforms menu
@@ -999,23 +999,23 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
 
   {
     bool installed = pyXRFRunner->isInstalled();
-    m_ui->actionPyXRFWorkflow->setEnabled(installed);
+    m_ui->actionPyXRFSource->setEnabled(installed);
     if (!installed) {
       QString tooltip = "Failed to import required modules. "
                         "Error message was:\n\n" +
                         pyXRFRunner->importError();
-      m_ui->actionPyXRFWorkflow->setToolTip(tooltip);
+      m_ui->actionPyXRFSource->setToolTip(tooltip);
     }
   }
 
   {
     bool installed = ptychoRunner->isInstalled();
-    m_ui->actionPtychoWorkflow->setEnabled(installed);
+    m_ui->actionPtychoSource->setEnabled(installed);
     if (!installed) {
       QString tooltip = "Failed to import required modules. "
                         "Error message was:\n\n" +
                         ptychoRunner->importError();
-      m_ui->actionPtychoWorkflow->setToolTip(tooltip);
+      m_ui->actionPtychoSource->setToolTip(tooltip);
     }
   }
 
