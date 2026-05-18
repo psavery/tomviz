@@ -112,15 +112,15 @@
      <string>Segmentation</string>
     </property>
    </widget>
-   <widget class="QMenu" name="menuWorkflows">
+   <widget class="QMenu" name="menuSources">
     <property name="title">
-     <string>Workflows</string>
+     <string>Sources</string>
     </property>
-    <addaction name="actionPyXRFWorkflow"/>
-    <addaction name="actionPtychoWorkflow"/>
+    <addaction name="actionPyXRFSource"/>
+    <addaction name="actionPtychoSource"/>
    </widget>
    <addaction name="menu_File"/>
-   <addaction name="menuWorkflows"/>
+   <addaction name="menuSources"/>
    <addaction name="menuData"/>
    <addaction name="menuSegmentation"/>
    <addaction name="menuTomography"/>
@@ -451,15 +451,15 @@
     <string>Animation Helper</string>
    </property>
   </action>
-  <action name="actionPyXRFWorkflow">
+  <action name="actionPyXRFSource">
    <property name="text">
     <string>PyXRF</string>
    </property>
    <property name="toolTip">
-    <string>PyXRF Workflow</string>
+    <string>PyXRF Source</string>
    </property>
   </action>
-  <action name="actionPtychoWorkflow">
+  <action name="actionPtychoSource">
    <property name="text">
     <string>Ptycho</string>
    </property>
