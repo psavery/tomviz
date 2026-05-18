@@ -119,7 +119,7 @@ void applyDefaultColorMapPreset(tomviz::pipeline::OutputPort* port)
     return;
   }
   auto vol = tomviz::pipeline::getOutputData<tomviz::pipeline::VolumeDataPtr>(
-    port->node());
+    port->node(), port->name());
   if (!vol) {
     return;
   }
@@ -530,15 +530,10 @@ void LoadDataReaction::completeSourceSetup(pipeline::SourceNode* source,
     return;
   }
 
-  // Apply the default color map preset as soon as the source has volume
-  // data on its primary output. File-loaded sources already have data
-  // when we get here (setOutputData ran before sourceNodeAdded); sources
-  // that produce their data on first execute (PythonSource via the
-  // editor dialog) get a single-shot listener that fires on the first
-  // dataChanged and then auto-disconnects, so subsequent re-executions
-  // leave any user-chosen color map alone.
-  if (!source->outputPorts().isEmpty()) {
-    auto* port = source->outputPorts().first();
+  // Apply the default color map preset to every output port. File-loaded
+  // sources already have data when we get here; sources that produce data
+  // on first execute get a single-shot listener per port.
+  for (auto* port : source->outputPorts()) {
     if (port->hasData()) {
       applyDefaultColorMapPreset(port);
     } else {
@@ -558,7 +553,8 @@ void LoadDataReaction::completeSourceSetup(pipeline::SourceNode* source,
   }
 
   if (defaultModules && view) {
-    // Create a sink group connected to the source, then add default sinks
+    // Only create default sinks for the first output port; additional
+    // outputs get colormaps but no automatic visualization.
     auto* group = new pipeline::SinkGroupNode();
     group->addPassthrough("volume", pipeline::PortType::ImageData);
     pip->addNode(group);
