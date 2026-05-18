@@ -25,6 +25,6 @@
       "minimum": 0.0
     }
   ],
-  "inputType": "ImageData",
-  "outputType": "ImageData"
+  "inputType": "LabelMap",
+  "outputType": "LabelMap"
 }

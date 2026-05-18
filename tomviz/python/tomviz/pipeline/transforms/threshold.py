@@ -23,7 +23,7 @@ class ThresholdTransform(TransformNode):
     def __init__(self):
         super().__init__()
         self.add_input('volume', 'ImageData')
-        self.add_output('mask', 'ImageData')
+        self.add_output('mask', 'LabelMap')
         self.label = 'Threshold'
         self._min_value: float = -1e30
         self._max_value: float = 0.0
@@ -52,4 +52,4 @@ class ThresholdTransform(TransformNode):
         out = Dataset({'Mask': mask}, 'Mask')
         out.spacing = src.spacing
         out.metadata = dict(src.metadata) if src.metadata else {}
-        return {'mask': PortData(out, 'ImageData')}
+        return {'mask': PortData(out, 'LabelMap')}
