@@ -3,7 +3,10 @@
 
 #include "ResetReaction.h"
 
-#include "ModuleManager.h"
+#include "ActiveObjects.h"
+#include "HistogramManager.h"
+#include "legacy/modules/ModuleManager.h"
+#include "pipeline/Pipeline.h"
 #include "Utilities.h"
 
 #include <QMessageBox>
@@ -21,8 +24,8 @@ void ResetReaction::updateEnableState()
 
 void ResetReaction::reset()
 {
-  if (ModuleManager::instance().hasDataSources() ||
-      ModuleManager::instance().hasMoleculeSources()) {
+  auto* pipeline = ActiveObjects::instance().pipeline();
+  if (pipeline && !pipeline->nodes().isEmpty()) {
     if (QMessageBox::Yes !=
         QMessageBox::warning(
           tomviz::mainWidget(), "Reset",
@@ -32,5 +35,9 @@ void ResetReaction::reset()
     }
   }
   ModuleManager::instance().reset();
+  if (pipeline) {
+    pipeline->clear();
+  }
+  HistogramManager::instance().clearCaches();
 }
 } // namespace tomviz

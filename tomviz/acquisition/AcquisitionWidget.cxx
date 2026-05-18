@@ -7,6 +7,7 @@
 
 #include "AcquisitionClient.h"
 #include "ActiveObjects.h"
+#include "legacy/DataSource.h"
 #include "Utilities.h"
 
 #include <pqApplicationCore.h>
@@ -211,7 +212,10 @@ void AcquisitionWidget::previewReady(QString mimeType, QByteArray result)
   path.append(".tiff");
 
   QFile file(dir.path() + path);
-  file.open(QIODevice::WriteOnly);
+  if (!file.open(QIODevice::WriteOnly)) {
+    qWarning() << "Failed to open file for writing:" << file.fileName();
+    return;
+  }
   file.write(result);
   qDebug() << "Data file:" << file.fileName();
   file.close();
@@ -228,8 +232,10 @@ void AcquisitionWidget::previewReady(QString mimeType, QByteArray result)
   resetCamera();
   m_ui->imageWidget->renderWindow()->Render();
 
-  if (ActiveObjects::instance().activeDataSource()) {
-    auto proxy = ActiveObjects::instance().activeDataSource()->colorMap();
+  // TODO: retrieve DataSource from active node/port to get color map
+  DataSource* activeDs = nullptr;
+  if (activeDs) {
+    auto proxy = activeDs->colorMap();
     m_lut = vtkScalarsToColors::SafeDownCast(proxy->GetClientSideObject());
   } else {
     //    m_lut = vtkSmartPointer<vtkScalarsToColors>::New();

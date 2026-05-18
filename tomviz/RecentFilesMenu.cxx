@@ -4,10 +4,14 @@
 #include "RecentFilesMenu.h"
 
 #include "ActiveObjects.h"
-#include "DataSource.h"
 #include "LoadDataReaction.h"
+#include "MoleculeSource.h"
 #include "SaveLoadStateReaction.h"
+#include "SaveLoadTemplateReaction.h"
 #include "Utilities.h"
+
+#include "pipeline/Node.h"
+#include "pipeline/SourceNode.h"
 
 #include <pqSettings.h>
 
@@ -61,27 +65,23 @@ void saveSettings(QJsonObject json)
   if (json.contains("molecules") && json["molecules"].isArray()) {
     molecules = json["molecules"].toArray();
   }
-  if (readers.size() > MAX_ITEMS) {
-    // We need to prune the list to 10.
-    while (readers.size() > MAX_ITEMS) {
-      readers.removeLast();
-    }
+  QJsonArray templates;
+  if (json.contains("templates") && json["templates"].isArray()) {
+    templates = json["templates"].toArray();
   }
-  if (states.size() > MAX_ITEMS) {
-    // We need to prune the list to 10.
-    while (states.size() > MAX_ITEMS) {
-      states.removeLast();
+  auto prune = [](QJsonArray& arr) {
+    while (arr.size() > MAX_ITEMS) {
+      arr.removeLast();
     }
-  }
-  if (molecules.size() > MAX_ITEMS) {
-    // We need to prune the list to 10.
-    while (molecules.size() > MAX_ITEMS) {
-      molecules.removeLast();
-    }
-  }
+  };
+  prune(readers);
+  prune(states);
+  prune(molecules);
+  prune(templates);
   json["readers"] = readers;
   json["states"] = states;
   json["molecules"] = molecules;
+  json["templates"] = templates;
   QJsonDocument doc(json);
 
   auto settings = pqApplicationCore::instance()->settings();
@@ -99,14 +99,18 @@ RecentFilesMenu::RecentFilesMenu(QMenu& menu, QObject* p) : QObject(p)
 
 RecentFilesMenu::~RecentFilesMenu() = default;
 
-void RecentFilesMenu::pushDataReader(DataSource* dataSource)
+void RecentFilesMenu::pushDataReader(pipeline::SourceNode* source)
 {
   // Add non-proxy based readers separately.
   auto settings = loadSettings();
   auto readerList = settings["readers"].toArray();
-  QJsonObject readerJson =
-    QJsonObject::fromVariantMap(dataSource->readerProperties());
-  auto fileNames = dataSource->fileNames();
+
+  // Get reader properties and file names from node properties
+  QVariantMap readerProps =
+    source->property("readerProperties").toMap();
+  QJsonObject readerJson = QJsonObject::fromVariantMap(readerProps);
+  QStringList fileNames = source->property("fileNames").toStringList();
+
   if (fileNames.size() < 1) {
     return;
   }
@@ -158,6 +162,22 @@ void RecentFilesMenu::pushStateFile(const QString& fileName)
   }
   stateList.push_front(stateJson);
   settings["states"] = stateList;
+  saveSettings(settings);
+}
+
+void RecentFilesMenu::pushTemplateFile(const QString& fileName)
+{
+  auto settings = loadSettings();
+  auto templateList = settings["templates"].toArray();
+  QJsonObject templateJson;
+  templateJson["fileName"] = fileName;
+  for (int i = templateList.size() - 1; i >= 0; --i) {
+    if (templateList[i].toObject()["fileName"] == templateJson["fileName"]) {
+      templateList.removeAt(i);
+    }
+  }
+  templateList.push_front(templateJson);
+  settings["templates"] = templateList;
   saveSettings(settings);
 }
 
@@ -243,6 +263,21 @@ void RecentFilesMenu::aboutToShowMenu()
       connect(actn, &QAction::triggered, this, &RecentFilesMenu::stateTriggered);
     }
   }
+
+  if (json["templates"].toArray().size() > 0) {
+    menu->addAction("Template files")->setEnabled(false);
+  }
+
+  foreach (QJsonValue file, json["templates"].toArray()) {
+    if (file.isObject()) {
+      auto object = file.toObject();
+      auto actn = menu->addAction(QIcon(":/icons/tomviz.png"),
+                                  object["fileName"].toString("<bug>"));
+      actn->setData(object["fileName"].toString("<bug>"));
+      connect(actn, &QAction::triggered, this,
+              &RecentFilesMenu::templateTriggered);
+    }
+  }
 }
 
 void RecentFilesMenu::dataSourceTriggered(QAction* actn, QStringList fileNames)
@@ -324,6 +359,38 @@ void RecentFilesMenu::stateTriggered()
         states.removeAt(i);
       }
     }
+    saveSettings(json);
+  }
+}
+
+void RecentFilesMenu::templateTriggered()
+{
+  auto actn = qobject_cast<QAction*>(sender());
+  Q_ASSERT(actn);
+
+  QString fileName = actn->data().toString();
+
+  if (QFileInfo::exists(fileName)) {
+    if (SaveLoadTemplateReaction::loadTemplate(fileName)) {
+      // Move the entry back to the top of the list.
+      pushTemplateFile(fileName);
+      return;
+    }
+  } else {
+    QMessageBox::warning(
+      tomviz::mainWidget(), "Error",
+      QString("The file '%1' does not exist").arg(fileName));
+  }
+
+  auto json = loadSettings();
+  if (json["templates"].isArray()) {
+    auto templates = json["templates"].toArray();
+    for (int i = 0; i < templates.size(); ++i) {
+      if (templates[i].toObject()["fileName"].toString() == fileName) {
+        templates.removeAt(i);
+      }
+    }
+    json["templates"] = templates;
     saveSettings(json);
   }
 }

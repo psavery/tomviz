@@ -11,10 +11,10 @@
 #include "InterfaceBuilder.h"
 #include "StartServerDialog.h"
 
-#include "DataSource.h"
-#include "ModuleManager.h"
-#include "Pipeline.h"
-#include "PipelineManager.h"
+#include "legacy/DataSource.h"
+#include "legacy/modules/ModuleManager.h"
+#include "legacy/Pipeline.h"
+#include "legacy/PipelineManager.h"
 
 #include <pqApplicationCore.h>
 #include <pqSettings.h>
@@ -226,7 +226,10 @@ void PassiveAcquisitionWidget::imageReady(QString mimeType, QByteArray result,
   path.append(".tiff");
 
   QFile file(dir.path() + path);
-  file.open(QIODevice::WriteOnly);
+  if (!file.open(QIODevice::WriteOnly)) {
+    qWarning() << "Failed to open file for writing:" << file.fileName();
+    return;
+  }
   file.write(result);
   qDebug() << "Data file:" << file.fileName();
   file.close();

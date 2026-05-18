@@ -7,11 +7,28 @@
 #include <QObject>
 
 #include <QJsonArray>
+#include <QJsonObject>
 #include <QPixmap>
 
+class vtkDataArray;
 class vtkSMProxy;
 
 namespace tomviz {
+
+/// Build a step-interpolated, distinct-color segmentation colormap
+/// preset from an integer-valued scalar array. Scans @a scalars for
+/// unique values and emits a preset with one color per label, using
+/// golden-angle hue spacing.
+///
+/// Returns an empty QJsonObject if @a scalars is null, floating-point,
+/// empty, or has more than @a maxLabels unique values.
+QJsonObject buildSegmentationPreset(vtkDataArray* scalars,
+                                    int maxLabels = 256);
+
+/// Apply a tomviz-format preset JSON object (fields "name",
+/// "colorSpace", "colors") to a transfer function proxy.
+void applyPresetToProxy(const QJsonObject& preset, vtkSMProxy* proxy);
+
 
 /**
  * Keep track of the loaded color maps, the current default, setting colors.
