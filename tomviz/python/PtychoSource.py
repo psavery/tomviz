@@ -238,7 +238,8 @@ class PtychoSource(tomviz.nodes.SourceNode):
     def produce(self, ptycho_dir: str = '', output_info_file: str = '',
                 rotate_datasets: bool = True, sid_list: str = '[]',
                 version_list: str = '[]',
-                angle_list: str = '[]') -> dict[str, Dataset] | None:
+                angle_list: str = '[]',
+                ui_state: str = '{}') -> dict[str, Dataset] | None:
         parsed_sids: list[int] = json.loads(sid_list)
         parsed_versions: list[str] = json.loads(version_list)
         parsed_angles: list[float] = json.loads(angle_list)

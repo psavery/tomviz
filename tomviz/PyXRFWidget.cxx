@@ -1,8 +1,8 @@
 /* This source file is part of the Tomviz project, https://tomviz.org/.
    It is released under the 3-Clause BSD License, see "LICENSE". */
 
-#include "PyXRFDialog.h"
-#include "ui_PyXRFDialog.h"
+#include "PyXRFWidget.h"
+#include "ui_PyXRFWidget.h"
 
 #include "PythonUtilities.h"
 #include "Utilities.h"
@@ -18,11 +18,13 @@
 #include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QJsonObject>
 #include <QMessageBox>
 #include <QPointer>
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QSet>
+#include <QSignalBlocker>
 #include <QStandardPaths>
 #include <QTextStream>
 
@@ -67,11 +69,11 @@ QString findPyxrfUtilsCommand(const QString& savedCommand)
 
 namespace tomviz {
 
-class PyXRFDialog::Internal : public QObject
+class PyXRFWidget::Internal : public QObject
 {
 public:
-  Ui::PyXRFDialog ui;
-  QPointer<PyXRFDialog> parent;
+  Ui::PyXRFWidget ui;
+  QPointer<PyXRFWidget> parent;
 
   bool pyxrfIsRunning = false;
 
@@ -86,7 +88,7 @@ public:
 
   Python::Module pyxrfModule;
 
-  Internal(PyXRFDialog* p) : parent(p)
+  Internal(PyXRFWidget* p) : parent(p)
   {
     ui.setupUi(p);
     setParent(p);
@@ -120,14 +122,6 @@ public:
 
     connect(ui.startPyXRFGUI, &QPushButton::clicked, this,
             &Internal::startPyXRFGUI);
-
-    connect(ui.buttonBox, &QDialogButtonBox::accepted, this,
-            &Internal::accepted);
-    connect(ui.buttonBox, &QDialogButtonBox::helpRequested, this,
-            []() {
-              openHelpUrl(
-                "https://tomviz.readthedocs.io/en/latest/workflows_pyxrf.html");
-            });
 
     connect(ui.workingDirectory, &QLineEdit::editingFinished, this,
             &Internal::onDirectoryOrRangeChanged);
@@ -655,21 +649,6 @@ public:
             });
   }
 
-  // --- Validation ---
-
-  void accepted()
-  {
-    QString reason;
-    if (!validate(reason)) {
-      QMessageBox::critical(parent.data(), "Invalid Settings", reason);
-      parent->show();
-      return;
-    }
-
-    writeSettings();
-    parent->accept();
-  }
-
   bool validate(QString& reason)
   {
     auto workingDir = workingDirectory();
@@ -769,72 +748,91 @@ public:
 
 };
 
-PyXRFDialog::PyXRFDialog(QWidget* parent)
-  : QDialog(parent), m_internal(new Internal(this))
+PyXRFWidget::PyXRFWidget(
+  const QMap<QString, pipeline::PortData>& /*inputs*/, QWidget* p)
+  : pipeline::CustomPythonNodeWidget(p), m_internal(new Internal(this))
 {
 }
 
-PyXRFDialog::~PyXRFDialog() = default;
+PyXRFWidget::~PyXRFWidget() = default;
 
-void PyXRFDialog::show()
+void PyXRFWidget::getValues(QMap<QString, QVariant>& map)
 {
-  m_internal->readSettings();
-  QDialog::show();
+  map.insert("pyxrf_utils_command", m_internal->command());
+  map.insert("working_directory", m_internal->workingDirectory());
+  map.insert("scan_range", m_internal->scanRange());
+  map.insert("skip_scan_ids", m_internal->skipScanIds());
+  map.insert("skip_downloads", m_internal->skipDownloads());
+  map.insert("redownload_successful", m_internal->redownloadSuccessful());
+  map.insert("parameters_file", m_internal->parametersFile());
+  map.insert("ic_name", m_internal->icName());
+  map.insert("skip_processed", m_internal->skipProcessed());
+  map.insert("rotate_datasets", m_internal->rotateDatasets());
+  map.insert("csv_output", m_internal->csvOutput());
+
+  QJsonObject uiState;
+  uiState["filter_sids_string"] =
+    m_internal->ui.filterSidsString->text().trimmed();
+  map.insert("ui_state", QString::fromUtf8(
+    QJsonDocument(uiState).toJson(QJsonDocument::Compact)));
 }
 
-QString PyXRFDialog::command() const
+void PyXRFWidget::setValues(const QMap<QString, QVariant>& map)
 {
-  return m_internal->command();
+  auto wd = map.value("working_directory").toString();
+  if (wd.isEmpty()) {
+    m_internal->readSettings();
+    return;
+  }
+
+  {
+    QSignalBlocker b1(m_internal->ui.workingDirectory);
+    QSignalBlocker b2(m_internal->ui.scanRange);
+
+    m_internal->setCommand(
+      map.value("pyxrf_utils_command", "pyxrf-utils").toString());
+    m_internal->setWorkingDirectory(wd);
+    m_internal->setScanRange(map.value("scan_range").toString());
+    m_internal->setSkipDownloads(map.value("skip_downloads").toBool());
+    m_internal->setRedownloadSuccessful(
+      map.value("redownload_successful").toBool());
+    m_internal->setParametersFile(map.value("parameters_file").toString());
+    m_internal->setSkipProcessed(
+      map.value("skip_processed", true).toBool());
+    m_internal->setRotateDatasets(
+      map.value("rotate_datasets", true).toBool());
+    m_internal->setCsvOutput(map.value("csv_output").toString());
+  }
+
+  m_internal->populateScanTable();
+
+  auto skipJson = map.value("skip_scan_ids", "[]").toString();
+  auto skipArr = QJsonDocument::fromJson(skipJson.toUtf8()).array();
+  QSet<int> skipIds;
+  for (const auto& v : skipArr) {
+    skipIds.insert(v.toInt());
+  }
+  for (auto& entry : m_internal->scanEntries) {
+    if (skipIds.contains(entry.scanId)) {
+      entry.use = false;
+    }
+  }
+  m_internal->rebuildTableUI();
+
+  m_internal->setupComboBoxes();
+  m_internal->setIcName(map.value("ic_name", "sclr1_ch4").toString());
+
+  auto uiStateJson = map.value("ui_state").toString();
+  if (!uiStateJson.isEmpty()) {
+    auto uiState = QJsonDocument::fromJson(uiStateJson.toUtf8()).object();
+    m_internal->ui.filterSidsString->setText(
+      uiState.value("filter_sids_string").toString());
+  }
 }
 
-QString PyXRFDialog::workingDirectory() const
+void PyXRFWidget::writeSettings()
 {
-  return m_internal->workingDirectory();
-}
-
-QString PyXRFDialog::scanRange() const
-{
-  return m_internal->scanRange();
-}
-
-QString PyXRFDialog::skipScanIds() const
-{
-  return m_internal->skipScanIds();
-}
-
-bool PyXRFDialog::skipDownloads() const
-{
-  return m_internal->skipDownloads();
-}
-
-bool PyXRFDialog::redownloadSuccessful() const
-{
-  return m_internal->redownloadSuccessful();
-}
-
-QString PyXRFDialog::parametersFile() const
-{
-  return m_internal->parametersFile();
-}
-
-QString PyXRFDialog::icName() const
-{
-  return m_internal->icName();
-}
-
-bool PyXRFDialog::skipProcessed() const
-{
-  return m_internal->skipProcessed();
-}
-
-bool PyXRFDialog::rotateDatasets() const
-{
-  return m_internal->rotateDatasets();
-}
-
-QString PyXRFDialog::csvOutput() const
-{
-  return m_internal->csvOutput();
+  m_internal->writeSettings();
 }
 
 } // namespace tomviz

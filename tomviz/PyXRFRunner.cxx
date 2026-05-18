@@ -6,15 +6,19 @@
 #include "CameraReaction.h"
 #include "LoadDataReaction.h"
 #include "MainWindow.h"
-#include "PyXRFDialog.h"
 #include "PythonUtilities.h"
 #include "Utilities.h"
 
+#include "pipeline/DeferredLinkInfo.h"
 #include "pipeline/Node.h"
+#include "pipeline/NodeEditDialog.h"
 #include "pipeline/Pipeline.h"
+#include "pipeline/SourceNode.h"
 #include "pipeline/sources/PythonSource.h"
 
 #include <QDebug>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QMessageBox>
 #include <QPointer>
 
@@ -25,7 +29,6 @@ class PyXRFRunner::Internal : public QObject
 public:
   QPointer<PyXRFRunner> parent;
   QPointer<QWidget> parentWidget;
-  QPointer<PyXRFDialog> pyxrfDialog;
 
   Python::Module pyxrfModule;
 
@@ -95,40 +98,7 @@ public:
     return res.toString();
   }
 
-  template <typename T>
-  void clearWidget(QPointer<T> d)
-  {
-    if (!d) {
-      return;
-    }
-
-    d->hide();
-    d->deleteLater();
-    d.clear();
-  }
-
-  void clear()
-  {
-    clearWidget(pyxrfDialog);
-  }
-
   void start()
-  {
-    clear();
-    showPyXRFDialog();
-  }
-
-  void showPyXRFDialog()
-  {
-    clearWidget(pyxrfDialog);
-
-    pyxrfDialog = new PyXRFDialog(parentWidget);
-    connect(pyxrfDialog.data(), &QDialog::accepted, this,
-            &Internal::pyxrfDialogAccepted);
-    pyxrfDialog->show();
-  }
-
-  void pyxrfDialogAccepted()
   {
     auto* mainWindow = MainWindow::instance();
     auto* pip = mainWindow ? mainWindow->pipeline() : nullptr;
@@ -140,30 +110,36 @@ public:
     source->setJSONDescription(readInJSONDescription("PyXRFSource"));
     source->setScript(readInPythonScript("PyXRFSource"));
 
-    source->setParameter("pyxrf_utils_command", pyxrfDialog->command());
-    source->setParameter("working_directory",
-                         pyxrfDialog->workingDirectory());
-    source->setParameter("scan_range", pyxrfDialog->scanRange());
-    source->setParameter("skip_scan_ids", pyxrfDialog->skipScanIds());
-    source->setParameter("skip_downloads", pyxrfDialog->skipDownloads());
-    source->setParameter("redownload_successful",
-                         pyxrfDialog->redownloadSuccessful());
-    source->setParameter("parameters_file", pyxrfDialog->parametersFile());
-    source->setParameter("ic_name", pyxrfDialog->icName());
-    source->setParameter("skip_processed", pyxrfDialog->skipProcessed());
-    source->setParameter("rotate_datasets", pyxrfDialog->rotateDatasets());
-    source->setParameter("csv_output", pyxrfDialog->csvOutput());
-
     LoadDataReaction::addSourceToPipeline(source);
-    if (autoLoadFinalData) {
-      LoadDataReaction::completeSourceSetup(source);
+
+    pipeline::DeferredLinkInfo deferred;
+    auto* dialog =
+      new pipeline::NodeEditDialog(source, pip, deferred, mainWindow);
+    dialog->setAttribute(Qt::WA_DeleteOnClose);
+
+    QString title = QJsonDocument::fromJson(
+      source->jsonDescription().toUtf8())
+        .object()
+        .value(QStringLiteral("label"))
+        .toString();
+    if (title.isEmpty()) {
+      title = source->label();
     }
+    dialog->setWindowTitle(QString("Generate - %1").arg(title));
 
-    CameraReaction::resetPositiveZ();
-    CameraReaction::rotateCamera(-90);
+    QObject::connect(
+      dialog, &pipeline::NodeEditDialog::insertionCompleted, dialog,
+      [this](pipeline::Node* node) {
+        if (auto* src = qobject_cast<pipeline::SourceNode*>(node)) {
+          if (autoLoadFinalData) {
+            LoadDataReaction::completeSourceSetup(src);
+          }
+        }
+        CameraReaction::resetPositiveZ();
+        CameraReaction::rotateCamera(-90);
+      });
 
-    source->markStale();
-    pip->execute();
+    dialog->show();
   }
 };
 

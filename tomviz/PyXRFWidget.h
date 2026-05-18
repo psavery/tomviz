@@ -1,35 +1,30 @@
 /* This source file is part of the Tomviz project, https://tomviz.org/.
    It is released under the 3-Clause BSD License, see "LICENSE". */
 
-#ifndef tomvizPyXRFDialog_h
-#define tomvizPyXRFDialog_h
+#ifndef tomvizPyXRFWidget_h
+#define tomvizPyXRFWidget_h
 
-#include <QDialog>
+#include "CustomPythonNodeWidget.h"
+#include "PortData.h"
+
+#include <QMap>
 #include <QScopedPointer>
+#include <QString>
 
 namespace tomviz {
 
-class PyXRFDialog : public QDialog
+class PyXRFWidget : public pipeline::CustomPythonNodeWidget
 {
   Q_OBJECT
 
 public:
-  explicit PyXRFDialog(QWidget* parent);
-  ~PyXRFDialog() override;
+  PyXRFWidget(const QMap<QString, pipeline::PortData>& inputs,
+              QWidget* parent = nullptr);
+  ~PyXRFWidget() override;
 
-  virtual void show();
-
-  QString command() const;
-  QString workingDirectory() const;
-  QString scanRange() const;
-  QString skipScanIds() const;
-  bool skipDownloads() const;
-  bool redownloadSuccessful() const;
-  QString parametersFile() const;
-  QString icName() const;
-  bool skipProcessed() const;
-  bool rotateDatasets() const;
-  QString csvOutput() const;
+  void getValues(QMap<QString, QVariant>& map) override;
+  void setValues(const QMap<QString, QVariant>& map) override;
+  void writeSettings() override;
 
 private:
   class Internal;
