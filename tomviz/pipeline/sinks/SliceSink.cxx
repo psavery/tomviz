@@ -62,7 +62,7 @@ QIcon SliceSink::icon() const
 
 void SliceSink::setVisibility(bool visible)
 {
-  if (m_widget) {
+  if (m_widget && m_dataReceived) {
     m_widget->SetEnabled(visible ? 1 : 0);
     if (visible) {
       // Widget methods that mutate arrow / interaction state warn when
@@ -132,9 +132,12 @@ bool SliceSink::initialize(vtkSMViewProxy* view)
   placeholderProducer->SetOutput(placeholder);
   m_widget->SetInputConnection(placeholderProducer->GetOutputPort());
 
+  // Turn On() briefly so the widget creates its texture object, then
+  // immediately Off() so the placeholder geometry (with its oversized
+  // arrow) is never visible. consume() will re-enable the widget once
+  // real data arrives.
   m_widget->On();
-  m_widget->InteractionOn();
-  m_widget->SetArrowVisibility(m_showArrow ? 1 : 0);
+  m_widget->Off();
 
   // When the user drags the slice in the 3D view, update our state and UI.
   pqCoreUtilities::connect(m_widget, vtkCommand::InteractionEvent, this,
@@ -191,9 +194,14 @@ bool SliceSink::consume(const QMap<QString, PortData>& inputs)
 
     // SetEnabled() touches the renderer and Qt GL state; consume() runs
     // on the pipeline worker thread, so defer to the GUI thread.
+    m_dataReceived = true;
     QMetaObject::invokeMethod(this, [this]() {
       if (m_widget) {
         m_widget->SetEnabled(visibility() ? 1 : 0);
+        if (visibility()) {
+          m_widget->SetArrowVisibility(m_showArrow ? 1 : 0);
+          m_widget->SetInteraction(m_showArrow ? 1 : 0);
+        }
       }
     }, Qt::QueuedConnection);
   } else {

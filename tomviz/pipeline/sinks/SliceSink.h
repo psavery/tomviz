@@ -141,6 +141,7 @@ private:
   double m_planeNormal[3] = { 0, 0, 1 };
   bool m_planeCenterSet = false;
 
+  bool m_dataReceived = false;
   int m_dims[3] = { 0, 0, 0 };
   double m_bounds[6] = { 0, 0, 0, 0, 0, 0 };
   std::array<double, 3> m_lastSpacing = { 0.0, 0.0, 0.0 };
