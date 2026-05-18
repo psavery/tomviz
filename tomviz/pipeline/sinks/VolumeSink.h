@@ -90,6 +90,10 @@ public:
 
   void onMetadataChanged() override;
 
+signals:
+  void interpolationTypeChanged(int type);
+  void lightingChanged(bool enabled);
+
 protected:
   bool consume(const QMap<QString, PortData>& inputs) override;
   void updateColorMap() override;

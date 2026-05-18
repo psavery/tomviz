@@ -20,7 +20,10 @@ class VolumeData;
 /// on its current active scalars. Used for LabelMap outputs, where the
 /// label set can vary between executions and inheriting from upstream
 /// would yield wrong colors.
-void applySegmentationColorMap(VolumeData& vol);
+///
+/// Returns true if a segmentation preset was applied, false if the data
+/// had too many unique labels (>256) and a default colormap was used.
+bool applySegmentationColorMap(VolumeData& vol);
 
 /// Copy presentation metadata (e.g. colormap, gradient opacity) from
 /// each input PortData onto the matching output PortData whenever the

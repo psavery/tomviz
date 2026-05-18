@@ -11,19 +11,38 @@
 #include <QObject>
 #include <QThread>
 
+#include <vtkPiecewiseFunction.h>
+
 namespace tomviz {
 namespace pipeline {
 
-void applySegmentationColorMap(VolumeData& vol)
+bool applySegmentationColorMap(VolumeData& vol)
 {
-  // Always build a fresh colormap from the output's actual scalars —
+  // Always build a fresh colormap from the output's actual scalars --
   // the label set can change between executions, so inheriting from
   // upstream or reusing a prior preset would yield wrong colors.
   vol.initColorMap();
-  auto preset = tomviz::buildSegmentationPreset(vol.scalars());
-  if (!preset.isEmpty()) {
+  auto* scalars = vol.scalars();
+  auto preset = tomviz::buildSegmentationPreset(scalars);
+  bool applied = !preset.isEmpty();
+  if (applied) {
     tomviz::applyPresetToProxy(preset, vol.colorMap());
   }
+
+  // Label 0 is background -- make it transparent. All other labels
+  // are fully opaque so the segmented regions render as solid.
+  auto* opacity = vol.scalarOpacity();
+  if (opacity) {
+    auto range = vol.scalarRange();
+    double maxVal = range[1] > 0.5 ? range[1] : 1.0;
+    opacity->RemoveAllPoints();
+    opacity->AddPoint(0.0, 0.0);
+    opacity->AddPoint(0.5, 1.0);
+    opacity->AddPoint(maxVal, 1.0);
+    opacity->Modified();
+  }
+
+  return applied;
 }
 
 namespace {

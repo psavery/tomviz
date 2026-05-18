@@ -197,6 +197,7 @@ bool VolumeSink::lighting() const
 void VolumeSink::setLighting(bool enabled)
 {
   m_volumeProperty->SetShade(enabled ? 1 : 0);
+  emit lightingChanged(enabled);
   emit renderNeeded();
 }
 
@@ -267,6 +268,7 @@ int VolumeSink::interpolationType() const
 void VolumeSink::setInterpolationType(int type)
 {
   m_volumeProperty->SetInterpolationType(type);
+  emit interpolationTypeChanged(type);
   emit renderNeeded();
 }
 
@@ -415,6 +417,16 @@ QWidget* VolumeSink::createSinkPropertiesWidget(QWidget* parent)
           &VolumeSink::setBlendingMode);
   connect(widget, &VolumeSinkWidget::interpolationChanged, this,
           &VolumeSink::setInterpolationType);
+  connect(this, &VolumeSink::interpolationTypeChanged, widget,
+          [widget](int type) {
+            QSignalBlocker blocker(widget);
+            widget->setInterpolationType(type);
+          });
+  connect(this, &VolumeSink::lightingChanged, widget,
+          [widget](bool enabled) {
+            QSignalBlocker blocker(widget);
+            widget->setLighting(enabled);
+          });
   connect(widget, &VolumeSinkWidget::ambientChanged, this,
           &VolumeSink::setAmbient);
   connect(widget, &VolumeSinkWidget::diffuseChanged, this,
