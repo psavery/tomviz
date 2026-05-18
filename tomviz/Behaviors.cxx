@@ -6,6 +6,8 @@
 #include "ActiveObjects.h"
 #include "AddRenderViewContextMenuBehavior.h"
 #include "ManualManipulationWidget.h"
+#include "PtychoWidget.h"
+#include "PyXRFWidget.h"
 #include "SelectCylinderWidget.h"
 #include "ShiftRotationCenterWidget.h"
 #include "RotateAlignWidget.h"
@@ -111,6 +113,10 @@ void Behaviors::registerCustomOperatorUIs()
     "ManualManipulationWidget", /*needsData=*/true);
   registerCustomNodeWidget<SelectCylinderWidget>(
     "CylindricalCropWidget", /*needsData=*/true);
+  registerCustomNodeWidget<PyXRFWidget>(
+    "PyXRFWidget", /*needsData=*/false);
+  registerCustomNodeWidget<PtychoWidget>(
+    "PtychoWidget", /*needsData=*/false);
 }
 
 } // end of namespace tomviz

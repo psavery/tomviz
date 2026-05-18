@@ -181,7 +181,8 @@ class PyXRFSource(tomviz.nodes.SourceNode):
                 ic_name: str = 'sclr1_ch4',
                 skip_processed: bool = True,
                 rotate_datasets: bool = True,
-                csv_output: str = '') -> dict[str, Dataset]:
+                csv_output: str = '',
+                ui_state: str = '{}') -> dict[str, Dataset]:
         working_dir = Path(working_directory)
         skip_ids: list[int] = json.loads(skip_scan_ids) if skip_scan_ids else []
 

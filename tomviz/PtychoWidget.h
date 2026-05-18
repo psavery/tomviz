@@ -1,31 +1,30 @@
 /* This source file is part of the Tomviz project, https://tomviz.org/.
    It is released under the 3-Clause BSD License, see "LICENSE". */
 
-#ifndef tomvizPtychoDialog_h
-#define tomvizPtychoDialog_h
+#ifndef tomvizPtychoWidget_h
+#define tomvizPtychoWidget_h
 
-#include <QDialog>
+#include "CustomPythonNodeWidget.h"
+#include "PortData.h"
+
+#include <QMap>
 #include <QScopedPointer>
+#include <QString>
 
 namespace tomviz {
 
-class PtychoDialog : public QDialog
+class PtychoWidget : public pipeline::CustomPythonNodeWidget
 {
   Q_OBJECT
 
 public:
-  explicit PtychoDialog(QWidget* parent);
-  ~PtychoDialog() override;
+  PtychoWidget(const QMap<QString, pipeline::PortData>& inputs,
+               QWidget* parent = nullptr);
+  ~PtychoWidget() override;
 
-  virtual void show();
-
-  QString ptychoDirectory() const;
-  QString outputInfoFile() const;
-  bool rotateDatasets() const;
-
-  QList<long> selectedSids() const;
-  QStringList selectedVersions() const;
-  QList<double> selectedAngles() const;
+  void getValues(QMap<QString, QVariant>& map) override;
+  void setValues(const QMap<QString, QVariant>& map) override;
+  void writeSettings() override;
 
 private:
   class Internal;

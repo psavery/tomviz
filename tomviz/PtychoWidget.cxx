@@ -1,8 +1,8 @@
 /* This source file is part of the Tomviz project, https://tomviz.org/.
    It is released under the 3-Clause BSD License, see "LICENSE". */
 
-#include "PtychoDialog.h"
-#include "ui_PtychoDialog.h"
+#include "PtychoWidget.h"
+#include "ui_PtychoWidget.h"
 
 #include "PythonUtilities.h"
 #include "Utilities.h"
@@ -18,6 +18,9 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QInputDialog>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QMenu>
 #include <QMessageBox>
@@ -25,16 +28,17 @@
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QScrollBar>
+#include <QSignalBlocker>
 
 namespace tomviz {
 
-class PtychoDialog::Internal : public QObject
+class PtychoWidget::Internal : public QObject
 {
   Q_OBJECT
 
 public:
-  Ui::PtychoDialog ui;
-  QPointer<PtychoDialog> parent;
+  Ui::PtychoWidget ui;
+  QPointer<PtychoWidget> parent;
 
   bool ptychoguiIsRunning = false;
 
@@ -56,7 +60,7 @@ public:
 
   Python::Module ptychoModule;
 
-  Internal(PtychoDialog* p)
+  Internal(PtychoWidget* p)
     : parent(p)
   {
     ui.setupUi(p);
@@ -90,11 +94,6 @@ public:
 
     connect(ui.selectOutputInfoFile, &QPushButton::clicked, this,
             &Internal::selectOutputInfoFile);
-
-    connect(ui.buttonBox, &QDialogButtonBox::accepted, this,
-            &Internal::accepted);
-    connect(ui.buttonBox, &QDialogButtonBox::helpRequested, this,
-            [](){ openHelpUrl("https://tomviz.readthedocs.io/en/latest/workflows_ptycho.html"); });
   }
 
   void setupTable()
@@ -206,20 +205,6 @@ public:
     if (!ptychoModule.isValid()) {
       qCritical() << "Failed to import \"tomviz.ptycho\" module";
     }
-  }
-
-  void accepted()
-  {
-    QString reason;
-    if (!validate(reason)) {
-      QString title = "Invalid Settings";
-      QMessageBox::critical(parent.data(), title, reason);
-      parent->show();
-      return;
-    }
-
-    writeSettings();
-    parent->accept();
   }
 
   QList<long> selectedSids()
@@ -956,49 +941,149 @@ public:
   void setRotateDatasets(bool b) { ui.rotateDatasets->setChecked(b); }
 };
 
-PtychoDialog::PtychoDialog(QWidget* parent)
-  : QDialog(parent), m_internal(new Internal(this))
+PtychoWidget::PtychoWidget(
+  const QMap<QString, pipeline::PortData>& /*inputs*/, QWidget* p)
+  : pipeline::CustomPythonNodeWidget(p), m_internal(new Internal(this))
 {
 }
 
-PtychoDialog::~PtychoDialog() = default;
+PtychoWidget::~PtychoWidget() = default;
 
-void PtychoDialog::show()
+void PtychoWidget::getValues(QMap<QString, QVariant>& map)
 {
-  m_internal->readSettings();
-  QDialog::show();
+  auto sids = m_internal->selectedSids();
+  auto versions = m_internal->selectedVersions();
+  auto angles = m_internal->selectedAngles();
+
+  QJsonArray sidArray, versionArray, angleArray;
+  for (auto sid : sids) {
+    sidArray.append(static_cast<qint64>(sid));
+  }
+  for (const auto& v : versions) {
+    versionArray.append(v);
+  }
+  for (auto angle : angles) {
+    angleArray.append(angle);
+  }
+
+  map.insert("ptycho_dir", m_internal->ptychoDirectory());
+  map.insert("output_info_file", m_internal->outputInfoFile());
+  map.insert("rotate_datasets", m_internal->rotateDatasets());
+  map.insert("sid_list", QString::fromUtf8(
+    QJsonDocument(sidArray).toJson(QJsonDocument::Compact)));
+  map.insert("version_list", QString::fromUtf8(
+    QJsonDocument(versionArray).toJson(QJsonDocument::Compact)));
+  map.insert("angle_list", QString::fromUtf8(
+    QJsonDocument(angleArray).toJson(QJsonDocument::Compact)));
+
+  QJsonObject uiState;
+  uiState["filter_sids_string"] = m_internal->filterSIDsString();
+  uiState["csv_file"] = m_internal->csvFile();
+
+  QJsonArray fullSidList, fullVersionList, fullUseList;
+  for (auto sid : m_internal->sidList) {
+    fullSidList.append(static_cast<qint64>(sid));
+  }
+  for (const auto& v : m_internal->versionList) {
+    fullVersionList.append(v);
+  }
+  for (auto u : m_internal->useList) {
+    fullUseList.append(u);
+  }
+  uiState["full_sid_list"] = fullSidList;
+  uiState["full_version_list"] = fullVersionList;
+  uiState["full_use_list"] = fullUseList;
+
+  map.insert("ui_state", QString::fromUtf8(
+    QJsonDocument(uiState).toJson(QJsonDocument::Compact)));
 }
 
-QString PtychoDialog::ptychoDirectory() const
+void PtychoWidget::setValues(const QMap<QString, QVariant>& map)
 {
-  return m_internal->ptychoDirectory();
+  auto dir = map.value("ptycho_dir").toString();
+  if (dir.isEmpty()) {
+    m_internal->readSettings();
+    return;
+  }
+
+  {
+    QSignalBlocker b1(m_internal->ui.ptychoDirectory);
+    m_internal->setPtychoDirectory(dir);
+    m_internal->setOutputInfoFile(
+      map.value("output_info_file").toString());
+    m_internal->setRotateDatasets(
+      map.value("rotate_datasets", true).toBool());
+  }
+
+  m_internal->loadPtychoDir();
+
+  auto uiStateJson = map.value("ui_state").toString();
+  if (!uiStateJson.isEmpty()) {
+    auto uiState = QJsonDocument::fromJson(uiStateJson.toUtf8()).object();
+    m_internal->setCsvFile(uiState.value("csv_file").toString());
+    m_internal->setFilterSIDsString(
+      uiState.value("filter_sids_string").toString());
+
+    auto fullSidArr = uiState.value("full_sid_list").toArray();
+    auto fullVersionArr = uiState.value("full_version_list").toArray();
+    auto fullUseArr = uiState.value("full_use_list").toArray();
+
+    QList<long> savedSidList;
+    for (const auto& v : fullSidArr) {
+      savedSidList.append(static_cast<long>(v.toInteger()));
+    }
+    QStringList savedVersionList;
+    for (const auto& v : fullVersionArr) {
+      savedVersionList.append(v.toString());
+    }
+    QList<bool> savedUseList;
+    for (const auto& v : fullUseArr) {
+      savedUseList.append(v.toBool());
+    }
+
+    if (savedSidList == m_internal->sidList) {
+      m_internal->versionList = savedVersionList;
+      m_internal->useList = savedUseList;
+      m_internal->onSelectedVersionsChanged();
+    } else if (!m_internal->csvFile().isEmpty()) {
+      m_internal->setUseAndVersionsFromCSV();
+    }
+
+    m_internal->updateFilteredSidList();
+  } else {
+    // No ui_state -- use sid_list/version_list to restore selections
+    auto sidJson = map.value("sid_list", "[]").toString();
+    auto versionJson = map.value("version_list", "[]").toString();
+    auto sidArr = QJsonDocument::fromJson(sidJson.toUtf8()).array();
+    auto verArr = QJsonDocument::fromJson(versionJson.toUtf8()).array();
+
+    QSet<long> selectedSids;
+    QMap<long, QString> selectedVersions;
+    for (int i = 0; i < sidArr.size(); ++i) {
+      long sid = static_cast<long>(sidArr[i].toInteger());
+      selectedSids.insert(sid);
+      if (i < verArr.size()) {
+        selectedVersions[sid] = verArr[i].toString();
+      }
+    }
+
+    for (int i = 0; i < m_internal->sidList.size(); ++i) {
+      auto sid = m_internal->sidList[i];
+      m_internal->useList[i] = selectedSids.contains(sid);
+      if (selectedVersions.contains(sid)) {
+        m_internal->versionList[i] = selectedVersions[sid];
+      }
+    }
+    m_internal->onSelectedVersionsChanged();
+    m_internal->updateFilteredSidList();
+  }
 }
 
-QList<long> PtychoDialog::selectedSids() const
+void PtychoWidget::writeSettings()
 {
-  return m_internal->selectedSids();
-}
-
-QStringList PtychoDialog::selectedVersions() const
-{
-  return m_internal->selectedVersions();
-}
-
-QList<double> PtychoDialog::selectedAngles() const
-{
-  return m_internal->selectedAngles();
-}
-
-QString PtychoDialog::outputInfoFile() const
-{
-  return m_internal->outputInfoFile();
-}
-
-bool PtychoDialog::rotateDatasets() const
-{
-  return m_internal->rotateDatasets();
+  m_internal->writeSettings();
 }
 
 } // namespace tomviz
 
-#include "PtychoDialog.moc"
+#include "PtychoWidget.moc"

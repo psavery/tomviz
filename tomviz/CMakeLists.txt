@@ -172,8 +172,8 @@ set(SOURCES
   ProgressDialog.h
   ProgressDialogManager.cxx
   ProgressDialogManager.h
-  PtychoDialog.cxx
-  PtychoDialog.h
+  PtychoWidget.cxx
+  PtychoWidget.h
   PtychoRunner.cxx
   PtychoRunner.h
   legacy/PythonGeneratedDatasetReaction.cxx
@@ -184,8 +184,8 @@ set(SOURCES
   PythonUtilities.h
   PythonWriter.cxx
   PythonWriter.h
-  PyXRFDialog.cxx
-  PyXRFDialog.h
+  PyXRFWidget.cxx
+  PyXRFWidget.h
   PyXRFRunner.cxx
   PyXRFRunner.h
   pybind11/PythonTypeConversions.cxx

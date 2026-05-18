@@ -2,6 +2,7 @@
   "schemaVersion": 2,
   "name": "PyXRFSource",
   "label": "PyXRF Source",
+  "widget": "PyXRFWidget",
   "description": "Download XRF scan data, process projections via pyxrf-utils, and extract all fitted elements into a tilt series.",
   "outputs": [
     {"name": "elements", "type": "TiltSeries", "persistent": true}
@@ -73,6 +74,12 @@
       "label": "Output CSV File",
       "type": "string",
       "default": ""
+    },
+    {
+      "name": "ui_state",
+      "label": "UI Settings",
+      "type": "string",
+      "default": "{}"
     }
   ]
 }

@@ -2,6 +2,7 @@
   "schemaVersion": 2,
   "name": "PtychoSource",
   "label": "Ptycho Source",
+  "widget": "PtychoWidget",
   "description": "Load and stack ptychography reconstruction data into a tilt series. Reads .npy object and probe files from a ptycho directory, extracts phase and amplitude, applies background removal, pads to uniform size, and optionally rotates to the Tomviz convention.",
   "outputs": [
     {"name": "object", "type": "TiltSeries", "persistent": true},
@@ -43,6 +44,12 @@
       "label": "Angles (JSON)",
       "type": "string",
       "default": "[]"
+    },
+    {
+      "name": "ui_state",
+      "label": "UI Settings",
+      "type": "string",
+      "default": "{}"
     }
   ]
 }

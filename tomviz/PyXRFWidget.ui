@@ -1,18 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
- <class>PyXRFDialog</class>
- <widget class="QDialog" name="PyXRFDialog">
-  <property name="geometry">
-   <rect>
-    <x>0</x>
-    <y>0</y>
-    <width>650</width>
-    <height>650</height>
-   </rect>
-  </property>
-  <property name="windowTitle">
-   <string>PyXRF Workflow</string>
-  </property>
+ <class>PyXRFWidget</class>
+ <widget class="QWidget" name="PyXRFWidget">
   <layout class="QVBoxLayout" name="mainLayout">
    <property name="leftMargin">
     <number>6</number>
@@ -263,37 +252,8 @@
      </layout>
     </widget>
    </item>
-
-   <!-- Button Box -->
-   <item>
-    <widget class="QDialogButtonBox" name="buttonBox">
-     <property name="orientation">
-      <enum>Qt::Horizontal</enum>
-     </property>
-     <property name="standardButtons">
-      <set>QDialogButtonBox::Close|QDialogButtonBox::Help|QDialogButtonBox::Ok</set>
-     </property>
-    </widget>
-   </item>
   </layout>
  </widget>
  <resources/>
- <connections>
-  <connection>
-   <sender>buttonBox</sender>
-   <signal>rejected()</signal>
-   <receiver>PyXRFDialog</receiver>
-   <slot>reject()</slot>
-   <hints>
-    <hint type="sourcelabel">
-     <x>316</x>
-     <y>630</y>
-    </hint>
-    <hint type="destinationlabel">
-     <x>325</x>
-     <y>325</y>
-    </hint>
-   </hints>
-  </connection>
- </connections>
+ <connections/>
 </ui>
