@@ -190,9 +190,11 @@ Link* Pipeline::createLink(OutputPort* from, InputPort* to)
   // Propagate effective types and recheck link validity downstream
   propagateEffectiveTypes(to->node());
 
-  // Mark downstream nodes stale
+  // Mark downstream stale so it re-runs against the new input. Skip if the
+  // node is still New (never configured/run) so the link-completion handler
+  // in MainWindow can pop the edit dialog before first execution.
   Node* downstream = to->node();
-  if (downstream) {
+  if (downstream && downstream->state() != NodeState::New) {
     downstream->markStale();
   }
 
