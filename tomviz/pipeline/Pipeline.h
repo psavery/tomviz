@@ -92,8 +92,20 @@ public:
   void setPaused(bool paused);
   ExecutionFuture* execute();
   ExecutionFuture* execute(Node* target);
+
+  /// Run the smallest subset of the pipeline needed to make every input
+  /// port of @a target carry current data — without re-running target
+  /// itself. Used by the properties-panel/edit-dialog "Run Pipeline to
+  /// Generate Inputs" action when a node's custom widget needs live
+  /// input data to render.
+  ExecutionFuture* executeUpstreamOf(Node* target);
+
   void cancelExecution();
   QList<Node*> executionOrder(Node* target);
+
+  /// Plan-only counterpart to executeUpstreamOf(): topo-sorted node
+  /// list that excludes @a target.
+  QList<Node*> upstreamExecutionOrder(Node* target);
 
   /// Recompute effective types starting from @a startNode and propagating
   /// downstream.  Rechecks link validity for all affected links.
@@ -110,6 +122,8 @@ signals:
   void breakpointReached(Node* node);
 
 private:
+  ExecutionFuture* runPlan(QList<Node*> order);
+
   QList<Node*> m_nodes;
   QList<Link*> m_links;
   QHash<Node*, int> m_nodeIds;

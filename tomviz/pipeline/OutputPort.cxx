@@ -158,10 +158,10 @@ PortData OutputPort::data() const
   return PortData();
 }
 
-PortData OutputPort::materialize()
+std::shared_ptr<PortData> OutputPort::materialize()
 {
   if (auto sp = m_weak.lock()) {
-    return *sp;
+    return sp;
   }
   if (m_persistent && m_mode == PersistenceMode::OnDisk) {
     std::shared_ptr<PortData> sp;
@@ -180,11 +180,9 @@ PortData OutputPort::materialize()
     if (reloaded) {
       emit dataLocationChanged(DataLocation::InMemory);
     }
-    if (sp) {
-      return *sp;
-    }
+    return sp;
   }
-  return PortData();
+  return nullptr;
 }
 
 void OutputPort::setData(const PortData& data)

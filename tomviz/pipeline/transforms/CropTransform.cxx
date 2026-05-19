@@ -4,6 +4,7 @@
 #include "CropTransform.h"
 
 #include "EditNodeWidget.h"
+#include "GatedEditorWidget.h"
 #include "InputPort.h"
 #include "data/VolumeData.h"
 #include "SelectVolumeWidget.h"
@@ -118,30 +119,16 @@ bool CropTransform::hasPropertiesWidget() const
   return true;
 }
 
-bool CropTransform::propertiesWidgetNeedsInput() const
+EditNodeWidget* CropTransform::createPropertiesWidget(Pipeline* pipeline,
+                                                      QWidget* parent)
 {
-  return true;
-}
-
-EditNodeWidget* CropTransform::createPropertiesWidget(QWidget* parent)
-{
-  auto* inputPort = this->inputPorts()[0];
-  if (!inputPort || !inputPort->hasData()) {
-    return nullptr;
-  }
-
-  VolumeDataPtr vol;
-  try {
-    vol = inputPort->data().value<VolumeDataPtr>();
-  } catch (const std::bad_any_cast&) {
-    return nullptr;
-  }
-
-  if (!vol || !vol->isValid()) {
-    return nullptr;
-  }
-
-  return new CropWidget(this, vol, parent);
+  return new GatedEditorWidget(
+    this, pipeline,
+    [this](QWidget* p) -> EditNodeWidget* {
+      auto vol = inputPorts()[0]->data().value<VolumeDataPtr>();
+      return new CropWidget(this, vol, p);
+    },
+    parent);
 }
 
 QMap<QString, PortData> CropTransform::transform(

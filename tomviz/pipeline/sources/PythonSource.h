@@ -16,6 +16,7 @@ namespace tomviz {
 namespace pipeline {
 
 class EditNodeWidget;
+class Pipeline;
 
 /// A schema-v2 Python source node. Owns a PythonNodeBackend that
 /// handles JSON parsing, parameter management, and execution; this
@@ -47,7 +48,8 @@ public:
   bool execute() override;
 
   bool hasPropertiesWidget() const override;
-  EditNodeWidget* createPropertiesWidget(QWidget* parent) override;
+  EditNodeWidget* createPropertiesWidget(Pipeline* pipeline,
+                                         QWidget* parent) override;
 
   QJsonObject serialize() const override;
   bool deserialize(const QJsonObject& json) override;

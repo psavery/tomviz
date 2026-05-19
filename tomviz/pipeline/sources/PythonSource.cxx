@@ -77,21 +77,25 @@ bool PythonSource::hasPropertiesWidget() const
   return true;
 }
 
-EditNodeWidget* PythonSource::createPropertiesWidget(QWidget* parent)
+EditNodeWidget* PythonSource::createPropertiesWidget(Pipeline* pipeline,
+                                                     QWidget* parent)
 {
-  CustomPythonNodeWidget* customWidget = nullptr;
-
+  PythonNodeEditorWidget::CustomWidgetFactory factory;
+  bool customNeedsData = false;
   auto widgetID = m_backend.customWidgetID();
-  if (!widgetID.isEmpty()) {
-    if (const auto* info = findCustomNodeWidget(widgetID)) {
-      if (info->create) {
-        customWidget = info->create(collectInputs(), parent);
-        if (customWidget) {
-          customWidget->setValues(m_backend.parameters());
-          customWidget->setScript(m_backend.scriptSource());
-        }
+  const CustomWidgetInfo* info =
+    widgetID.isEmpty() ? nullptr : findCustomNodeWidget(widgetID);
+  if (info && info->create) {
+    // Sources have no inputs — needsData should be irrelevant here,
+    // but honor the flag in case a registration unexpectedly sets it.
+    customNeedsData = info->needsData;
+    factory = [this, info](QWidget* p) -> CustomPythonNodeWidget* {
+      auto* w = info->create(collectInputs(), p);
+      if (w) {
+        w->setScript(m_backend.scriptSource());
       }
-    }
+      return w;
+    };
   }
 
   QString currentType;
@@ -102,16 +106,16 @@ EditNodeWidget* PythonSource::createPropertiesWidget(QWidget* parent)
   }
 
   auto* widget = new PythonNodeEditorWidget(
-    label(), m_backend.scriptSource(), m_backend.jsonDescription(),
-    m_backend.parameters(), currentType, currentEnvPath, customWidget,
-    parent);
+    this, pipeline, label(), m_backend.scriptSource(),
+    m_backend.jsonDescription(), m_backend.parameters(), currentType,
+    currentEnvPath, factory, customNeedsData, parent);
 
   connect(widget, &PythonNodeEditorWidget::applied, this,
-          [this, customWidget](const QString& newLabel,
-                               const QString& newScript,
-                               const QMap<QString, QVariant>& values,
-                               const QString& executorType,
-                               const QString& executorEnvPath) {
+          [this](const QString& newLabel,
+                 const QString& newScript,
+                 const QMap<QString, QVariant>& values,
+                 const QString& executorType,
+                 const QString& executorEnvPath) {
             bool changed = false;
 
             if (label() != newLabel) {
@@ -124,14 +128,8 @@ EditNodeWidget* PythonSource::createPropertiesWidget(QWidget* parent)
               changed = true;
             }
 
-            QMap<QString, QVariant> finalValues = values;
-            if (customWidget) {
-              customWidget->getValues(finalValues);
-              customWidget->writeSettings();
-            }
-
-            for (auto it = finalValues.constBegin();
-                 it != finalValues.constEnd(); ++it) {
+            for (auto it = values.constBegin();
+                 it != values.constEnd(); ++it) {
               if (m_backend.parameter(it.key()) != it.value()) {
                 changed = true;
               }

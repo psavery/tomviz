@@ -80,31 +80,23 @@ bool PythonTransform::hasPropertiesWidget() const
   return true;
 }
 
-bool PythonTransform::propertiesWidgetNeedsInput() const
+EditNodeWidget* PythonTransform::createPropertiesWidget(Pipeline* pipeline,
+                                                        QWidget* parent)
 {
-  auto id = m_backend.customWidgetID();
-  if (id.isEmpty()) {
-    return false;
-  }
-  const auto* info = findCustomNodeWidget(id);
-  return info && info->needsData;
-}
-
-EditNodeWidget* PythonTransform::createPropertiesWidget(QWidget* parent)
-{
-  CustomPythonNodeWidget* customWidget = nullptr;
-
+  PythonNodeEditorWidget::CustomWidgetFactory factory;
+  bool customNeedsData = false;
   auto widgetID = m_backend.customWidgetID();
-  if (!widgetID.isEmpty()) {
-    if (const auto* info = findCustomNodeWidget(widgetID)) {
-      if (info->create) {
-        customWidget = info->create(collectInputs(), parent);
-        if (customWidget) {
-          customWidget->setValues(m_backend.parameters());
-          customWidget->setScript(m_backend.scriptSource());
-        }
+  const CustomWidgetInfo* info =
+    widgetID.isEmpty() ? nullptr : findCustomNodeWidget(widgetID);
+  if (info && info->create) {
+    customNeedsData = info->needsData;
+    factory = [this, info](QWidget* p) -> CustomPythonNodeWidget* {
+      auto* w = info->create(collectInputs(), p);
+      if (w) {
+        w->setScript(m_backend.scriptSource());
       }
-    }
+      return w;
+    };
   }
 
   QString currentType;
@@ -115,16 +107,16 @@ EditNodeWidget* PythonTransform::createPropertiesWidget(QWidget* parent)
   }
 
   auto* widget = new PythonNodeEditorWidget(
-    label(), m_backend.scriptSource(), m_backend.jsonDescription(),
-    m_backend.parameters(), currentType, currentEnvPath, customWidget,
-    parent);
+    this, pipeline, label(), m_backend.scriptSource(),
+    m_backend.jsonDescription(), m_backend.parameters(), currentType,
+    currentEnvPath, factory, customNeedsData, parent);
 
   connect(widget, &PythonNodeEditorWidget::applied, this,
-          [this, customWidget](const QString& newLabel,
-                               const QString& newScript,
-                               const QMap<QString, QVariant>& values,
-                               const QString& executorType,
-                               const QString& executorEnvPath) {
+          [this](const QString& newLabel,
+                 const QString& newScript,
+                 const QMap<QString, QVariant>& values,
+                 const QString& executorType,
+                 const QString& executorEnvPath) {
             bool changed = false;
 
             if (label() != newLabel) {
@@ -137,18 +129,9 @@ EditNodeWidget* PythonTransform::createPropertiesWidget(QWidget* parent)
               changed = true;
             }
 
-            // Custom widget supplies its own parameter values; the
-            // auto-generated form's values are still used as a base
-            // (default values for fields the custom widget doesn't
-            // touch), then the custom widget overlays its own.
-            QMap<QString, QVariant> finalValues = values;
-            if (customWidget) {
-              customWidget->getValues(finalValues);
-              customWidget->writeSettings();
-            }
-
-            for (auto it = finalValues.constBegin();
-                 it != finalValues.constEnd(); ++it) {
+            // Parameter values are already finalized by the editor.
+            for (auto it = values.constBegin();
+                 it != values.constEnd(); ++it) {
               if (m_backend.parameter(it.key()) != it.value()) {
                 changed = true;
               }

@@ -4,10 +4,8 @@
 #include "NodeEditDialog.h"
 
 #include "EditNodeWidget.h"
-#include "InputPort.h"
 #include "Link.h"
 #include "Node.h"
-#include "OutputPort.h"
 #include "Pipeline.h"
 
 #include "Utilities.h"
@@ -16,7 +14,6 @@
 #include <pqSettings.h>
 
 #include <QDialogButtonBox>
-#include <QLabel>
 #include <QPushButton>
 #include <QScreen>
 #include <QShowEvent>
@@ -71,7 +68,6 @@ void NodeEditDialog::init()
   layout->setContentsMargins(5, 5, 5, 5);
   layout->setSpacing(5);
 
-  // Dialog buttons (created before setupContent so it can disable them)
   m_buttonBox = new QDialogButtonBox(
     QDialogButtonBox::Apply | QDialogButtonBox::Ok | QDialogButtonBox::Cancel,
     Qt::Horizontal, this);
@@ -85,68 +81,30 @@ void NodeEditDialog::init()
   connect(m_buttonBox->button(QDialogButtonBox::Apply), &QPushButton::clicked,
           this, &NodeEditDialog::onApply);
 
-  // Content area (properties widget or warning)
-  setupContent();
+  m_editWidget = m_node->createPropertiesWidget(m_pipeline, this);
+  if (m_editWidget) {
+    layout->addWidget(m_editWidget, 1);
+    connect(m_editWidget, &EditNodeWidget::canApplyChanged,
+            this, &NodeEditDialog::refreshButtonEnablement);
+  }
 
-  // Add button box at the bottom
   layout->addWidget(m_buttonBox);
 
   restoreGeometry();
 
-  // Disable Apply/OK while the pipeline is executing.
-  auto updateButtons = [this](bool executing) {
-    m_buttonBox->button(QDialogButtonBox::Apply)->setEnabled(!executing);
-    m_buttonBox->button(QDialogButtonBox::Ok)->setEnabled(!executing);
-  };
-  connect(m_pipeline, &Pipeline::executionStarted, this,
-          [updateButtons]() { updateButtons(true); });
-  connect(m_pipeline, &Pipeline::executionFinished, this,
-          [updateButtons]() { updateButtons(false); });
-  if (m_pipeline->isExecuting()) {
-    updateButtons(true);
-  }
+  connect(m_pipeline, &Pipeline::executionStarted,
+          this, &NodeEditDialog::refreshButtonEnablement);
+  connect(m_pipeline, &Pipeline::executionFinished,
+          this, &NodeEditDialog::refreshButtonEnablement);
+  refreshButtonEnablement();
 }
 
-bool NodeEditDialog::inputsReady() const
+void NodeEditDialog::refreshButtonEnablement()
 {
-  if (!m_node->propertiesWidgetNeedsInput()) {
-    return true;
-  }
-
-  // Widget needs input data — all inputs must be connected with current data
-  for (auto* input : m_node->inputPorts()) {
-    if (!input->link() || input->isStale() || !input->hasData()) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-void NodeEditDialog::setupContent()
-{
-  auto* layout = qobject_cast<QVBoxLayout*>(this->layout());
-
-  if (!inputsReady()) {
-    // propertiesWidgetNeedsInput() is true but inputs aren't available
-    auto* warning = new QLabel(this);
-    warning->setWordWrap(true);
-    warning->setAlignment(Qt::AlignCenter);
-    warning->setText(
-      tr("This node's properties widget requires connected, current "
-         "input data.\n\nPlease ensure all input ports are connected and "
-         "upstream nodes have been executed."));
-    warning->setStyleSheet(
-      "QLabel { color: #b45309; background: #fef3c7; border: 1px solid "
-      "#fcd34d; border-radius: 4px; padding: 12px; }");
-    layout->addWidget(warning, 1);
-    return;
-  }
-
-  m_editWidget = m_node->createPropertiesWidget(this);
-  if (m_editWidget) {
-    layout->addWidget(m_editWidget, 1);
-  }
+  bool canCommit = m_editWidget && m_editWidget->canApply() &&
+                   !m_pipeline->isExecuting();
+  m_buttonBox->button(QDialogButtonBox::Apply)->setEnabled(canCommit);
+  m_buttonBox->button(QDialogButtonBox::Ok)->setEnabled(canCommit);
 }
 
 void NodeEditDialog::onApply()
@@ -159,8 +117,6 @@ void NodeEditDialog::onApply()
     completeInsertion();
   }
 
-  // Mark the node stale so the pipeline re-executes it with the
-  // updated parameters (and cascades staleness downstream).
   m_node->markStale();
   m_pipeline->execute();
 }

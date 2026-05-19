@@ -85,13 +85,16 @@ public:
   void clearData();
   virtual bool hasData() const;
 
-  /// Materializing read: returns the payload, loading from disk if
-  /// this is an OnDisk persistent port whose data is currently
-  /// evicted. Use sparingly — every call risks an I/O hit and a
-  /// memory bump that lasts only as long as the returned PortData
-  /// is alive. For frequent UI reads, prefer data(), which treats
-  /// on-disk payloads as effectively absent.
-  virtual PortData materialize();
+  /// Materializing read: returns a strong handle to the payload,
+  /// loading from disk if this is an OnDisk persistent port whose data
+  /// is currently evicted. Returns nullptr when there is no payload to
+  /// surface (transient port whose data is already gone). The handle
+  /// keeps the port's m_weak alive — callers that need the data to
+  /// stay materialized must hold the returned shared_ptr; dropping it
+  /// re-evicts an OnDisk port via the universal deleter. For frequent
+  /// UI reads, prefer data(), which treats on-disk payloads as
+  /// effectively absent.
+  virtual std::shared_ptr<PortData> materialize();
 
   /// Where the published payload currently lives. Tracks the actual
   /// material state, not the persistence policy — an OnDisk port can

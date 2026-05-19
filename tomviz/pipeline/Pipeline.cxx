@@ -588,23 +588,6 @@ void Pipeline::cancelExecution()
 
 ExecutionFuture* Pipeline::execute()
 {
-  if (m_paused) {
-    auto* future = new ExecutionFuture(this);
-    future->setFinished(false);
-    return future;
-  }
-
-  if (!m_executor) {
-    auto* defaultExec = new DefaultExecutor(this);
-    setExecutor(defaultExec);
-  }
-
-  if (m_executor->isRunning()) {
-    m_executor->cancel();
-  }
-
-  auto* future = new ExecutionFuture(this);
-
   // Compute the plan by treating each leaf (no downstream consumers)
   // as a target and merging the per-target execution orders. This
   // routes through executionOrder()'s logic, so a Current node whose
@@ -665,21 +648,20 @@ ExecutionFuture* Pipeline::execute()
     order = sorted;
   }
 
-  connect(m_executor, &PipelineExecutor::executionComplete, future,
-          [this, future](bool success) {
-            future->setFinished(success);
-            emit executionFinished();
-          },
-          static_cast<Qt::ConnectionType>(Qt::AutoConnection |
-                                          Qt::SingleShotConnection));
-
-  m_executor->execute(order, this);
-  emit executionStarted();
-
-  return future;
+  return runPlan(order);
 }
 
 ExecutionFuture* Pipeline::execute(Node* target)
+{
+  return runPlan(executionOrder(target));
+}
+
+ExecutionFuture* Pipeline::executeUpstreamOf(Node* target)
+{
+  return runPlan(upstreamExecutionOrder(target));
+}
+
+ExecutionFuture* Pipeline::runPlan(QList<Node*> order)
 {
   if (m_paused) {
     auto* future = new ExecutionFuture(this);
@@ -692,10 +674,16 @@ ExecutionFuture* Pipeline::execute(Node* target)
     setExecutor(defaultExec);
   }
 
-  auto order = executionOrder(target);
   if (order.isEmpty()) {
     auto* future = new ExecutionFuture(this);
     future->setFinished(true);
+    // Emit executionFinished even for empty plans so callers waiting on
+    // the signal (e.g. the properties panel's not-ready warning) refresh
+    // their state. No executionStarted is paired with it — nothing
+    // actually ran, so toggling mutation-locked UI on/off would just
+    // flicker. Consumers must therefore tolerate a Finished without a
+    // matching prior Started.
+    emit executionFinished();
     return future;
   }
 
@@ -719,37 +707,22 @@ ExecutionFuture* Pipeline::execute(Node* target)
   return future;
 }
 
-QList<Node*> Pipeline::executionOrder(Node* target)
+namespace {
+
+// Topo-sort + dependency walk shared by executionOrder() and
+// upstreamExecutionOrder(). The caller seeds @a stack with the nodes
+// that should be considered the "leaves" of the plan; this walks each
+// node's input ports backward, pulling in any upstream node whose
+// feeding output is missing or whose state isn't Current. The result
+// is the topo-sorted union, excluding any node in @a exclude.
+QList<Node*> buildExecutionPlan(QStack<Node*> stack,
+                                const QSet<Node*>& exclude = {})
 {
-  if (!target) {
-    return {};
-  }
-
-  // Whether target itself needs to (re-)run. Current targets with all
-  // outputs still materialized have nothing to do; Current targets
-  // whose outputs have been evicted (transient data dropped after the
-  // last execution) must re-run to repopulate.
-  auto needsRerun = [](Node* node) {
-    if (node->state() != NodeState::Current) {
-      return true;
-    }
-    for (auto* output : node->outputPorts()) {
-      if (!output->hasData()) {
-        return true;
-      }
-    }
-    return false;
-  };
-
   QSet<Node*> needed;
-  QStack<Node*> stack;
-  if (needsRerun(target)) {
-    stack.push(target);
-  }
 
   while (!stack.isEmpty()) {
     Node* current = stack.pop();
-    if (needed.contains(current)) {
+    if (needed.contains(current) || exclude.contains(current)) {
       continue;
     }
     needed.insert(current);
@@ -765,7 +738,8 @@ QList<Node*> Pipeline::executionOrder(Node* target)
       }
       auto* upstreamOutput = link->from();
       auto* upstream = upstreamOutput->node();
-      if (!upstream || needed.contains(upstream)) {
+      if (!upstream || needed.contains(upstream) ||
+          exclude.contains(upstream)) {
         continue;
       }
       bool upstreamNeedsRerun =
@@ -818,6 +792,69 @@ QList<Node*> Pipeline::executionOrder(Node* target)
   }
 
   return result;
+}
+
+} // namespace
+
+QList<Node*> Pipeline::executionOrder(Node* target)
+{
+  if (!target) {
+    return {};
+  }
+
+  // Whether target itself needs to (re-)run. Current targets with all
+  // outputs still materialized have nothing to do; Current targets
+  // whose outputs have been evicted (transient data dropped after the
+  // last execution) must re-run to repopulate.
+  auto needsRerun = [](Node* node) {
+    if (node->state() != NodeState::Current) {
+      return true;
+    }
+    for (auto* output : node->outputPorts()) {
+      if (!output->hasData()) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  QStack<Node*> stack;
+  if (needsRerun(target)) {
+    stack.push(target);
+  }
+  return buildExecutionPlan(std::move(stack));
+}
+
+QList<Node*> Pipeline::upstreamExecutionOrder(Node* target)
+{
+  if (!target) {
+    return {};
+  }
+
+  // Seed with each upstream node feeding a missing/stale input. Same
+  // per-link gate as executionOrder(): a Current upstream is only
+  // re-included when the specific output we depend on has been evicted.
+  // Target itself is excluded from the result even if it would otherwise
+  // be reached via the walk (it can't be, since we only walk upstream).
+  QStack<Node*> stack;
+  for (auto* input : target->inputPorts()) {
+    auto* link = input->link();
+    if (!link || !link->from()) {
+      continue;
+    }
+    auto* upstreamOutput = link->from();
+    auto* upstream = upstreamOutput->node();
+    if (!upstream) {
+      continue;
+    }
+    bool upstreamNeedsRerun =
+      upstream->state() != NodeState::Current ||
+      !upstreamOutput->hasData();
+    if (upstreamNeedsRerun) {
+      stack.push(upstream);
+    }
+  }
+  return buildExecutionPlan(std::move(stack), { target });
 }
 
 void Pipeline::propagateEffectiveTypes(Node* startNode)

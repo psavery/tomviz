@@ -5,7 +5,13 @@
 
 #include "CustomPythonNodeWidget.h"
 #include "ExternalNodeExecutor.h"
+#include "InputPort.h"
+#include "InputsNotReadyWidget.h"
+#include "Link.h"
+#include "Node.h"
 #include "NodePropertiesWidget.h"
+#include "OutputPort.h"
+#include "Pipeline.h"
 
 #include <pqPythonSyntaxHighlighter.h>
 
@@ -71,11 +77,15 @@ namespace tomviz {
 namespace pipeline {
 
 PythonNodeEditorWidget::PythonNodeEditorWidget(
+  Node* node, Pipeline* pipeline,
   const QString& label, const QString& script, const QString& jsonDescription,
   const QMap<QString, QVariant>& currentValues, const QString& executorType,
-  const QString& executorEnvPath,
-  CustomPythonNodeWidget* customParamsWidget, QWidget* parent)
-  : EditNodeWidget(parent), m_customParamsWidget(customParamsWidget)
+  const QString& executorEnvPath, CustomWidgetFactory customWidgetFactory,
+  bool customWidgetNeedsData, QWidget* parent)
+  : EditNodeWidget(parent), m_node(node), m_pipeline(pipeline),
+    m_customFactory(std::move(customWidgetFactory)),
+    m_customWidgetNeedsData(customWidgetNeedsData),
+    m_currentValues(currentValues)
 {
   auto* mainLayout = new QVBoxLayout(this);
   mainLayout->setContentsMargins(0, 0, 0, 0);
@@ -141,37 +151,50 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
   m_tabWidget->addTab(scriptTab, tr("Script"));
 
   // --- Tab 2: Parameters ---
-  auto* paramsTab = new QWidget(m_tabWidget);
-  auto* paramsLayout = new QVBoxLayout(paramsTab);
+  m_paramsTab = new QWidget(m_tabWidget);
+  m_paramsLayout = new QVBoxLayout(m_paramsTab);
 
-  if (m_customParamsWidget) {
-    // Use the custom widget instead of auto-generated parameters
-    m_customParamsWidget->setParent(paramsTab);
-    paramsLayout->addWidget(m_customParamsWidget, 1);
-  } else {
+  // Three modes:
+  //   1) No custom widget factory  → auto-form from JSON description.
+  //   2) Custom widget, no data needed (or data already available)
+  //      → build the custom widget immediately.
+  //   3) Custom widget needs data and inputs aren't in memory yet
+  //      → install InputsNotReadyWidget; swap to the custom widget on
+  //        the first executionFinished that delivers the data.
+  if (!m_customFactory) {
     // Show operator description from JSON if available
     if (!jsonDescription.isEmpty()) {
       QJsonDocument doc = QJsonDocument::fromJson(jsonDescription.toUtf8());
       if (doc.isObject()) {
         QString desc = doc.object().value("description").toString();
         if (!desc.isEmpty()) {
-          auto* descLabel = new QLabel(desc, paramsTab);
+          auto* descLabel = new QLabel(desc, m_paramsTab);
           descLabel->setWordWrap(true);
           descLabel->setStyleSheet(
             "QLabel { color: palette(text); padding: 4px; }");
-          paramsLayout->addWidget(descLabel);
+          m_paramsLayout->addWidget(descLabel);
         }
       }
 
-      m_paramsWidget = new NodePropertiesWidget(jsonDescription,
-                                                currentValues, paramsTab);
-      paramsLayout->addWidget(m_paramsWidget, 1);
+      m_paramsWidget =
+        new NodePropertiesWidget(jsonDescription, currentValues, m_paramsTab);
+      m_paramsLayout->addWidget(m_paramsWidget, 1);
     }
-
-    paramsLayout->addStretch();
+    m_paramsLayout->addStretch();
+  } else if (!m_customWidgetNeedsData || inputsInMemory()) {
+    installCustomWidget();
+  } else {
+    installNotReadyWidget();
+    connect(m_pipeline, &Pipeline::executionStarted, this, [this]() {
+      if (m_notReadyWidget) {
+        m_notReadyWidget->setRunEnabled(false);
+      }
+    });
+    connect(m_pipeline, &Pipeline::executionFinished,
+            this, &PythonNodeEditorWidget::onExecutionFinished);
   }
 
-  m_tabWidget->addTab(paramsTab, tr("Parameters"));
+  m_tabWidget->addTab(m_paramsTab, tr("Parameters"));
 
   // --- Tab 3: Execution ---
   // Picks the per-node executor strategy. Empty string == Internal.
@@ -236,12 +259,82 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
   m_tabWidget->setCurrentIndex(1);
 }
 
+bool PythonNodeEditorWidget::inputsInMemory() const
+{
+  for (auto* input : m_node->inputPorts()) {
+    if (!input->link() || input->isStale() || !input->hasData()) {
+      return false;
+    }
+    if (input->link()->from()->dataLocation() != DataLocation::InMemory) {
+      return false;
+    }
+  }
+  return true;
+}
+
+void PythonNodeEditorWidget::installCustomWidget()
+{
+  m_customParamsWidget = m_customFactory(m_paramsTab);
+  if (!m_customParamsWidget) {
+    return;
+  }
+  m_customParamsWidget->setValues(m_currentValues);
+  m_paramsLayout->addWidget(m_customParamsWidget, 1);
+}
+
+void PythonNodeEditorWidget::installNotReadyWidget()
+{
+  m_notReadyWidget = new InputsNotReadyWidget(m_paramsTab);
+  m_notReadyWidget->setRunEnabled(!m_pipeline->isExecuting());
+  connect(m_notReadyWidget, &InputsNotReadyWidget::runRequested,
+          this, &PythonNodeEditorWidget::onRunRequested);
+  m_paramsLayout->addWidget(m_notReadyWidget, 1);
+}
+
+void PythonNodeEditorWidget::onRunRequested()
+{
+  m_pipeline->executeUpstreamOf(m_node);
+}
+
+void PythonNodeEditorWidget::onExecutionFinished()
+{
+  if (!m_notReadyWidget) {
+    return;
+  }
+
+  for (auto* input : m_node->inputPorts()) {
+    auto* link = input->link();
+    if (!link || !link->from()) {
+      continue;
+    }
+    if (auto handle = link->from()->materialize()) {
+      m_inputPins.append(handle);
+    }
+  }
+
+  if (!inputsInMemory()) {
+    m_notReadyWidget->setRunEnabled(true);
+    return;
+  }
+
+  m_paramsLayout->removeWidget(m_notReadyWidget);
+  m_notReadyWidget->deleteLater();
+  m_notReadyWidget = nullptr;
+  installCustomWidget();
+}
+
 void PythonNodeEditorWidget::applyChangesToOperator()
 {
   QMap<QString, QVariant> values;
-  if (m_paramsWidget) {
+  if (m_customParamsWidget) {
+    m_customParamsWidget->getValues(values);
+    m_customParamsWidget->writeSettings();
+  } else if (m_paramsWidget) {
     values = m_paramsWidget->values();
   }
+  // If neither is set (Parameters tab is the not-ready warning), emit
+  // an empty values map — the Python node leaves existing parameters
+  // unchanged but still picks up Script and Execution edits.
   QString type = m_executorCombo->currentData().toString();
   QString envPath = type.isEmpty() ? QString() : m_envPathEdit->text();
   emit applied(m_nameEdit->text(), m_scriptEdit->toPlainText(), values, type,

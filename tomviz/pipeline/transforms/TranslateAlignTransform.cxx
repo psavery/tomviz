@@ -4,6 +4,7 @@
 #include "TranslateAlignTransform.h"
 
 #include "AlignWidget.h"
+#include "GatedEditorWidget.h"
 #include "InputPort.h"
 #include "data/VolumeData.h"
 
@@ -87,32 +88,17 @@ bool TranslateAlignTransform::hasPropertiesWidget() const
   return true;
 }
 
-bool TranslateAlignTransform::propertiesWidgetNeedsInput() const
-{
-  return true;
-}
-
 EditNodeWidget* TranslateAlignTransform::createPropertiesWidget(
-  QWidget* parent)
+  Pipeline* pipeline, QWidget* parent)
 {
-  auto* inputPort = this->inputPorts()[0];
-  if (!inputPort || !inputPort->hasData()) {
-    return nullptr;
-  }
-
-  VolumeDataPtr vol;
-  try {
-    vol = inputPort->data().value<VolumeDataPtr>();
-  } catch (const std::bad_any_cast&) {
-    return nullptr;
-  }
-
-  if (!vol || !vol->isValid()) {
-    return nullptr;
-  }
-
-  vtkSmartPointer<vtkImageData> imageData(vol->imageData());
-  return new AlignWidget(this, imageData, parent);
+  return new GatedEditorWidget(
+    this, pipeline,
+    [this](QWidget* p) -> EditNodeWidget* {
+      auto vol = inputPorts()[0]->data().value<VolumeDataPtr>();
+      vtkSmartPointer<vtkImageData> imageData(vol->imageData());
+      return new AlignWidget(this, imageData, p);
+    },
+    parent);
 }
 
 void TranslateAlignTransform::setAlignOffsets(

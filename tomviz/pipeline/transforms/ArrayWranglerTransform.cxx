@@ -4,6 +4,7 @@
 #include "ArrayWranglerTransform.h"
 
 #include "EditNodeWidget.h"
+#include "GatedEditorWidget.h"
 #include "InputPort.h"
 #include "data/VolumeData.h"
 
@@ -158,31 +159,16 @@ bool ArrayWranglerTransform::hasPropertiesWidget() const
   return true;
 }
 
-bool ArrayWranglerTransform::propertiesWidgetNeedsInput() const
-{
-  return true;
-}
-
 EditNodeWidget* ArrayWranglerTransform::createPropertiesWidget(
-  QWidget* parent)
+  Pipeline* pipeline, QWidget* parent)
 {
-  auto* inputPort = this->inputPorts()[0];
-  if (!inputPort || !inputPort->hasData()) {
-    return nullptr;
-  }
-
-  VolumeDataPtr vol;
-  try {
-    vol = inputPort->data().value<VolumeDataPtr>();
-  } catch (const std::bad_any_cast&) {
-    return nullptr;
-  }
-
-  if (!vol || !vol->isValid()) {
-    return nullptr;
-  }
-
-  return new ArrayWranglerWidget(this, vol, parent);
+  return new GatedEditorWidget(
+    this, pipeline,
+    [this](QWidget* p) -> EditNodeWidget* {
+      auto vol = inputPorts()[0]->data().value<VolumeDataPtr>();
+      return new ArrayWranglerWidget(this, vol, p);
+    },
+    parent);
 }
 
 QJsonObject ArrayWranglerTransform::serialize() const

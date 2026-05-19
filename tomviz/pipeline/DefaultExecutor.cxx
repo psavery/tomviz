@@ -49,13 +49,15 @@ void DefaultExecutor::execute(const QList<Node*>& nodes, Pipeline* pipeline)
   m_running = true;
   m_cancelRequested = false;
 
-  // Keeps published transient outputs alive across the plan window. After
-  // a producer node executes, we take() its outputs into this map so that
+  // Keeps published transient outputs alive across the plan window so
   // consumers reading via inputPort->data() (or sinks stashing copies)
-  // see live data. The map drops at end-of-plan, so transient outputs
-  // with no long-lived holder evict automatically. Leaf outputs (no
-  // outgoing links) are intentionally not taken from — they remain pinned
-  // inside the port so the data survives until a consumer is attached.
+  // see live data. Populated lazily: an entry is created the first time
+  // an in-plan consumer reads a given source. The map drops at
+  // end-of-plan, so transient outputs whose handles aren't retained by
+  // anyone evict automatically. Outputs without any in-plan consumer
+  // are never taken from — their m_strong stays on the port, so the
+  // data survives until a future plan delivers it to a consumer (e.g.
+  // an executeUpstreamOf(target) run where target itself reads later).
   QHash<OutputPort*, std::shared_ptr<PortData>> inflight;
 
   for (auto* node : nodes) {
@@ -143,19 +145,10 @@ void DefaultExecutor::execute(const QList<Node*>& nodes, Pipeline* pipeline)
       continue;
     }
 
-    // Take fresh publications into the in-flight map so they survive past
-    // the producer's execute(). Persistent ports yield a shared copy
-    // without losing their own hold; transient ports hand over their
-    // strong ref. Skip ports with no outgoing links — those are leaves,
-    // and the port's own strong ref is exactly what we want to preserve.
-    for (auto* output : node->outputPorts()) {
-      if (output->links().isEmpty()) {
-        continue;
-      }
-      if (auto handle = output->take()) {
-        inflight.insert(output, handle);
-      }
-    }
+    // No eager take here. Publications sit on the producer's output
+    // port via m_strong until an in-plan consumer's input-delivery
+    // loop above does the lazy take. Outputs with no in-plan consumer
+    // simply stay pinned on the port for the next plan to find.
   }
 
   m_running = false;

@@ -383,6 +383,10 @@ set(SOURCES
   pipeline/ParameterInterfaceBuilder.h
   pipeline/CustomPythonNodeWidget.cxx
   pipeline/CustomPythonNodeWidget.h
+  pipeline/InputsNotReadyWidget.cxx
+  pipeline/InputsNotReadyWidget.h
+  pipeline/GatedEditorWidget.cxx
+  pipeline/GatedEditorWidget.h
   pipeline/EditNodeWidget.cxx
   pipeline/EditNodeWidget.h
   pipeline/NodePropertiesWidget.cxx

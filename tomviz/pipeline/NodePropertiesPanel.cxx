@@ -4,7 +4,6 @@
 #include "NodePropertiesPanel.h"
 
 #include "EditNodeWidget.h"
-#include "InputPort.h"
 #include "Node.h"
 #include "Pipeline.h"
 
@@ -26,40 +25,31 @@ NodePropertiesPanel::NodePropertiesPanel(Node* node, Pipeline* pipeline,
   auto* layout = new QVBoxLayout(this);
   layout->setContentsMargins(0, 0, 0, 0);
 
-  // Skip widget creation if the node needs input data that isn't
-  // available yet (e.g., nodeAdded fires before createLink).
-  if (node->propertiesWidgetNeedsInput()) {
-    for (auto* input : node->inputPorts()) {
-      if (!input->link() || !input->hasData()) {
-        return;
-      }
-    }
+  m_editWidget = node->createPropertiesWidget(pipeline, this);
+  if (!m_editWidget) {
+    return;
   }
 
-  m_editWidget = node->createPropertiesWidget(this);
-  if (m_editWidget) {
-    auto* scrollArea = new QScrollArea(this);
-    scrollArea->setFrameShape(QFrame::NoFrame);
-    scrollArea->setWidgetResizable(true);
-    scrollArea->setWidget(m_editWidget);
-    layout->addWidget(scrollArea, 1);
+  auto* scrollArea = new QScrollArea(this);
+  scrollArea->setFrameShape(QFrame::NoFrame);
+  scrollArea->setWidgetResizable(true);
+  scrollArea->setWidget(m_editWidget);
+  layout->addWidget(scrollArea, 1);
 
-    auto* buttonBox = new QDialogButtonBox(
-      QDialogButtonBox::Apply, Qt::Horizontal, this);
-    auto* applyBtn = buttonBox->button(QDialogButtonBox::Apply);
-    connect(applyBtn, &QPushButton::clicked,
-            this, &NodePropertiesPanel::apply);
-    layout->addWidget(buttonBox);
+  auto* buttonBox = new QDialogButtonBox(
+    QDialogButtonBox::Apply, Qt::Horizontal, this);
+  m_applyButton = buttonBox->button(QDialogButtonBox::Apply);
+  connect(m_applyButton, &QPushButton::clicked,
+          this, &NodePropertiesPanel::apply);
+  layout->addWidget(buttonBox);
 
-    // Disable Apply while the pipeline is executing.
-    connect(m_pipeline, &Pipeline::executionStarted, this,
-            [applyBtn]() { applyBtn->setEnabled(false); });
-    connect(m_pipeline, &Pipeline::executionFinished, this,
-            [applyBtn]() { applyBtn->setEnabled(true); });
-    if (m_pipeline->isExecuting()) {
-      applyBtn->setEnabled(false);
-    }
-  }
+  connect(m_editWidget, &EditNodeWidget::canApplyChanged,
+          this, &NodePropertiesPanel::refreshApplyEnablement);
+  connect(m_pipeline, &Pipeline::executionStarted,
+          this, &NodePropertiesPanel::refreshApplyEnablement);
+  connect(m_pipeline, &Pipeline::executionFinished,
+          this, &NodePropertiesPanel::refreshApplyEnablement);
+  refreshApplyEnablement();
 }
 
 NodePropertiesPanel::~NodePropertiesPanel()
@@ -69,6 +59,15 @@ NodePropertiesPanel::~NodePropertiesPanel()
     connect(m_node, &Node::parametersApplied, m_pipeline,
             [pip = m_pipeline]() { pip->execute(); });
   }
+}
+
+void NodePropertiesPanel::refreshApplyEnablement()
+{
+  if (!m_applyButton || !m_editWidget) {
+    return;
+  }
+  m_applyButton->setEnabled(m_editWidget->canApply() &&
+                            !m_pipeline->isExecuting());
 }
 
 void NodePropertiesPanel::apply()

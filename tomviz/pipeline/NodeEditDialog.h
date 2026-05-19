@@ -26,6 +26,10 @@ class Pipeline;
 ///     (and any input/output links described by DeferredLinkInfo).
 ///   - **Edit mode**: The node already exists. Apply/OK re-applies
 ///     parameters and executes. Cancel just closes the dialog.
+///
+/// Editor gating (e.g. waiting for input data) is handled inside the
+/// EditNodeWidget; this dialog just gates Apply/OK on canApply() and
+/// the pipeline's executing state.
 class NodeEditDialog : public QDialog
 {
   Q_OBJECT
@@ -61,8 +65,7 @@ protected:
 
 private:
   void init();
-  bool inputsReady() const;
-  void setupContent();
+  void refreshButtonEnablement();
   void saveGeometry();
   void restoreGeometry();
 

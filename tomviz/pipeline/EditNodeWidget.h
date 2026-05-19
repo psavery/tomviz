@@ -23,6 +23,18 @@ public:
   EditNodeWidget(QWidget* parent = nullptr);
   ~EditNodeWidget() override;
 
+  /// Whether an Apply (or OK) on this widget would do useful work.
+  /// Wrappers gate the Apply/OK button enabled state on this. Default
+  /// is true; subclasses that render in a degraded state (e.g. a
+  /// GatedEditorWidget showing the not-ready warning) override to
+  /// return false until they have a real editor to commit.
+  virtual bool canApply() const { return true; }
+
+signals:
+  /// Emitted when the return value of canApply() may have changed.
+  /// Wrappers listen to this to refresh their Apply/OK enablement.
+  void canApplyChanged();
+
 public slots:
   /// Apply the current widget state to the node's parameters.
   virtual void applyChangesToOperator() = 0;

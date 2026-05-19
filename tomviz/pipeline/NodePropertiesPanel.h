@@ -6,6 +6,8 @@
 
 #include <QWidget>
 
+class QPushButton;
+
 namespace tomviz {
 namespace pipeline {
 
@@ -15,7 +17,10 @@ class Pipeline;
 
 /// Panel wrapper for node properties shown in the properties dock.
 /// Creates the node's EditNodeWidget, adds an Apply button, and handles
-/// applying parameters + pipeline re-execution.
+/// applying parameters + pipeline re-execution. Gating of the editor
+/// (e.g. waiting for input data) is handled inside the EditNodeWidget
+/// itself; this wrapper just toggles the Apply button based on
+/// canApply() and the pipeline's executing state.
 ///
 /// Suppresses the parametersApplied → execute() auto-wiring while alive
 /// to avoid double execution / deadlock with ThreadedExecutor.
@@ -32,9 +37,12 @@ private slots:
   void apply();
 
 private:
+  void refreshApplyEnablement();
+
   Node* m_node;
   Pipeline* m_pipeline;
   EditNodeWidget* m_editWidget = nullptr;
+  QPushButton* m_applyButton = nullptr;
 };
 
 } // namespace pipeline

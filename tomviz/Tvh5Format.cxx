@@ -323,8 +323,10 @@ bool writePersistentPayloads(pipeline::Pipeline* pipeline,
       // Use materialize() rather than data(): the port may be OnDisk
       // persistent and currently evicted, in which case data() would
       // return empty and the save would silently miss the payload.
-      // materialize() loads from the disk cache as needed.
-      pipeline::PortData payload = port->materialize();
+      // materialize() loads from the disk cache as needed; the local
+      // handle keeps the data in memory through the write.
+      auto handle = port->materialize();
+      pipeline::PortData payload = handle ? *handle : pipeline::PortData();
       bool wrote = false;
       if (isVolume) {
         wrote = writeVolumePayload(writer, portGroup, payload);

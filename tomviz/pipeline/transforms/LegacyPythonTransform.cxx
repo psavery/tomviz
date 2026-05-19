@@ -139,30 +139,28 @@ bool LegacyPythonTransform::hasPropertiesWidget() const
   return true;
 }
 
-bool LegacyPythonTransform::propertiesWidgetNeedsInput() const
-{
-  if (m_customWidgetID.isEmpty()) {
-    return false;
-  }
-  const auto* info = findCustomNodeWidget(m_customWidgetID);
-  return info && info->needsData;
-}
-
 EditNodeWidget* LegacyPythonTransform::createPropertiesWidget(
-  QWidget* parent)
+  Pipeline* pipeline, QWidget* parent)
 {
-  CustomPythonNodeWidget* customWidget = nullptr;
-
-  if (!m_customWidgetID.isEmpty()) {
-    if (const auto* info = findCustomNodeWidget(m_customWidgetID)) {
-      if (info->create) {
-        customWidget = info->create(collectInputs(), parent);
-        if (customWidget) {
-          customWidget->setValues(m_parameters);
-          customWidget->setScript(m_script);
-        }
+  // Build a factory closure rather than the widget directly — the
+  // PythonNodeEditorWidget calls it (a) immediately if the custom
+  // widget doesn't need data, or (b) later, once inputs have
+  // materialized, if it does. collectInputs() runs at call time so it
+  // sees the freshest data either way.
+  PythonNodeEditorWidget::CustomWidgetFactory factory;
+  bool customNeedsData = false;
+  const CustomWidgetInfo* info = m_customWidgetID.isEmpty()
+                                   ? nullptr
+                                   : findCustomNodeWidget(m_customWidgetID);
+  if (info && info->create) {
+    customNeedsData = info->needsData;
+    factory = [this, info](QWidget* p) -> CustomPythonNodeWidget* {
+      auto* w = info->create(collectInputs(), p);
+      if (w) {
+        w->setScript(m_script);
       }
-    }
+      return w;
+    };
   }
 
   // Seed the Execution tab from the current per-node executor (if any).
@@ -177,15 +175,15 @@ EditNodeWidget* LegacyPythonTransform::createPropertiesWidget(
   }
 
   auto* widget = new PythonNodeEditorWidget(
-    label(), m_script, m_jsonDescription, m_parameters, currentType,
-    currentEnvPath, customWidget, parent);
+    this, pipeline, label(), m_script, m_jsonDescription, m_parameters,
+    currentType, currentEnvPath, factory, customNeedsData, parent);
 
   connect(widget, &PythonNodeEditorWidget::applied, this,
-          [this, customWidget](const QString& newLabel,
-                               const QString& newScript,
-                               const QMap<QString, QVariant>& values,
-                               const QString& executorType,
-                               const QString& executorEnvPath) {
+          [this](const QString& newLabel,
+                 const QString& newScript,
+                 const QMap<QString, QVariant>& values,
+                 const QString& executorType,
+                 const QString& executorEnvPath) {
             bool changed = false;
 
             if (label() != newLabel) {
@@ -198,16 +196,11 @@ EditNodeWidget* LegacyPythonTransform::createPropertiesWidget(
               changed = true;
             }
 
-            // Get values from the custom widget if present,
-            // otherwise use the auto-generated parameter values.
-            QMap<QString, QVariant> finalValues = values;
-            if (customWidget) {
-              customWidget->getValues(finalValues);
-              customWidget->writeSettings();
-            }
-
-            for (auto it = finalValues.constBegin();
-                 it != finalValues.constEnd(); ++it) {
+            // Parameter values are already finalized by the editor —
+            // pulled from the custom widget if present, else from the
+            // auto-form, else empty (Parameters tab is the warning).
+            for (auto it = values.constBegin();
+                 it != values.constEnd(); ++it) {
               if (m_parameters.value(it.key()) != it.value()) {
                 changed = true;
               }

@@ -123,14 +123,8 @@ public slots:
         continue;
       }
 
-      for (auto* output : node->outputPorts()) {
-        if (output->links().isEmpty()) {
-          continue;
-        }
-        if (auto handle = output->take()) {
-          inflight.insert(output, handle);
-        }
-      }
+      // No eager take — publications sit on the producer's port until
+      // an in-plan consumer's input-delivery loop does the lazy take.
     }
 
     emit executionDone(true);

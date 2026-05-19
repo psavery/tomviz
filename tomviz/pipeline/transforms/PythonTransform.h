@@ -47,8 +47,8 @@ public:
   QString customWidgetID() const;
 
   bool hasPropertiesWidget() const override;
-  bool propertiesWidgetNeedsInput() const override;
-  EditNodeWidget* createPropertiesWidget(QWidget* parent) override;
+  EditNodeWidget* createPropertiesWidget(Pipeline* pipeline,
+                                         QWidget* parent) override;
 
   QJsonObject serialize() const override;
   bool deserialize(const QJsonObject& json) override;

@@ -58,12 +58,12 @@ PortData PassthroughOutputPort::data() const
   return PortData();
 }
 
-PortData PassthroughOutputPort::materialize()
+std::shared_ptr<PortData> PassthroughOutputPort::materialize()
 {
   if (m_source) {
     return m_source->materialize();
   }
-  return PortData();
+  return nullptr;
 }
 
 bool PassthroughOutputPort::hasData() const

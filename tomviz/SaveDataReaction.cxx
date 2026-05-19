@@ -272,8 +272,10 @@ bool SaveDataReaction::saveData(const QString& filename)
 
   // Saving is the explicit "I need the data" path — materialize so
   // OnDisk-persistent payloads are loaded from cache before we read
-  // the volume bytes.
-  auto portData = tipPort->materialize();
+  // the volume bytes. The local handle keeps the data resident through
+  // the volume read below.
+  auto handle = tipPort->materialize();
+  pipeline::PortData portData = handle ? *handle : pipeline::PortData();
   if (!pipeline::isVolumeType(portData.type())) {
     qCritical("SaveDataReaction: only volume data can be saved.");
     return false;

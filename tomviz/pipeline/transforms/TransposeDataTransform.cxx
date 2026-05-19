@@ -114,7 +114,7 @@ bool TransposeDataTransform::hasPropertiesWidget() const
 }
 
 EditNodeWidget* TransposeDataTransform::createPropertiesWidget(
-  QWidget* parent)
+  Pipeline* /*pipeline*/, QWidget* parent)
 {
   return new TransposeDataWidget(this, parent);
 }

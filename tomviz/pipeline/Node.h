@@ -29,6 +29,7 @@ class EditNodeWidget;
 class InputPort;
 class NodeExecutor;
 class OutputPort;
+class Pipeline;
 
 class Node : public QObject
 {
@@ -98,15 +99,16 @@ public:
   /// parameters (transforms, schema-v2 sources, ...) override.
   virtual bool hasPropertiesWidget() const;
 
-  /// Whether the editor widget needs current data on the input ports
-  /// to render — e.g. an interactive widget overlay. Source nodes have
-  /// no inputs and always return false.
-  virtual bool propertiesWidgetNeedsInput() const;
-
   /// Build the editor widget. The caller (NodeEditDialog or
   /// NodePropertiesPanel) takes ownership and provides Apply/OK/Cancel.
   /// Returns nullptr when hasPropertiesWidget() is false.
-  virtual EditNodeWidget* createPropertiesWidget(QWidget* parent);
+  ///
+  /// @a pipeline is passed in so editors that need to react to pipeline
+  /// events (e.g. GatedEditorWidget waiting for inputs to materialize,
+  /// PythonNodeEditorWidget refreshing its Parameters tab) can subscribe
+  /// directly. Editors that don't need it can ignore the parameter.
+  virtual EditNodeWidget* createPropertiesWidget(Pipeline* pipeline,
+                                                 QWidget* parent);
 
   /// Per-node executor strategy. Null means "use the pipeline-level
   /// fallback" (InternalNodeExecutor singleton). Setting a non-null

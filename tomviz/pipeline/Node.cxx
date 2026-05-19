@@ -272,12 +272,8 @@ bool Node::hasPropertiesWidget() const
   return false;
 }
 
-bool Node::propertiesWidgetNeedsInput() const
-{
-  return false;
-}
-
-EditNodeWidget* Node::createPropertiesWidget(QWidget* /*parent*/)
+EditNodeWidget* Node::createPropertiesWidget(Pipeline* /*pipeline*/,
+                                             QWidget* /*parent*/)
 {
   return nullptr;
 }

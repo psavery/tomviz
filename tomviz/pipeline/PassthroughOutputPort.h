@@ -29,7 +29,7 @@ public:
   OutputPort* source() const;
 
   PortData data() const override;
-  PortData materialize() override;
+  std::shared_ptr<PortData> materialize() override;
   bool hasData() const override;
   bool isStale() const override;
   DataLocation dataLocation() const override;
