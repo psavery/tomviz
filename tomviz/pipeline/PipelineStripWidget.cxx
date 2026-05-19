@@ -33,6 +33,16 @@
 namespace tomviz {
 namespace pipeline {
 
+// Breakpoints are only offered on data-producing nodes (sources and
+// transforms). Sinks and sink groups don't run any logic of interest
+// to pause at — gating the UI here keeps the affordance off them
+// while leaving Node::setBreakpoint() available at the API level.
+static bool canHaveBreakpoint(Node* node)
+{
+  return qobject_cast<SourceNode*>(node) != nullptr ||
+         qobject_cast<TransformNode*>(node) != nullptr;
+}
+
 // Render an icon tinted to the given color, preserving alpha/opacity.
 static void paintTintedIcon(QPainter& painter, const QIcon& icon,
                             const QRect& rect, const QColor& color)
@@ -1160,37 +1170,48 @@ void PipelineStripWidget::paintNodeCard(QPainter& painter,
   QFontMetrics fm(labelFont);
 
   // Right side layout: [breakpoint] [state] [menu] | [expand/action]
+  // (breakpoint slot is omitted for sinks / sink groups; the label
+  // reclaims its width.)
   auto outputs = node->outputPorts();
+  bool showBreakpoint = canHaveBreakpoint(node);
   int toggleX = r.right() - HeaderExpandWidth - HeaderRightPad;
   int sepX = toggleX - HeaderButtonGap / 2;
   int menuX = toggleX - HeaderButtonGap - HeaderIconSize;
   int stateX = menuX - HeaderButtonSpacing - HeaderIconSize;
   int bpX = stateX - HeaderButtonSpacing - HeaderIconSize;
+  int labelEndX = showBreakpoint ? bpX : stateX;
 
-  int labelWidth = bpX - x - 2;
+  int labelWidth = labelEndX - x - 2;
   QString elidedLabel =
     fm.elidedText(node->label(), Qt::ElideRight, labelWidth);
   painter.drawText(QRect(x, r.top(), labelWidth, headerHeight),
                    Qt::AlignVCenter | Qt::AlignLeft, elidedLabel);
 
-  // Breakpoint indicator / hover hint
+  // Breakpoint indicator / hover hint. When the breakpoint has been
+  // reached (upstream done, node itself not yet run), swap in a play
+  // icon as a resume affordance.
   int btnY = r.top() + (headerHeight - HeaderIconSize) / 2;
-  QRect bpRect = breakpointRect(r);
-  QIcon bpIcon(QStringLiteral(":/pipeline/breakpoint.png"));
-  if (node->hasBreakpoint()) {
-    if (selected) {
-      paintTintedIcon(painter, bpIcon, bpRect, fg);
-    } else if (isDim) {
-      painter.setOpacity(1.0 - m_dimLevel);
+  if (showBreakpoint) {
+    QRect bpRect = breakpointRect(r);
+    bool atBreakpoint = node->isAtBreakpoint();
+    QIcon bpIcon(atBreakpoint
+                   ? QStringLiteral(":/pqWidgets/Icons/pqVcrPlay.svg")
+                   : QStringLiteral(":/pipeline/breakpoint.svg"));
+    if (node->hasBreakpoint()) {
+      if (selected) {
+        paintTintedIcon(painter, bpIcon, bpRect, fg);
+      } else if (isDim) {
+        painter.setOpacity(1.0 - m_dimLevel);
+        bpIcon.paint(&painter, bpRect);
+        painter.setOpacity(1.0);
+      } else {
+        bpIcon.paint(&painter, bpRect);
+      }
+    } else if (hovered && !isDim) {
+      painter.setOpacity(0.25);
       bpIcon.paint(&painter, bpRect);
       painter.setOpacity(1.0);
-    } else {
-      bpIcon.paint(&painter, bpRect);
     }
-  } else if (hovered && !isDim) {
-    painter.setOpacity(0.25);
-    bpIcon.paint(&painter, bpRect);
-    painter.setOpacity(1.0);
   }
 
   // State indicator icon
@@ -2453,12 +2474,24 @@ void PipelineStripWidget::mousePressEvent(QMouseEvent* event)
       auto* node = m_layout[idx].node;
       auto& cardRect = m_layout[idx].rect;
 
-      // Breakpoint area
-      QRect bpRect = breakpointRect(cardRect);
-      if (bpRect.contains(event->pos())) {
-        node->setBreakpoint(!node->hasBreakpoint());
-        update();
-        return;
+      // Breakpoint area. When the breakpoint has been reached, the
+      // icon is repurposed as a resume button: clear the flag and
+      // re-run the pipeline. Otherwise toggle the flag. Sinks and
+      // sink groups don't expose the slot — skip the hit-test there.
+      if (canHaveBreakpoint(node)) {
+        QRect bpRect = breakpointRect(cardRect);
+        if (bpRect.contains(event->pos())) {
+          if (node->isAtBreakpoint()) {
+            node->setBreakpoint(false);
+            if (m_pipeline) {
+              m_pipeline->execute();
+            }
+          } else {
+            node->setBreakpoint(!node->hasBreakpoint());
+          }
+          update();
+          return;
+        }
       }
 
       // Menu button (three dots) — open context menu without changing selection

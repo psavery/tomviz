@@ -66,9 +66,11 @@ public slots:
       }
 
       if (node->hasBreakpoint()) {
+        // Skip just this node — siblings that don't depend on it can
+        // still run. Downstream consumers see anyInputStale() == true
+        // and skip themselves on the next iterations.
         emit breakpointHit(node);
-        emit executionDone(false);
-        return;
+        continue;
       }
 
       // No "skip Current" filter here — see DefaultExecutor for the

@@ -141,6 +141,11 @@ void Node::setBreakpoint(bool enabled)
   }
 }
 
+bool Node::isAtBreakpoint() const
+{
+  return m_breakpoint && m_state != NodeState::Current && allInputsCurrent();
+}
+
 QList<InputPort*> Node::inputPorts() const
 {
   return m_inputPorts;

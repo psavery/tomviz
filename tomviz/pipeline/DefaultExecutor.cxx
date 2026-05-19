@@ -69,10 +69,11 @@ void DefaultExecutor::execute(const QList<Node*>& nodes, Pipeline* pipeline)
     }
 
     if (node->hasBreakpoint()) {
+      // Skip just this node — siblings that don't depend on it can
+      // still run. Downstream consumers see anyInputStale() == true
+      // and skip themselves on the next iterations.
       emit pipeline->breakpointReached(node);
-      m_running = false;
-      emit executionComplete(false);
-      return;
+      continue;
     }
 
     // No "skip Current" filter here: the plan handed to the executor is

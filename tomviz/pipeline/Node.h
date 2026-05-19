@@ -59,6 +59,13 @@ public:
   bool hasBreakpoint() const;
   void setBreakpoint(bool enabled);
 
+  /// True when this node carries a breakpoint that the executor has
+  /// just stopped at: it has a breakpoint set, all of its inputs are
+  /// Current (upstream already ran), and the node itself has not been
+  /// executed (state != Current). Used by the pipeline widget to swap
+  /// the breakpoint indicator for a resume affordance.
+  bool isAtBreakpoint() const;
+
   QList<InputPort*> inputPorts() const;
   QList<OutputPort*> outputPorts() const;
   InputPort* inputPort(const QString& name) const;

@@ -8,8 +8,7 @@
     <file alias="question@2x.png">../icons/question@2x.png</file>
     <file alias="spinner.png">../icons/spinner.png</file>
     <file alias="spinner@2x.png">../icons/spinner@2x.png</file>
-    <file alias="breakpoint.png">../icons/breakpoint.png</file>
-    <file alias="breakpoint@2x.png">../icons/breakpoint@2x.png</file>
+    <file alias="breakpoint.svg">../icons/breakpoint.svg</file>
     <file alias="error.png">../icons/error_notification.png</file>
     <file alias="error@2x.png">../icons/error_notification@2x.png</file>
     <file alias="canceled.png">../icons/red_cross.png</file>
@@ -29,7 +28,6 @@
     <file alias="pqVolumeData.png">../icons/pqVolumeData.png</file>
     <file alias="orthoslice.svg">../icons/orthoslice.svg</file>
     <file alias="pqMeasurementCube.png">../icons/pqMeasurementCube.png</file>
-    <file alias="play.png">../icons/play.png</file>
     <file alias="icon_leave.svg">../icons/icon_leave.svg</file>
   </qresource>
 </RCC>
