@@ -24,9 +24,7 @@ class AboutDialog;
 class DataSource;
 class MoleculeSource;
 class Module;
-class Operator;
 struct OperatorDescription;
-class OperatorResult;
 class OperatorSearchDialog;
 class ProgressDialogManager;
 

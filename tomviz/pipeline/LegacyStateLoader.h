@@ -148,16 +148,6 @@ private:
   /// UseColorPaletteForBackground=1 will then pick up this color.
   static void applyPaletteColor(const QJsonArray& color);
 
-  /// Restore the top-level moleculeSources[] by re-loading each file via
-  /// LoadDataReaction::loadMolecule and then calling MoleculeSource::
-  /// deserialize() so saved Molecule modules are re-attached. Molecule
-  /// handling in tomviz still lives on the legacy ModuleManager path
-  /// (MoleculeSink in the new pipeline is only wired up for Python
-  /// operators that return a vtkMolecule result), so this is a
-  /// deliberate legacy-path hook rather than a new-pipeline node.
-  static void restoreMoleculeSources(const QJsonObject& state,
-                                      LoadContext& ctx);
-
   /// Apply a legacy view JSON (camera, axes visibility, background,
   /// interaction/orthographic modes, ...) to @a view. Multi-view state
   /// is not restored — the caller selects a single representative

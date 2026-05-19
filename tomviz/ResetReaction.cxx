@@ -18,7 +18,8 @@ ResetReaction::ResetReaction(QAction* parentObject) : Superclass(parentObject)
 
 void ResetReaction::updateEnableState()
 {
-  bool enabled = !ModuleManager::instance().hasRunningOperators();
+  auto* pipeline = ActiveObjects::instance().pipeline();
+  bool enabled = !pipeline || !pipeline->isExecuting();
   parentAction()->setEnabled(enabled);
 }
 

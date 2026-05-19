@@ -2,7 +2,6 @@ find_package(TBB REQUIRED)
 
 set(CMAKE_MODULE_LINKER_FLAGS "")
 pybind11_add_module(_wrapping
-  ../legacy/pybind11/OperatorPythonWrapper.cxx
   ../legacy/pybind11/PipelineStateManager.cxx
   PythonTypeConversions.cxx
   Wrapping.cxx)

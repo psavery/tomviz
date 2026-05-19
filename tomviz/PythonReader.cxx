@@ -3,8 +3,6 @@
 
 #include "PythonReader.h"
 
-#include "legacy/DataSource.h"
-
 #include <vtkImageData.h>
 
 #include <QDebug>

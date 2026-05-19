@@ -65,8 +65,6 @@
 #include "pipeline/VolumePropertiesWidget.h"
 #include "MoleculeProperties.h"
 #include "CentralWidget.h"
-#include "legacy/operators/OperatorFactory.h"
-#include "legacy/operators/OperatorProxy.h"
 #include "OperatorSearchDialog.h"
 #include "PassiveAcquisitionWidget.h"
 #include "legacy/Pipeline.h"
@@ -655,7 +653,6 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   findPipelineTemplates();
 
   // Register our factories for Python wrapping.
-  OperatorProxyFactory::registerWithFactory();
   PipelineProxyFactory::registerWithFactory();
 
   // Build Tomography menu

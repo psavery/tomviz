@@ -14,7 +14,6 @@ class vtkImageData;
 class vtkSMProxy;
 
 namespace tomviz {
-class MoleculeSource;
 
 namespace pipeline {
 class SourceNode;
@@ -55,11 +54,6 @@ public:
   /// and child, or pvXML to pass to the ParaView reader.
   static pipeline::SourceNode* loadData(
     const QStringList& fileNames, const QJsonObject& options = QJsonObject());
-
-  static QList<MoleculeSource*> loadMolecule(
-    const QStringList& fileNames, const QJsonObject& options = QJsonObject());
-  static MoleculeSource* loadMolecule(
-    const QString& fileName, const QJsonObject& options = QJsonObject());
 
   /// Handle creation of a new source node (data already set on the node).
   static void sourceNodeAdded(pipeline::SourceNode* source,

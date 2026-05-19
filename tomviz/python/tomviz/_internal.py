@@ -121,7 +121,7 @@ def is_completable(transform_module):
     )
 
 
-def find_transform_function(transform_module, op=None):
+def find_transform_function(transform_module):
 
     transform_function = find_transform_from_module(transform_module)
     if transform_function is None:
@@ -129,13 +129,7 @@ def find_transform_function(transform_module, op=None):
         if cls is None:
             raise Exception('Unable to locate transform function.')
 
-        # We call __new__ and __init__ manually here so we can inject the
-        # wrapper OperatorPython instance before __init__ is called so that
-        # any code in __init__ can access the wrapper.
         o = cls.__new__(cls)
-        if op is not None:
-            # Set the wrapped OperatorPython instance
-            o._operator_wrapper = tomviz._wrapping.OperatorPythonWrapper(op)
         cls.__init__(o)
 
         transform_function = None

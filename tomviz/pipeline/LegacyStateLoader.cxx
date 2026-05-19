@@ -286,8 +286,6 @@ bool LegacyStateLoader::load(const QJsonObject& state, const QDir& stateDir,
     walkDataSource(source, ds, ctx);
   }
 
-  restoreMoleculeSources(state, ctx);
-
   // Warn the user about skipped operators/modules, if any.
   if (!ctx.skippedOperators.isEmpty() || !ctx.skippedModules.isEmpty()) {
     QStringList parts;
@@ -386,8 +384,6 @@ bool LegacyStateLoader::loadFromH5(const QString& filename,
     applyDataSourceMetadata(source, ds);
     walkDataSource(source, ds, ctx);
   }
-
-  restoreMoleculeSources(state, ctx);
 
   auto* pip = ctx.pipeline;
   if (executePipeline) {
@@ -804,49 +800,6 @@ void LegacyStateLoader::applyPaletteColor(const QJsonArray& color)
                     color.at(2).toDouble() };
   vtkSMPropertyHelper(palette, "BackgroundColor").Set(rgb, 3);
   palette->UpdateVTKObjects();
-}
-
-void LegacyStateLoader::restoreMoleculeSources(const QJsonObject& state,
-                                                LoadContext& ctx)
-{
-  if (!state.value("moleculeSources").isArray()) {
-    return;
-  }
-  auto sources = state.value("moleculeSources").toArray();
-  for (const auto& v : sources) {
-    auto obj = v.toObject();
-    auto reader = obj.value("reader").toObject();
-    QString fileName = reader.value("fileName").toString();
-    if (fileName.isEmpty()) {
-      auto files = reader.value("fileNames").toArray();
-      if (!files.isEmpty()) {
-        fileName = files.at(0).toString();
-      }
-    }
-    if (fileName.isEmpty()) {
-      qWarning() << "LegacyStateLoader: moleculeSource has no reader file";
-      continue;
-    }
-    QFileInfo info(fileName);
-    if (!info.isAbsolute()) {
-      fileName = ctx.stateDir.absoluteFilePath(fileName);
-    }
-    if (!QFileInfo::exists(fileName)) {
-      qWarning() << "LegacyStateLoader: molecule file not found:" << fileName;
-      continue;
-    }
-
-    QJsonObject options;
-    options["defaultModules"] = false;
-    options["addToRecent"] = false;
-    auto* ms = LoadDataReaction::loadMolecule(fileName, options);
-    if (ms) {
-      // MoleculeSource::deserialize() attaches saved Molecule modules
-      // via the legacy ModuleManager. Molecules in the new pipeline
-      // are still routed through that path.
-      ms->deserialize(obj);
-    }
-  }
 }
 
 void LegacyStateLoader::applyViewState(vtkSMViewProxy* view,

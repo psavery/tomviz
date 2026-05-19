@@ -1044,50 +1044,6 @@ void ModuleManager::onPVStateLoaded(vtkPVXMLElement*,
     loadDataSources(dataSources);
   }
 
-  // Load up all of the molecule sources.
-  if (m_stateObject["moleculeSources"].isArray()) {
-    auto moleculeSources = m_stateObject["moleculeSources"].toArray();
-    foreach (auto ds, moleculeSources) {
-      auto dsObject = ds.toObject();
-      QJsonObject options;
-      options["defaultModules"] = false;
-      options["addToRecent"] = false;
-      d->absoluteFilePaths(dsObject);
-
-      QString fileName;
-      if (dsObject.contains("reader")) {
-        auto reader = dsObject["reader"].toObject();
-
-        if (reader.contains("fileName")) {
-          fileName = reader["fileName"].toString();
-          // Verify the file exists.
-          if (!QFileInfo::exists(fileName)) {
-            // If the file cannot be found in the path relative to the state
-            // file, make another attempt to locate it in the same directory
-            fileName = d->dir.absoluteFilePath(QFileInfo(fileName).fileName());
-            if (!QFileInfo::exists(fileName)) {
-              qCritical() << "File" << fileName << "not found, skipping.";
-              fileName = "";
-            }
-          }
-        } else {
-          qCritical() << "Unable to locate file name.";
-        }
-      }
-      MoleculeSource* moleculeSource =
-        LoadDataReaction::loadMolecule(fileName, options);
-      if (moleculeSource) {
-        moleculeSource->deserialize(dsObject);
-        // FIXME: I think we need to collect the active objects and set them at
-        // the end, as the act of adding generally implies setting to active.
-        if (dsObject["active"].toBool()) {
-          // LEGACY STUB: setActiveMoleculeSource() removed from ActiveObjects
-          // ActiveObjects::instance().setActiveMoleculeSource(moleculeSource);
-        }
-      }
-    }
-  }
-
   m_isDeserializing = false;
 
   if (!executePipelinesOnLoad() || d->RemaningPipelinesToWaitFor == 0) {

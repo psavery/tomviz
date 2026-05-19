@@ -20,7 +20,6 @@
 #include <QRadioButton>
 #include <QVBoxLayout>
 
-#include "legacy/DataSource.h"
 #include "QVTKGLWidget.h"
 #include "Utilities.h"
 

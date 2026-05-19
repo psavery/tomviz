@@ -12,7 +12,6 @@
 
 #include "legacy/DataSource.h"
 #include "Logger.h"
-#include "legacy/operators/OperatorFactory.h"
 
 #include <vtkPythonInterpreter.h>
 #include <vtkPythonUtil.h>

@@ -7,7 +7,6 @@
 
 #include "AcquisitionClient.h"
 #include "ActiveObjects.h"
-#include "legacy/DataSource.h"
 #include "Utilities.h"
 
 #include <pqApplicationCore.h>
@@ -23,7 +22,6 @@
 #include <vtkRenderWindow.h>
 #include <vtkRenderWindowInteractor.h>
 #include <vtkRenderer.h>
-#include <vtkScalarsToColors.h>
 #include <vtkTIFFReader.h>
 
 #include <QBuffer>
@@ -231,18 +229,6 @@ void AcquisitionWidget::previewReady(QString mimeType, QByteArray result)
   m_renderer->AddViewProp(m_imageSlice);
   resetCamera();
   m_ui->imageWidget->renderWindow()->Render();
-
-  // TODO: retrieve DataSource from active node/port to get color map
-  DataSource* activeDs = nullptr;
-  if (activeDs) {
-    auto proxy = activeDs->colorMap();
-    m_lut = vtkScalarsToColors::SafeDownCast(proxy->GetClientSideObject());
-  } else {
-    //    m_lut = vtkSmartPointer<vtkScalarsToColors>::New();
-  }
-  if (m_lut) {
-    m_imageSlice->GetProperty()->SetLookupTable(m_lut);
-  }
 
   m_ui->previewButton->setEnabled(true);
   m_ui->acquireButton->setEnabled(true);
