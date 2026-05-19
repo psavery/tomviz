@@ -892,8 +892,8 @@ def transform(dataset):
 
     with h5py.File(tvh5, 'r') as f:
         port_group = f['/data/2/stats']
-        assert port_group.attrs['kind'] == 'table' or \
-            port_group.attrs['kind'] == b'table'
+        assert port_group.attrs['type'] == 'table' or \
+            port_group.attrs['type'] == b'table'
         assert int(port_group.attrs['numColumns']) == 2
         assert int(port_group.attrs['numRows']) == 2
         # Numeric column round-trips dtype + values exactly.
@@ -979,7 +979,7 @@ def transform(dataset):
 
     with h5py.File(tvh5, 'r') as f:
         port_group = f['/data/2/mol']
-        assert (port_group.attrs['kind'] in ('molecule', b'molecule'))
+        assert (port_group.attrs['type'] in ('molecule', b'molecule'))
         assert int(port_group.attrs['numAtoms']) == 3
         assert int(port_group.attrs['numBonds']) == 2
         np.testing.assert_array_equal(

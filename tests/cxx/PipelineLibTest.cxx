@@ -530,7 +530,9 @@ TEST_F(PipelineLibTest, OnDiskEvictsOnLastHandleRelease)
   // data() is non-loading — it should report missing now.
   EXPECT_FALSE(port->data().isValid());
   // materialize() triggers a synchronous reload from disk.
-  auto reloaded = port->materialize().value<VolumeDataPtr>();
+  auto handle = port->materialize();
+  ASSERT_TRUE(handle);
+  auto reloaded = handle->value<VolumeDataPtr>();
   ASSERT_TRUE(reloaded && reloaded->isValid());
   auto reloadedRange = reloaded->scalarRange();
   EXPECT_NEAR(originalRange[0], reloadedRange[0], 0.01);
@@ -564,7 +566,9 @@ TEST_F(PipelineLibTest, OnDiskReSetDataOverwrites)
   ASSERT_TRUE(port->hasData());
 
   // Reload should produce the new payload, not the original.
-  auto reloaded = port->materialize().value<VolumeDataPtr>();
+  auto handle = port->materialize();
+  ASSERT_TRUE(handle);
+  auto reloaded = handle->value<VolumeDataPtr>();
   ASSERT_TRUE(reloaded && reloaded->isValid());
   EXPECT_EQ(reloaded->dimensions()[0], 6);
   EXPECT_EQ(reloaded->dimensions()[1], 6);
@@ -631,7 +635,9 @@ TEST_F(PipelineLibTest, PersistenceModeSwitchInMemoryToOnDisk)
   EXPECT_TRUE(port->hasData());
 
   // Reload from disk and verify equivalent payload.
-  auto reloaded = port->materialize().value<VolumeDataPtr>();
+  auto handle = port->materialize();
+  ASSERT_TRUE(handle);
+  auto reloaded = handle->value<VolumeDataPtr>();
   ASSERT_TRUE(reloaded && reloaded->isValid());
   auto reloadedRange = reloaded->scalarRange();
   EXPECT_NEAR(originalRange[0], reloadedRange[0], 0.01);

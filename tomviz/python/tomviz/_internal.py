@@ -121,7 +121,9 @@ def is_completable(transform_module):
     )
 
 
-def find_transform_function(transform_module):
+def find_transform_function(transform_module, op=None):
+    # op is accepted for ABI compat with legacy OperatorPython but ignored.
+    del op
 
     transform_function = find_transform_from_module(transform_module)
     if transform_function is None:
@@ -130,6 +132,9 @@ def find_transform_function(transform_module):
             raise Exception('Unable to locate transform function.')
 
         o = cls.__new__(cls)
+        # _operator_wrapper is read by CompletableOperator/CancelableOperator
+        # __init__ and during transform(); install the pure-Python fallback.
+        o._operator_wrapper = OperatorWrapper(None)
         cls.__init__(o)
 
         transform_function = None

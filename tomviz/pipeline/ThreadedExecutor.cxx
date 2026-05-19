@@ -58,6 +58,8 @@ public slots:
     // (e.g. a sink) decided to retain.
     QHash<OutputPort*, std::shared_ptr<PortData>> inflight;
 
+    bool breakpointWasHit = false;
+
     for (auto* node : nodes) {
       if (m_cancelFlag.load()) {
         emit canceled();
@@ -70,6 +72,7 @@ public slots:
         // still run. Downstream consumers see anyInputStale() == true
         // and skip themselves on the next iterations.
         emit breakpointHit(node);
+        breakpointWasHit = true;
         continue;
       }
 
@@ -129,7 +132,7 @@ public slots:
       // an in-plan consumer's input-delivery loop does the lazy take.
     }
 
-    emit executionDone(true);
+    emit executionDone(!breakpointWasHit);
   }
 
 signals:

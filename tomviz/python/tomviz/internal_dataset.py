@@ -273,3 +273,9 @@ class LegacyDataset(Dataset):
             child._inherited_active_name = parent_active.GetName()
         return child
 
+
+def create_dataset(data_object, data_source=None):
+    # Legacy entry point invoked by tomviz::Python::createDataset from
+    # legacy::OperatorPython::applyTransform. data_source is unused.
+    del data_source
+    return LegacyDataset(data_object)

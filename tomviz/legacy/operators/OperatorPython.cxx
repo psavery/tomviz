@@ -556,6 +556,10 @@ bool OperatorPython::applyTransform(vtkDataObject* data)
     } else if (transformMethod == "transform") {
       // Use the arguments for transform()
       Python::Object pydata = Python::createDataset(data, *dataSource());
+      if (!pydata.isValid()) {
+        qCritical("Failed to create dataset for transform.");
+        return false;
+      }
       args.set(2, pydata);
     } else {
       qDebug() << "Unknown TransformMethod name: " << transformMethod;
@@ -573,6 +577,10 @@ bool OperatorPython::applyTransform(vtkDataObject* data)
           kwargs.set(key, pydata);
         } else if (transformMethod == "transform") {
           auto pydata = Python::createDataset(ds->imageData(), *ds);
+          if (!pydata.isValid()) {
+            qCritical("Failed to create dataset for transform kwarg.");
+            return false;
+          }
           kwargs.set(key, pydata);
         } else {
           qDebug() << "Unknown TransformMethod name: " << transformMethod;

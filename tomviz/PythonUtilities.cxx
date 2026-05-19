@@ -609,6 +609,7 @@ Python::Object Python::createDataset(vtkObjectBase* data,
   auto createDatasetFunc = module.findFunction("create_dataset");
   if (!createDatasetFunc.isValid()) {
     Logger::critical("Unable to locate create_dataset.");
+    return Python::Object();
   }
 
   auto dataObj = Python::VTK::GetObjectFromPointer(data);

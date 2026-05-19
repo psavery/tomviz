@@ -60,6 +60,8 @@ void DefaultExecutor::execute(const QList<Node*>& nodes, Pipeline* pipeline)
   // an executeUpstreamOf(target) run where target itself reads later).
   QHash<OutputPort*, std::shared_ptr<PortData>> inflight;
 
+  bool breakpointHit = false;
+
   for (auto* node : nodes) {
     if (m_cancelRequested) {
       m_running = false;
@@ -73,6 +75,7 @@ void DefaultExecutor::execute(const QList<Node*>& nodes, Pipeline* pipeline)
       // still run. Downstream consumers see anyInputStale() == true
       // and skip themselves on the next iterations.
       emit pipeline->breakpointReached(node);
+      breakpointHit = true;
       continue;
     }
 
@@ -153,7 +156,7 @@ void DefaultExecutor::execute(const QList<Node*>& nodes, Pipeline* pipeline)
   }
 
   m_running = false;
-  emit executionComplete(true);
+  emit executionComplete(!breakpointHit);
 }
 
 void DefaultExecutor::cancel()

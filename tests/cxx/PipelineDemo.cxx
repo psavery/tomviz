@@ -251,7 +251,7 @@ int main(int argc, char** argv)
     // Try sink node first
     auto* sink = qobject_cast<LegacyModuleSink*>(node);
     if (sink) {
-      auto* w = sink->createPropertiesWidget(nullptr);
+      auto* w = sink->createPropertiesWidget(pipeline, nullptr);
       if (w) {
         sinkPropsScroll->setWidget(w);
         sinkPropsScroll->show();
@@ -262,7 +262,7 @@ int main(int argc, char** argv)
     // Try transform node
     auto* transform = qobject_cast<TransformNode*>(node);
     if (transform && transform->hasPropertiesWidget()) {
-      auto* w = transform->createPropertiesWidget(nullptr);
+      auto* w = transform->createPropertiesWidget(pipeline, nullptr);
       if (w) {
         sinkPropsScroll->setWidget(w);
         sinkPropsScroll->show();
