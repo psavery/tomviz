@@ -11,7 +11,9 @@
 #include "Node.h"
 #include "NodePropertiesWidget.h"
 #include "OutputPort.h"
+#include "ParameterInterfaceBuilder.h"
 #include "Pipeline.h"
+#include "data/VolumeData.h"
 
 #include <pqPythonSyntaxHighlighter.h>
 
@@ -23,8 +25,10 @@
 #include <QFontDatabase>
 #include <QGridLayout>
 #include <QHBoxLayout>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QJsonValue>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
@@ -85,6 +89,7 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
   : EditNodeWidget(parent), m_node(node), m_pipeline(pipeline),
     m_customFactory(std::move(customWidgetFactory)),
     m_customWidgetNeedsData(customWidgetNeedsData),
+    m_jsonDescription(jsonDescription),
     m_currentValues(currentValues)
 {
   auto* mainLayout = new QVBoxLayout(this);
@@ -154,37 +159,45 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
   m_paramsTab = new QWidget(m_tabWidget);
   m_paramsLayout = new QVBoxLayout(m_paramsTab);
 
-  // Three modes:
+  // Modes (custom widget vs JSON form, with or without data dependency):
   //   1) No custom widget factory  → auto-form from JSON description.
+  //      A "select_scalars" parameter in the JSON makes the form depend
+  //      on input data (we need the list of scalar arrays from the
+  //      upstream VolumeData to populate the picker).
   //   2) Custom widget, no data needed (or data already available)
   //      → build the custom widget immediately.
-  //   3) Custom widget needs data and inputs aren't in memory yet
-  //      → install InputsNotReadyWidget; swap to the custom widget on
+  //   3) Either path needs data and inputs aren't in memory yet
+  //      → install InputsNotReadyWidget; swap to the real widget on
   //        the first executionFinished that delivers the data.
   if (!m_customFactory) {
-    // Show operator description from JSON if available
     if (!jsonDescription.isEmpty()) {
       QJsonDocument doc = QJsonDocument::fromJson(jsonDescription.toUtf8());
       if (doc.isObject()) {
-        QString desc = doc.object().value("description").toString();
-        if (!desc.isEmpty()) {
-          auto* descLabel = new QLabel(desc, m_paramsTab);
-          descLabel->setWordWrap(true);
-          descLabel->setStyleSheet(
-            "QLabel { color: palette(text); padding: 4px; }");
-          m_paramsLayout->addWidget(descLabel);
+        for (const auto& p : doc.object().value("parameters").toArray()) {
+          if (p.toObject().value("type").toString() == "select_scalars") {
+            m_jsonFormNeedsData = true;
+            break;
+          }
         }
       }
-
-      m_paramsWidget =
-        new NodePropertiesWidget(jsonDescription, currentValues, m_paramsTab);
-      m_paramsLayout->addWidget(m_paramsWidget, 1);
     }
-    m_paramsLayout->addStretch();
+  }
+
+  if (!m_customFactory) {
+    if (jsonDescription.isEmpty()) {
+      m_paramsLayout->addStretch();
+    } else if (!m_jsonFormNeedsData || inputsInMemory()) {
+      installJsonFormWidget();
+    } else {
+      installNotReadyWidget();
+    }
   } else if (!m_customWidgetNeedsData || inputsInMemory()) {
     installCustomWidget();
   } else {
     installNotReadyWidget();
+  }
+
+  if ((m_customFactory && m_customWidgetNeedsData) || m_jsonFormNeedsData) {
     connect(m_pipeline, &Pipeline::executionStarted, this, [this]() {
       if (m_notReadyWidget) {
         m_notReadyWidget->setRunEnabled(false);
@@ -282,6 +295,39 @@ void PythonNodeEditorWidget::installCustomWidget()
   m_paramsLayout->addWidget(m_customParamsWidget, 1);
 }
 
+void PythonNodeEditorWidget::installJsonFormWidget()
+{
+  QJsonDocument doc = QJsonDocument::fromJson(m_jsonDescription.toUtf8());
+  if (doc.isObject()) {
+    QString desc = doc.object().value("description").toString();
+    if (!desc.isEmpty()) {
+      auto* descLabel = new QLabel(desc, m_paramsTab);
+      descLabel->setWordWrap(true);
+      descLabel->setStyleSheet(
+        "QLabel { color: palette(text); padding: 4px; }");
+      m_paramsLayout->addWidget(descLabel);
+    }
+  }
+
+  QList<PortScalars> portScalars;
+  for (auto* input : m_node->inputPorts()) {
+    if (!input->hasData()) {
+      continue;
+    }
+    auto vol = input->data().value<VolumeDataPtr>();
+    if (!vol || !vol->isValid()) {
+      continue;
+    }
+    portScalars.append(
+      { input->name(), vol->scalarNames(), vol->activeScalarName() });
+  }
+
+  m_paramsWidget = new NodePropertiesWidget(
+    m_jsonDescription, m_currentValues, portScalars, m_paramsTab);
+  m_paramsLayout->addWidget(m_paramsWidget, 1);
+  m_paramsLayout->addStretch();
+}
+
 void PythonNodeEditorWidget::installNotReadyWidget()
 {
   m_notReadyWidget = new InputsNotReadyWidget(m_paramsTab);
@@ -320,7 +366,11 @@ void PythonNodeEditorWidget::onExecutionFinished()
   m_paramsLayout->removeWidget(m_notReadyWidget);
   m_notReadyWidget->deleteLater();
   m_notReadyWidget = nullptr;
-  installCustomWidget();
+  if (m_customFactory) {
+    installCustomWidget();
+  } else {
+    installJsonFormWidget();
+  }
 }
 
 void PythonNodeEditorWidget::applyChangesToOperator()

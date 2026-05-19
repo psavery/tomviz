@@ -10,6 +10,7 @@
 #include <QList>
 #include <QMap>
 #include <QString>
+#include <QStringList>
 #include <QVariant>
 
 #include <functional>
@@ -86,6 +87,7 @@ private:
   void onRunRequested();
   void onExecutionFinished();
   void installCustomWidget();
+  void installJsonFormWidget();
   void installNotReadyWidget();
   bool inputsInMemory() const;
 
@@ -93,6 +95,8 @@ private:
   Pipeline* m_pipeline;
   CustomWidgetFactory m_customFactory;
   bool m_customWidgetNeedsData;
+  bool m_jsonFormNeedsData = false;
+  QString m_jsonDescription;
   QMap<QString, QVariant> m_currentValues;
 
   QLineEdit* m_nameEdit = nullptr;

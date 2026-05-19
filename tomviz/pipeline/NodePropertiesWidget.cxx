@@ -12,7 +12,8 @@ namespace pipeline {
 
 NodePropertiesWidget::NodePropertiesWidget(
   const QString& jsonDescription,
-  const QMap<QString, QVariant>& currentValues, QWidget* parent)
+  const QMap<QString, QVariant>& currentValues,
+  const QList<PortScalars>& portScalars, QWidget* parent)
   : EditNodeWidget(parent)
 {
   auto* layout = new QVBoxLayout(this);
@@ -21,6 +22,7 @@ NodePropertiesWidget::NodePropertiesWidget(
   ParameterInterfaceBuilder builder;
   builder.setJSONDescription(jsonDescription);
   builder.setParameterValues(currentValues);
+  builder.setPortScalars(portScalars);
 
   m_innerWidget = builder.buildWidget(this);
   layout->addWidget(m_innerWidget);

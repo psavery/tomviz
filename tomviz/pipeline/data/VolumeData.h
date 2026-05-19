@@ -12,6 +12,7 @@
 
 #include <QList>
 #include <QMap>
+#include <QStringList>
 #include <QVector>
 
 #include <array>
@@ -81,6 +82,15 @@ public:
 
   /// Get the active scalars array
   vtkDataArray* scalars() const;
+
+  /// List the names of all point-data scalar arrays in the underlying
+  /// vtkImageData, in their current order. Returns an empty list if the
+  /// image data is null.
+  QStringList scalarNames() const;
+
+  /// Name of the currently active scalars array, or an empty string if
+  /// there is no active array (or it has no name).
+  QString activeScalarName() const;
 
   /// Rename a scalar array. No-op if @a oldName doesn't exist, @a newName
   /// is already taken, or the two names are equal. Preserves rename

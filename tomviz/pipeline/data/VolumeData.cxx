@@ -177,6 +177,33 @@ vtkDataArray* VolumeData::scalars() const
   return nullptr;
 }
 
+QStringList VolumeData::scalarNames() const
+{
+  QStringList names;
+  if (!m_imageData) {
+    return names;
+  }
+  auto* pd = m_imageData->GetPointData();
+  if (!pd) {
+    return names;
+  }
+  const int n = pd->GetNumberOfArrays();
+  names.reserve(n);
+  for (int i = 0; i < n; ++i) {
+    names << QString::fromUtf8(pd->GetArrayName(i));
+  }
+  return names;
+}
+
+QString VolumeData::activeScalarName() const
+{
+  auto* s = scalars();
+  if (!s || !s->GetName()) {
+    return {};
+  }
+  return QString::fromUtf8(s->GetName());
+}
+
 void VolumeData::renameScalarArray(const QString& oldName,
                                     const QString& newName)
 {

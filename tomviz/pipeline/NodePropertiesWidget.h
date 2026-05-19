@@ -5,7 +5,9 @@
 #define tomvizPipelineNodePropertiesWidget_h
 
 #include "EditNodeWidget.h"
+#include "ParameterInterfaceBuilder.h"
 
+#include <QList>
 #include <QMap>
 #include <QString>
 #include <QVariant>
@@ -24,6 +26,7 @@ class NodePropertiesWidget
 public:
   NodePropertiesWidget(const QString& jsonDescription,
                        const QMap<QString, QVariant>& currentValues,
+                       const QList<PortScalars>& portScalars = {},
                        QWidget* parent = nullptr);
 
   QMap<QString, QVariant> values() const;
