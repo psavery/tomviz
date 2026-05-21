@@ -4,7 +4,6 @@
 #include "ManualManipulationWidget.h"
 #include "ui_ManualManipulationWidget.h"
 
-#include "pipeline/PortType.h"
 #include "pipeline/data/VolumeData.h"
 
 #include <vtkImageData.h>
@@ -134,12 +133,9 @@ ManualManipulationWidget::ManualManipulationWidget(
   vtkSmartPointer<vtkImageData> image;
   if (auto it = inputs.constFind(QStringLiteral("volume"));
       it != inputs.constEnd()) {
-    const auto& portData = it.value();
-    if (portData.isValid() && pipeline::isVolumeType(portData.type())) {
-      if (auto vol = portData.value<pipeline::VolumeDataPtr>();
-          vol && vol->isValid()) {
-        image = vol->imageData();
-      }
+    if (auto vol = it.value().value<pipeline::VolumeDataPtr>();
+        vol && vol->isValid()) {
+      image = vol->imageData();
     }
   }
   m_internal.reset(new Internal(image, this));

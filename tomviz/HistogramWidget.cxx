@@ -473,9 +473,8 @@ bool HistogramWidget::createContourDialog(double& isoValue)
   // Obtain the scalar range from the tip output port's VolumeData.
   double range[2] = { 0.0, 1.0 };
   auto* tipPort = ActiveObjects::instance().activeTipOutputPort();
-  auto tipData = tipPort ? tipPort->data() : pipeline::PortData();
-  if (tipData.isValid() && pipeline::isVolumeType(tipData.type())) {
-    auto vol = tipData.value<pipeline::VolumeDataPtr>();
+  if (tipPort && tipPort->hasData()) {
+    auto vol = tipPort->data().value<pipeline::VolumeDataPtr>();
     if (vol && vol->isValid()) {
       auto r = vol->scalarRange();
       range[0] = r[0];

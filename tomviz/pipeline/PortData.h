@@ -25,7 +25,10 @@ public:
   template <typename T>
   T value() const
   {
-    return std::any_cast<T>(m_data);
+    if (auto* ptr = std::any_cast<T>(&m_data)) {
+      return *ptr;
+    }
+    return T{};
   }
 
 private:

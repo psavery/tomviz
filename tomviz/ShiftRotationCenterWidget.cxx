@@ -9,7 +9,6 @@
 #include "PresetDialog.h"
 #include "PythonUtilities.h"
 #include "Utilities.h"
-#include "pipeline/PortType.h"
 #include "pipeline/data/VolumeData.h"
 
 // Qt defines 'slots' as a macro which conflicts with Python's object.h.
@@ -1110,14 +1109,11 @@ ShiftRotationCenterWidget::ShiftRotationCenterWidget(
   vtkSMProxy* sourceColorMap = nullptr;
   if (auto it = inputs.constFind(QStringLiteral("volume"));
       it != inputs.constEnd()) {
-    const auto& portData = it.value();
-    if (portData.isValid() && pipeline::isVolumeType(portData.type())) {
-      if (auto vol = portData.value<pipeline::VolumeDataPtr>();
-          vol && vol->isValid()) {
-        image = vol->imageData();
-        vol->initColorMap();
-        sourceColorMap = vol->colorMap();
-      }
+    if (auto vol = it.value().value<pipeline::VolumeDataPtr>();
+        vol && vol->isValid()) {
+      image = vol->imageData();
+      vol->initColorMap();
+      sourceColorMap = vol->colorMap();
     }
   }
   m_internal.reset(new Internal(image, sourceColorMap, this));
