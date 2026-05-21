@@ -508,7 +508,8 @@ void VolumeSink::onMetadataChanged()
   m_volume->SetPosition(pos.data());
   m_volume->SetOrientation(orient.data());
   applyActiveScalars();
-  populateScalarsCombo();
+  QMetaObject::invokeMethod(this, &VolumeSink::populateScalarsCombo,
+                            Qt::QueuedConnection);
   emit renderNeeded();
 }
 
