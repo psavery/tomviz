@@ -365,13 +365,11 @@ public:
       int scanId = static_cast<int>(dict["scan_id"].toLong());
       double theta = dict["theta"].toDouble();
       QString status = dict["status"].toString();
-      bool unusable = (status == "fail" || status == "missing");
-
       ScanEntry entry;
       entry.scanId = scanId;
       entry.theta = theta;
       entry.status = status;
-      entry.use = !unusable;
+      entry.use = (status != "fail" && status != "missing");
       scanEntries.append(entry);
     }
 
@@ -386,14 +384,16 @@ public:
 
     for (int i = 0; i < scanEntries.size(); ++i) {
       const auto& entry = scanEntries[i];
-      bool unusable = (entry.status == "fail" || entry.status == "missing");
+      bool failed = (entry.status == "fail");
 
       auto* idItem = new QTableWidgetItem(QString::number(entry.scanId));
       idItem->setTextAlignment(Qt::AlignCenter);
       table->setItem(i, 0, idItem);
 
       auto* thetaItem = new QTableWidgetItem(
-        unusable ? QString("-") : QString::number(entry.theta, 'f', 3));
+        (failed || entry.status == "missing")
+          ? QString("-")
+          : QString::number(entry.theta, 'f', 3));
       thetaItem->setTextAlignment(Qt::AlignCenter);
       table->setItem(i, 1, thetaItem);
 
@@ -403,7 +403,7 @@ public:
 
       auto* cb = new QCheckBox(parent);
       cb->setChecked(entry.use);
-      cb->setEnabled(!unusable);
+      cb->setEnabled(!failed);
       connect(cb, &QCheckBox::toggled, this, [this, i](bool b) {
         if (i < scanEntries.size()) {
           scanEntries[i].use = b;
