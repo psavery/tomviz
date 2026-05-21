@@ -347,7 +347,7 @@ void PipelineModuleMenu::triggered(QAction* maction)
     }
     pip->createLink(connectTo, input);
   }
-  pip->execute();
+  pip->executeWhenIdle();
 }
 
 } // namespace tomviz

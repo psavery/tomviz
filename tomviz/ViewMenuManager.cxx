@@ -439,7 +439,7 @@ void ViewMenuManager::setImageViewerMode(bool enable)
       connectTo = group->outputPorts()[0];
     }
     pip->createLink(connectTo, input);
-    pip->execute();
+    pip->executeWhenIdle();
   }
   oldSettings->sliceSink = sliceSink;
 

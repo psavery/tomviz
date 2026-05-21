@@ -93,6 +93,10 @@ public:
   ExecutionFuture* execute();
   ExecutionFuture* execute(Node* target);
 
+  /// Schedule execution after the current run finishes, without cancelling
+  /// it. Used when adding sinks to avoid re-running upstream operators.
+  void executeWhenIdle();
+
   /// Run the smallest subset of the pipeline needed to make every input
   /// port of @a target carry current data — without re-running target
   /// itself. Used by the properties-panel/edit-dialog "Run Pipeline to
@@ -130,6 +134,7 @@ private:
   int m_nextNodeId = 1;
   PipelineExecutor* m_executor = nullptr;
   bool m_paused = false;
+  bool m_idleExecuteQueued = false;
 };
 
 } // namespace pipeline

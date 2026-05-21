@@ -668,6 +668,23 @@ ExecutionFuture* Pipeline::execute(Node* target)
   return runPlan(executionOrder(target));
 }
 
+void Pipeline::executeWhenIdle()
+{
+  if (!isExecuting()) {
+    execute();
+    return;
+  }
+  if (!m_idleExecuteQueued) {
+    m_idleExecuteQueued = true;
+    connect(this, &Pipeline::executionFinished, this,
+            [this]() {
+              m_idleExecuteQueued = false;
+              execute();
+            },
+            static_cast<Qt::ConnectionType>(Qt::SingleShotConnection));
+  }
+}
+
 ExecutionFuture* Pipeline::executeUpstreamOf(Node* target)
 {
   return runPlan(upstreamExecutionOrder(target));
