@@ -538,7 +538,7 @@ public:
 
     QStringList allSids;
     for (const auto& entry : scanEntries) {
-      if (entry.status != "fail" && entry.status != "missing") {
+      if (entry.status != "fail") {
         allSids.append(QString::number(entry.scanId));
       }
     }
