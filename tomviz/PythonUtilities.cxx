@@ -8,11 +8,10 @@
 #include "vtkPython.h" // must be first
 #pragma pop_macro("slots")
 
-#include "core/DataSourceBase.h"
+#include "legacy/core/DataSourceBase.h"
 
-#include "DataSource.h"
+#include "legacy/DataSource.h"
 #include "Logger.h"
-#include "OperatorFactory.h"
 
 #include <vtkPythonInterpreter.h>
 #include <vtkPythonUtil.h>
@@ -176,6 +175,9 @@ Python::List Python::Object::toList()
 
 QString Python::Object::toString() const
 {
+  if (!isValid()) {
+    return QString();
+  }
 // Function documentation says the caller of either of the functions below
 // is not responsible for deallocating the buffer.
 #if PY_MAJOR_VERSION >= 3
@@ -189,11 +191,17 @@ QString Python::Object::toString() const
 
 long Python::Object::toLong() const
 {
+  if (!isValid()) {
+    return 0;
+  }
   return PyLong_AsLong(m_smartPyObject->GetPointer());
 }
 
 double Python::Object::toDouble() const
 {
+  if (!isValid()) {
+    return 0.0;
+  }
   return PyFloat_AsDouble(m_smartPyObject->GetPointer());
 }
 
@@ -610,6 +618,7 @@ Python::Object Python::createDataset(vtkObjectBase* data,
   auto createDatasetFunc = module.findFunction("create_dataset");
   if (!createDatasetFunc.isValid()) {
     Logger::critical("Unable to locate create_dataset.");
+    return Python::Object();
   }
 
   auto dataObj = Python::VTK::GetObjectFromPointer(data);
@@ -624,18 +633,21 @@ Python::Object Python::createDataset(vtkObjectBase* data,
 
 std::vector<OperatorDescription> findCustomOperators(const QString& path)
 {
+  std::vector<OperatorDescription> operators;
+
   Python python;
   auto internalModule = python.import("tomviz._internal");
   if (!internalModule.isValid()) {
     Logger::critical("Failed to import tomviz._internal module.");
+    return operators;
   }
 
   auto findCustomOperators = internalModule.findFunction("find_operators");
   if (!findCustomOperators.isValid()) {
     Logger::critical("Unable to locate find_operators.");
+    return operators;
   }
 
-  std::vector<OperatorDescription> operators;
   Python::Object pyPath(path);
   Python::Tuple args(1);
   args.set(0, pyPath);
@@ -643,6 +655,7 @@ std::vector<OperatorDescription> findCustomOperators(const QString& path)
   auto pyOperators = findCustomOperators.call(args);
   if (!pyOperators.isValid()) {
     Logger::critical("Failed to execute findCustomOperators.");
+    return operators;
   }
 
   Python::List ops(pyOperators);
@@ -653,6 +666,15 @@ std::vector<OperatorDescription> findCustomOperators(const QString& path)
     op.label = opDict["label"].toString();
     op.pythonPath = opDict["pythonPath"].toString();
     op.valid = opDict["valid"].toBool();
+
+    QString type = opDict["type"].toString();
+    if (type == "source") {
+      op.type = OperatorDescription::Type::Source;
+    } else if (type == "transform") {
+      op.type = OperatorDescription::Type::Transform;
+    } else {
+      op.type = OperatorDescription::Type::LegacyTransform;
+    }
 
     // Do we have a JSON file?
     Python::Object jsonPath = opDict["jsonPath"];

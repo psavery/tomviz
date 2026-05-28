@@ -5,6 +5,8 @@ def filter_sids(all_sids: list[str], filter_string: str) -> list[str]:
     # The sids are taken as strings instead of ints to make it easier
     # for the C++ side to call this and process the output.
     all_sid_ints = [int(s) for s in all_sids]
+    if not all_sid_ints:
+        return []
     max_sid = max(all_sid_ints)
 
     sid_strings = filter_string.split(',')
