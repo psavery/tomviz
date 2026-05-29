@@ -318,6 +318,7 @@ public:
   void rescaleNodes(double newMin, double newMax)
   {
     tomviz::rescaleNodes(m_uncroppedLut, newMin, newMax);
+    tomviz::rescaleNodes(m_uncroppedOpacity, newMin, newMax);
     pushChanges();
     updateGui();
   }
