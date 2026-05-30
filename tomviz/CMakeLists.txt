@@ -1006,7 +1006,6 @@ install(TARGETS tomvizlib
   ARCHIVE DESTINATION "${INSTALL_ARCHIVE_DIR}")
 
 if(tomviz_data_DIR)
-  add_definitions(-DTOMVIZ_DATA)
   install(DIRECTORY "${tomviz_data_DIR}"
     DESTINATION "${tomviz_data_install_dir}"
     USE_SOURCE_PERMISSIONS
