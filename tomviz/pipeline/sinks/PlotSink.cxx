@@ -168,6 +168,14 @@ void PlotSink::addAllPlots()
     m_chart->AddPlot(line);
     m_plots.append(line);
   }
+
+  // Rescale the axes to fit the newly added plot(s). vtkChartXY caches its
+  // axis ranges, so adding a plot after the chart has rendered does not
+  // refit the view on its own. Reset the axes to AUTO behavior (in case a
+  // previous interaction left them fixed) and recompute the bounds.
+  m_chart->GetAxis(vtkAxis::BOTTOM)->SetBehavior(vtkAxis::AUTO);
+  m_chart->GetAxis(vtkAxis::LEFT)->SetBehavior(vtkAxis::AUTO);
+  m_chart->RecalculateBounds();
 }
 
 void PlotSink::removeAllPlots()
