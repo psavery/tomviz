@@ -9,6 +9,7 @@
 #include "Node.h"
 #include "OutputPort.h"
 #include "Pipeline.h"
+#include "sinks/LegacyModuleSink.h"
 
 #include "Utilities.h"
 
@@ -150,7 +151,20 @@ void NodeEditDialog::reject()
     // Recreate the original links that were broken to insert the node.
     for (const auto& ep : m_deferred.linksToRestore) {
       if (ep.from && ep.to) {
-        m_pipeline->createLink(ep.from, ep.to);
+        auto* link = m_pipeline->createLink(ep.from, ep.to);
+        // Breaking the link to insert the node hid any downstream module: a
+        // direct module sink via onInputDisconnected, or modules behind a
+        // SinkGroupNode via the group's resetVisualization() fan-out. Re-link
+        // alone does not re-show them and we deliberately do not re-execute, so
+        // ask the downstream node to restore its presentation explicitly. The
+        // VTK objects still hold the last data, so this is presentation-only --
+        // no pipeline run and no dependence on upstream PortData (which a
+        // transient source releases on disconnect). Done only on this cancel
+        // path so the insertion preview keeps its current behavior (the moved
+        // module stays hidden until the not-yet-run transform produces data).
+        if (link && ep.to->node()) {
+          ep.to->node()->restorePresentation();
+        }
       }
     }
 

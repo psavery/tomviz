@@ -106,6 +106,15 @@ public:
   /// direct input disconnect.
   void resetVisualization();
 
+  /// Re-show the props this sink owns according to its current visibility
+  /// flag, then request a repaint. The counterpart of resetVisualization():
+  /// the underlying VTK objects still hold the last-consumed data after a
+  /// clearVisualization(), so reconnecting an input only needs to re-apply
+  /// visibility -- no upstream data and no pipeline run required. Used to
+  /// restore a module when a broken link is recreated (e.g. cancelling a
+  /// deferred operator insertion).
+  void restoreVisualization();
+
   /// Return sibling LegacyModuleSinks connected to the same upstream
   /// OutputPort as this sink's given input port (excluding this node).
   QList<LegacyModuleSink*> siblingSinks(
@@ -158,6 +167,7 @@ protected:
   void postConsume(bool success) override;
 
   void onInputDisconnected(InputPort* port) override;
+  void restorePresentation() override { restoreVisualization(); }
 
 private:
   /// Reset camera on first consume if no other sink has rendered to this view.

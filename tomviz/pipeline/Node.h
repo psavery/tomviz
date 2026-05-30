@@ -152,6 +152,13 @@ public:
   /// widget. Otherwise return nullptr and a default QProgressBar will be used.
   virtual QWidget* getCustomProgressWidget(QWidget*) const { return nullptr; }
 
+  /// Re-show any visualization this node owns (or, for group nodes, that its
+  /// children own) after an input link is recreated, without re-running the
+  /// pipeline. The counterpart of the implicit hide that happens when a link
+  /// is broken. Called when a deferred insertion is cancelled and the original
+  /// links are restored. Default no-op.
+  virtual void restorePresentation() {}
+
   /// Whether the node supports canceling mid-execution via cancelExecution().
   bool supportsCancelingMidExecution() const;
 

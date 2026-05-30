@@ -47,6 +47,18 @@ void SinkGroupNode::addPassthrough(const QString& name, PortType type)
           });
 }
 
+void SinkGroupNode::restorePresentation()
+{
+  // Symmetric with the resetVisualization() fan-out performed when this
+  // group's input is disconnected (see addPassthrough). Child sinks' own
+  // input links never changed, so they need an explicit re-show.
+  for (auto* sink : sinks()) {
+    if (auto* legacy = qobject_cast<LegacyModuleSink*>(sink)) {
+      legacy->restoreVisualization();
+    }
+  }
+}
+
 bool SinkGroupNode::execute()
 {
   for (auto* port : inputPorts()) {
