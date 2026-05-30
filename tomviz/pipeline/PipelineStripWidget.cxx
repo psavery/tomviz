@@ -1052,10 +1052,16 @@ Link* PipelineStripWidget::linkHitTest(const QPoint& pos) const
 {
   QPainterPathStroker stroker;
   stroker.setWidth(8.0);
-  for (auto& lg : m_linkGeometries) {
-    QPainterPath hitPath = stroker.createStroke(lg.path);
+  // Iterate in reverse so the topmost-painted link wins when hit areas
+  // overlap. paintConnections() draws m_linkGeometries front-to-back, so the
+  // last entry is on top. Links between non-adjacent nodes share a routing
+  // gutter and become collinear there, so a forward search would return a
+  // link drawn underneath the one the user actually clicked.
+  for (auto it = m_linkGeometries.rbegin(); it != m_linkGeometries.rend();
+       ++it) {
+    QPainterPath hitPath = stroker.createStroke(it->path);
     if (hitPath.contains(pos)) {
-      return lg.link;
+      return it->link;
     }
   }
   return nullptr;

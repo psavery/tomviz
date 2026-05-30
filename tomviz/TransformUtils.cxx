@@ -18,6 +18,7 @@
 #include "pipeline/TransformNode.h"
 
 #include <QApplication>
+#include <QSet>
 #include <QtDebug>
 
 namespace tomviz {
@@ -41,6 +42,49 @@ static pipeline::OutputPort* findCompatibleOutputPort(
     }
   }
   return nullptr;
+}
+
+/// All nodes reachable downstream from @a start (inclusive), following output
+/// links.  This is exactly the set Node::markStale() cascades over when @a
+/// start is marked stale, so it is the set whose state we must snapshot to be
+/// able to undo an eager insertion.
+static QSet<pipeline::Node*> downstreamClosure(pipeline::Node* start)
+{
+  QSet<pipeline::Node*> result;
+  if (!start) {
+    return result;
+  }
+  QList<pipeline::Node*> stack;
+  stack.append(start);
+  while (!stack.isEmpty()) {
+    auto* node = stack.takeLast();
+    if (result.contains(node)) {
+      continue;
+    }
+    result.insert(node);
+    for (auto* out : node->outputPorts()) {
+      for (auto* link : out->links()) {
+        if (link->to() && link->to()->node()) {
+          stack.append(link->to()->node());
+        }
+      }
+    }
+  }
+  return result;
+}
+
+/// Snapshot the node and output-port states of @a nodes into @a deferred so
+/// they can be restored verbatim if an eager insertion is canceled.  Must be
+/// called before the insertion mutates the pipeline.
+static void captureStates(const QSet<pipeline::Node*>& nodes,
+                          pipeline::DeferredLinkInfo& deferred)
+{
+  for (auto* node : nodes) {
+    deferred.nodeStates.append({ node, node->state() });
+    for (auto* out : node->outputPorts()) {
+      deferred.portStaleStates.append({ out, out->isStale() });
+    }
+  }
 }
 
 /// Append a transform at the given targetPort, moving sink/group links to a
@@ -80,17 +124,32 @@ static void appendTransformAtPort(
   }
 }
 
-/// Deferred variant: adds node and input link only, returns deferred info
-/// for the output links to be completed later.
+/// Deferred variant of appendTransformAtPort: performs the full append
+/// eagerly (so the preview shows the final topology) and returns the info
+/// needed to undo it if the user cancels.
 static pipeline::DeferredLinkInfo appendTransformAtPortDeferred(
   pipeline::Pipeline* pip,
   pipeline::TransformNode* transform,
   pipeline::OutputPort* targetPort)
 {
+  // Snapshot the downstream subtree before mutating anything so a cancel can
+  // restore it exactly (the sink moves below mark it stale).
+  pipeline::DeferredLinkInfo deferred;
+  captureStates(downstreamClosure(targetPort->node()), deferred);
+
   pip->addNode(transform);
   pip->createLink(targetPort, transform->inputPorts()[0]);
 
-  pipeline::DeferredLinkInfo deferred;
+  // Move terminal (sink) links from targetPort onto the new transform's
+  // compatible outputs now, instead of deferring it to commit, so the preview
+  // shows the sinks already routed through the transform.  Record each
+  // original link so it can be recreated on cancel.
+  struct Move
+  {
+    pipeline::Link* link;
+    pipeline::OutputPort* newOut;
+  };
+  QList<Move> moves;
   for (auto* link : targetPort->links()) {
     if (link->to()->node() == transform) {
       continue; // skip the link we just created
@@ -102,8 +161,13 @@ static pipeline::DeferredLinkInfo appendTransformAtPortDeferred(
     if (!newOut) {
       continue;
     }
-    deferred.linksToBreak.append({ targetPort, link->to() });
-    deferred.linksToCreate.append({ newOut, link->to() });
+    moves.append({ link, newOut });
+  }
+  for (const auto& m : moves) {
+    auto* sinkInput = m.link->to();
+    deferred.linksToRestore.append({ targetPort, sinkInput });
+    pip->removeLink(m.link);
+    pip->createLink(m.newOut, sinkInput);
   }
   return deferred;
 }
@@ -140,7 +204,9 @@ static void insertTransformAtLink(
   pip->createLink(transform->outputPorts()[0], toPort);
 }
 
-/// Deferred variant for insert-at-link.
+/// Deferred variant of insertTransformAtLink: performs the full insertion
+/// eagerly (so the preview shows the transform in its final, inserted
+/// position) and returns the info needed to undo it if the user cancels.
 static pipeline::DeferredLinkInfo insertTransformAtLinkDeferred(
   pipeline::Pipeline* pip,
   pipeline::TransformNode* transform,
@@ -149,12 +215,19 @@ static pipeline::DeferredLinkInfo insertTransformAtLinkDeferred(
   auto* fromPort = link->from();
   auto* toPort = link->to();
 
+  // Snapshot the downstream subtree before mutating anything so a cancel can
+  // restore it exactly (createLink() below marks this subtree stale).
+  pipeline::DeferredLinkInfo deferred;
+  captureStates(downstreamClosure(toPort->node()), deferred);
+  deferred.linksToRestore.append({ fromPort, toPort });
+
+  // Perform the full insertion now (break from->to, splice the transform in)
+  // rather than only connecting the input and deferring the rest to commit.
+  pip->removeLink(link);
   pip->addNode(transform);
   pip->createLink(fromPort, transform->inputPorts()[0]);
+  pip->createLink(transform->outputPorts()[0], toPort);
 
-  pipeline::DeferredLinkInfo deferred;
-  deferred.linksToBreak.append({ fromPort, toPort });
-  deferred.linksToCreate.append({ transform->outputPorts()[0], toPort });
   return deferred;
 }
 

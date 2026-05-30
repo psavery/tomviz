@@ -4,8 +4,10 @@
 #include "NodeEditDialog.h"
 
 #include "EditNodeWidget.h"
+#include "InputPort.h"
 #include "Link.h"
 #include "Node.h"
+#include "OutputPort.h"
 #include "Pipeline.h"
 
 #include "Utilities.h"
@@ -77,7 +79,7 @@ void NodeEditDialog::init()
   connect(m_buttonBox, &QDialogButtonBox::accepted, this,
           &NodeEditDialog::onOkay);
   connect(m_buttonBox, &QDialogButtonBox::rejected, this,
-          &NodeEditDialog::onCancel);
+          &NodeEditDialog::reject);
   connect(m_buttonBox->button(QDialogButtonBox::Apply), &QPushButton::clicked,
           this, &NodeEditDialog::onApply);
 
@@ -136,18 +138,40 @@ void NodeEditDialog::onOkay()
   accept();
 }
 
-void NodeEditDialog::onCancel()
+void NodeEditDialog::reject()
 {
   if (m_isNewInsertion && !m_insertionCompleted) {
-    // Remove the node and its links. For transforms the input link
-    // exists; for sources there are no inputs. Output links were
-    // never created, so the pipeline remains valid.
+    // The insertion was applied eagerly when the dialog opened.  Undo it so
+    // that cancel is a true no-op.  Removing the new node also drops its own
+    // input/output links (for sources there are none).
     m_pipeline->removeNode(m_node);
     m_node = nullptr;
+
+    // Recreate the original links that were broken to insert the node.
+    for (const auto& ep : m_deferred.linksToRestore) {
+      if (ep.from && ep.to) {
+        m_pipeline->createLink(ep.from, ep.to);
+      }
+    }
+
+    // createLink() above marks the affected downstream subtree stale.
+    // Restore the states captured before the insertion so nothing is left
+    // spuriously stale (which would otherwise force a needless re-run).
+    for (const auto& ps : m_deferred.portStaleStates) {
+      if (ps.port) {
+        ps.port->setStale(ps.stale);
+      }
+    }
+    for (const auto& ns : m_deferred.nodeStates) {
+      if (ns.node) {
+        ns.node->setStateNoCascade(ns.state);
+      }
+    }
+
     emit insertionCanceled();
   }
 
-  reject();
+  QDialog::reject();
 }
 
 void NodeEditDialog::showEvent(QShowEvent* event)
@@ -208,22 +232,10 @@ void NodeEditDialog::restoreGeometry()
 
 void NodeEditDialog::completeInsertion()
 {
-  // Break old links
-  for (const auto& ep : m_deferred.linksToBreak) {
-    // Find the actual Link* by matching from/to ports
-    for (auto* link : m_pipeline->links()) {
-      if (link->from() == ep.from && link->to() == ep.to) {
-        m_pipeline->removeLink(link);
-        break;
-      }
-    }
-  }
-
-  // Create new output links
-  for (const auto& ep : m_deferred.linksToCreate) {
-    m_pipeline->createLink(ep.from, ep.to);
-  }
-
+  // The insertion (node + link rewiring) was performed eagerly when the
+  // dialog opened, so the pipeline already has its final topology.  There is
+  // nothing left to rewire here -- just mark the insertion committed so the
+  // cancel path will not try to roll it back.
   m_insertionCompleted = true;
   m_isNewInsertion = false;
   emit insertionCompleted(m_node);
