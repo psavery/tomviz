@@ -95,19 +95,28 @@ void GatedEditorWidget::onExecutionFinished()
     return;
   }
 
+  // Build the inner editor first. The factory can legitimately return null if
+  // the upstream data isn't actually usable yet (e.g. this finished signal was
+  // delivered re-entrantly mid-execution); in that case stay in the not-ready
+  // state rather than tearing down the widget and showing a blank editor.
+  if (!buildInner()) {
+    m_notReadyWidget->setRunEnabled(true);
+    return;
+  }
+
   m_layout->removeWidget(m_notReadyWidget);
   m_notReadyWidget->deleteLater();
   m_notReadyWidget = nullptr;
-  buildInner();
 }
 
-void GatedEditorWidget::buildInner()
+bool GatedEditorWidget::buildInner()
 {
   m_inner = m_factory(this);
   if (m_inner) {
     m_layout->addWidget(m_inner, 1);
   }
   emit canApplyChanged();
+  return m_inner != nullptr;
 }
 
 } // namespace pipeline

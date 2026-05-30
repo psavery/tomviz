@@ -160,7 +160,14 @@ void ProgressDialogManager::onNodeExecutionStarted(pipeline::Node* node)
   dialog->adjustSize();
   dialog->resize(500, dialog->height());
   dialog->show();
-  QCoreApplication::processEvents();
+  dialog->raise();
+  // NOTE: deliberately no QCoreApplication::processEvents() here. This slot
+  // runs while handling a nodeExecutionStarted event, and pumping the event
+  // loop would re-entrantly deliver other already-queued executor signals
+  // (e.g. executionComplete -> Pipeline::executionFinished), firing finish
+  // handlers mid-execution while upstream ports are still empty -- a crash.
+  // The pipeline runs on a worker thread (ThreadedExecutor), so the main loop
+  // is not blocked and the dialog paints on the next event-loop iteration.
 }
 
 void ProgressDialogManager::onNodeExecutionFinished(pipeline::Node* node,

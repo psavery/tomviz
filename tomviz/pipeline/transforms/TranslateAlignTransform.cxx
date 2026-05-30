@@ -95,6 +95,9 @@ EditNodeWidget* TranslateAlignTransform::createPropertiesWidget(
     this, pipeline,
     [this](QWidget* p) -> EditNodeWidget* {
       auto vol = inputPorts()[0]->data().value<VolumeDataPtr>();
+      if (!vol || !vol->imageData()) {
+        return nullptr;
+      }
       vtkSmartPointer<vtkImageData> imageData(vol->imageData());
       return new AlignWidget(this, imageData, p);
     },

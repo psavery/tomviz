@@ -48,7 +48,7 @@ private:
   void onRunRequested();
   void onExecutionFinished();
   bool inputsReady() const;
-  void buildInner();
+  bool buildInner();
 
   Node* m_node;
   Pipeline* m_pipeline;

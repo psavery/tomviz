@@ -467,6 +467,14 @@ EditNodeWidget* SetTiltAnglesTransform::createPropertiesWidget(
     this, pipeline,
     [this](QWidget* p) -> EditNodeWidget* {
       auto vol = inputPorts()[0]->data().value<VolumeDataPtr>();
+      // Guard against an empty/mismatched port value. value<T>() is
+      // non-throwing and yields a null pointer when the upstream data is not
+      // (yet) a usable volume; constructing the widget would then dereference
+      // it. Returning nullptr lets GatedEditorWidget stay in its not-ready
+      // state instead of crashing.
+      if (!vol || !vol->imageData()) {
+        return nullptr;
+      }
       return new SetTiltAnglesWidget(this, vol, p);
     },
     parent);
