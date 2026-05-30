@@ -83,8 +83,12 @@ void ProgressDialogManager::onNodeExecutionStarted(pipeline::Node* node)
 
   auto* dialog = new QDialog(m_mainWindow);
   dialog->setAttribute(Qt::WA_DeleteOnClose);
-  // Title bar with no close/minimize/maximize buttons.
-  dialog->setWindowFlags(Qt::Dialog | Qt::CustomizeWindowHint |
+  // Title bar with no close/minimize/maximize buttons. Use Qt::Tool rather
+  // than Qt::Dialog so the window floats above the main window (on macOS a
+  // parented Qt::Dialog is not guaranteed to stack above its parent and can
+  // appear behind it) while still leaving the main window interactive, so the
+  // user can keep working in the render view while an operator runs.
+  dialog->setWindowFlags(Qt::Tool | Qt::CustomizeWindowHint |
                          Qt::WindowTitleHint);
   dialog->installEventFilter(this);
   m_progressDialog = dialog;
