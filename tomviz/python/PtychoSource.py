@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.ndimage.interpolation import rotate
+from scipy.ndimage import rotate
 from scipy.optimize import leastsq
 from tqdm import tqdm
 

@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 import h5py
 import numpy as np
 from numpy.typing import NDArray
-from scipy.ndimage.interpolation import rotate
+from scipy.ndimage import rotate
 
 import tomviz.nodes
 
