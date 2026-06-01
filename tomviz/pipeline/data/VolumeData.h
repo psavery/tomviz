@@ -37,8 +37,11 @@ public:
   explicit VolumeData(vtkSmartPointer<vtkImageData> imageData);
   ~VolumeData();
 
-  VolumeData(const VolumeData&) = default;
-  VolumeData& operator=(const VolumeData&) = default;
+  // Non-copyable: the volume data can be large and the vtkNew member is not
+  // copyable anyway. Use the explicit copyColorMapFrom() helper or share via
+  // VolumeDataPtr instead of making accidental value copies. Movable only.
+  VolumeData(const VolumeData&) = delete;
+  VolumeData& operator=(const VolumeData&) = delete;
   VolumeData(VolumeData&&) = default;
   VolumeData& operator=(VolumeData&&) = default;
 

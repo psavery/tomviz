@@ -128,10 +128,8 @@ QList<ImageInfo> LoadStackReaction::loadTiffStack(
   int n = -1;
   int m = -1;
   int dims[3];
-  int i = -1;
   bool consistent;
   foreach (QString file, fileNames) {
-    i++;
     consistent = true;
     reader->SetFileName(file.toLatin1().data());
     reader->Update();

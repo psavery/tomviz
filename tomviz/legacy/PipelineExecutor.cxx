@@ -500,7 +500,7 @@ LocalSocketProgressReader::LocalSocketProgressReader(
       connect(connection, static_cast<void (QLocalSocket::*)(
                             QLocalSocket::LocalSocketError socketError)>(
                             &QLocalSocket::errorOccurred),
-              [this](QLocalSocket::LocalSocketError socketError) {
+              [](QLocalSocket::LocalSocketError socketError) {
                 if (socketError != QLocalSocket::PeerClosedError) {
                   qCritical()
                     << QString("Socket connection error: %1").arg(socketError);

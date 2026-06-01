@@ -324,7 +324,7 @@ QStringList DataSource::fileNames() const
   QStringList files;
   if (reader.contains("fileNames")) {
     QJsonArray fileArray = reader["fileNames"].toArray();
-    foreach (QJsonValue file, fileArray) {
+    for (const QJsonValue& file : fileArray) {
       files.append(file.toString());
     }
   }

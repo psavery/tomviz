@@ -223,7 +223,7 @@ Pipeline::Future* Pipeline::executeRange(DataSource* ds, Operator* start,
     emit finished();
     auto future = new Pipeline::Future();
     // Delay emitting signal until next event loop
-    QTimer::singleShot(0, [future, ds] { emit future->finished(); });
+    QTimer::singleShot(0, [future] { emit future->finished(); });
     return future;
   }
   int startIndex = 0;

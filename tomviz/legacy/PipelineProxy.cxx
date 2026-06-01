@@ -359,7 +359,7 @@ void PipelineProxy::load(const std::string& state,
   emit(&ModuleManager::instance())->enablePythonConsole(false);
 
   QObject::connect(
-    &ModuleManager::instance(), &ModuleManager::stateDoneLoading, [this]() {
+    &ModuleManager::instance(), &ModuleManager::stateDoneLoading, []() {
       tomviz::Python python;
 
       auto stateModule = python.import("tomviz.state");

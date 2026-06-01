@@ -452,6 +452,13 @@ list(APPEND SOURCES
 )
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/loguru)
 
+# loguru is vendored third-party code; silence warnings we will not patch
+# upstream for (empty variadic macro args and a benign snprintf truncation).
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  set_source_files_properties(loguru/loguru.cpp PROPERTIES
+    COMPILE_OPTIONS "-Wno-c++20-extensions;-Wno-format-truncation")
+endif()
+
 list(APPEND SOURCES
   legacy/modules/Module.cxx
   legacy/modules/Module.h

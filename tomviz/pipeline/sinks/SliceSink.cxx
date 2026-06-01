@@ -823,7 +823,7 @@ QWidget* SliceSink::createSinkPropertiesWidget(QWidget* parent)
 
   // Set Normal to View button
   connect(normalToViewButton, &QPushButton::clicked, this,
-          [this, dirCombo, pointInputs, normalInputs]() {
+          [this, dirCombo, normalInputs]() {
             // Switch to custom direction if needed
             if (direction() != Custom) {
               setDirection(Custom);
