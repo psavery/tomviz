@@ -767,7 +767,7 @@ void snapAnimationToTimeSteps(const std::vector<double>& timeSteps)
   auto* timeKeeper = ActiveObjects::instance().activeTimeKeeper();
   auto* proxy = timeKeeper->getProxy();
   vtkSMPropertyHelper(proxy, "TimestepValues")
-    .Set(&timeSteps[0], timeSteps.size());
+    .Set(&timeSteps[0], static_cast<unsigned int>(timeSteps.size()));
   vtkSMPropertyHelper(proxy, "TimeRange").Set(&timeRange[0], 2);
 }
 

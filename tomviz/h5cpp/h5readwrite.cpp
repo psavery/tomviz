@@ -304,7 +304,8 @@ public:
                           stridesVector.data(), countsVector.data(), nullptr);
 
       // Finally, create the mem space
-      memSpace = H5Screate_simple(ndims, countsVector.data(), nullptr);
+      memSpace =
+        H5Screate_simple(static_cast<int>(ndims), countsVector.data(), nullptr);
       memSpaceCloser.reset(memSpace);
     }
 
@@ -696,7 +697,7 @@ int H5ReadWrite::dimensionCount(const string& path)
     return -1;
   }
 
-  return dims.size();
+  return static_cast<int>(dims.size());
 }
 
 template <typename T>

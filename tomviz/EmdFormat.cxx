@@ -267,7 +267,7 @@ bool EmdFormat::writeNode(h5::H5ReadWrite& writer, const std::string& path,
 
   // Create the 3 dim sets too...
   std::vector<int> side(1);
-  side[0] = imageDimDataX.size();
+  side[0] = static_cast<int>(imageDimDataX.size());
   writer.writeData(path, "dim1", side, imageDimDataX);
   if (hasTiltAngles) {
     writer.setAttribute(path + "/dim1", "name", "angles");
@@ -277,12 +277,12 @@ bool EmdFormat::writeNode(h5::H5ReadWrite& writer, const std::string& path,
     writer.setAttribute(path + "/dim1", "units", "[n_m]");
   }
 
-  side[0] = imageDimDataY.size();
+  side[0] = static_cast<int>(imageDimDataY.size());
   writer.writeData(path, "dim2", side, imageDimDataY);
   writer.setAttribute(path + "/dim2", "name", "y");
   writer.setAttribute(path + "/dim2", "units", "[n_m]");
 
-  side[0] = imageDimDataZ.size();
+  side[0] = static_cast<int>(imageDimDataZ.size());
   writer.writeData(path, "dim3", side, imageDimDataZ);
   if (hasTiltAngles) {
     writer.setAttribute(path + "/dim3", "name", "x");

@@ -84,8 +84,8 @@ void applyColorMapJson(vtkSMProxy* cmap, const QJsonObject& json)
     for (int i = 0; i < n; ++i) {
       pwf->GetNodeValue(i, buffer.data() + 4 * i);
     }
-    vtkSMPropertyHelper(omapProxy, "Points").Set(buffer.data(),
-                                                  buffer.size());
+    vtkSMPropertyHelper(omapProxy, "Points")
+      .Set(buffer.data(), static_cast<unsigned int>(buffer.size()));
     omapProxy->UpdateVTKObjects();
   }
 }

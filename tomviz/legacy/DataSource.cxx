@@ -203,8 +203,9 @@ void appendImageData(vtkImageData* data, vtkImageData* slice, T* originalPtr)
   data->GetExtent(extents);
 
   // Figure out the number of bytes in the original data, and allocate a buffer.
-  int bufferSize = dataArray->GetNumberOfTuples() *
-                   dataArray->GetNumberOfComponents() * sizeof(T);
+  int bufferSize = static_cast<int>(dataArray->GetNumberOfTuples() *
+                                    dataArray->GetNumberOfComponents() *
+                                    sizeof(T));
   unsigned char* buffer = new unsigned char[bufferSize];
   // Copy the original image data, as the allocate scalars will erase it.
   std::memcpy(buffer, originalPtr, bufferSize);
@@ -223,8 +224,9 @@ void appendImageData(vtkImageData* data, vtkImageData* slice, T* originalPtr)
   void* imagePtr = data->GetScalarPointer(0, 0, extents[5]);
   auto sliceArray = slice->GetPointData()->GetScalars();
   void* slicePtr = sliceArray->GetVoidPointer(0);
-  int sliceSize = sliceArray->GetNumberOfTuples() *
-                  sliceArray->GetNumberOfComponents() * sizeof(T);
+  int sliceSize = static_cast<int>(sliceArray->GetNumberOfTuples() *
+                                   sliceArray->GetNumberOfComponents() *
+                                   sizeof(T));
   std::memcpy(imagePtr, slicePtr, sliceSize);
 
   // Let everyone know the data has changed, then re-execute the pipeline.

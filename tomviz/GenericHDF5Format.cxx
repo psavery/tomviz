@@ -261,7 +261,7 @@ bool GenericHDF5Format::addScalarArray(h5::H5ReadWrite& reader,
   // vtk requires the counts to be an int array
   int vtkCounts[3];
   for (int i = 0; i < 3; ++i)
-    vtkCounts[i] = counts[i];
+    vtkCounts[i] = static_cast<int>(counts[i]);
 
   // Make sure the dimensions match those of the image, or else
   // we will probably experience a crash later...
@@ -463,7 +463,7 @@ bool GenericHDF5Format::readVolume(h5::H5ReadWrite& reader,
   // vtk requires the counts to be an int array
   int vtkCounts[3];
   for (int i = 0; i < 3; ++i)
-    vtkCounts[i] = counts[i];
+    vtkCounts[i] = static_cast<int>(counts[i]);
 
   image->SetDimensions(&vtkCounts[0]);
   image->AllocateScalars(vtkDataType, 1);
