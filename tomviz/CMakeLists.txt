@@ -347,6 +347,8 @@ set(SOURCES
   pipeline/sinks/LegacyModuleSink.h
   pipeline/sinks/VolumeSink.cxx
   pipeline/sinks/VolumeSink.h
+  pipeline/sinks/VolumeBricking.cxx
+  pipeline/sinks/VolumeBricking.h
   pipeline/sinks/SliceSink.cxx
   pipeline/sinks/SliceSink.h
   pipeline/sinks/ContourSink.cxx

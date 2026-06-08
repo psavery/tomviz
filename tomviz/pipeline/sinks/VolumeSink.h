@@ -8,10 +8,14 @@
 
 #include <QPointer>
 #include <vtkNew.h>
+#include <vtkSmartPointer.h>
 
 class QComboBox;
 
 class vtkColorTransferFunction;
+class vtkImageData;
+class vtkMultiBlockDataSet;
+class vtkMultiBlockVolumeMapper;
 class vtkPiecewiseFunction;
 class vtkPlane;
 class vtkVolume;
@@ -102,7 +106,22 @@ private:
   void applyActiveScalars();
   void populateScalarsCombo();
 
+  // Choose between the single-texture SmartVolumeMapper and the bricked
+  // vtkMultiBlockVolumeMapper based on whether image exceeds the GPU's
+  // GL_MAX_3D_TEXTURE_SIZE, and point m_volume at the right one.
+  void updateMapperForInput(vtkImageData* image);
+  // GPU's max 3-D texture size (queried from the render window when one is
+  // available; a conservative fallback otherwise).
+  int maxTextureSize() const;
+  // Emit a warning that clipping has no effect on a bricked (over-cap) volume.
+  void warnClippingUnsupported() const;
+
   vtkNew<SmartVolumeMapper> m_volumeMapper;
+  // Used only when a volume exceeds the texture-size cap; renders the volume
+  // as resident per-brick textures (see VolumeBricking.h).
+  vtkNew<vtkMultiBlockVolumeMapper> m_multiBlockMapper;
+  vtkSmartPointer<vtkMultiBlockDataSet> m_brickedVolume;
+  bool m_usingMultiBlock = false;
   vtkNew<vtkVolume> m_volume;
   vtkNew<vtkVolumeProperty> m_volumeProperty;
   vtkNew<vtkPiecewiseFunction> m_gradientOpacity;

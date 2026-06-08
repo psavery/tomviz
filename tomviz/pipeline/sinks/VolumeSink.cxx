@@ -2,12 +2,14 @@
    It is released under the 3-Clause BSD License, see "LICENSE". */
 
 #include "VolumeSink.h"
+#include "VolumeBricking.h"
 #include "VolumeSinkWidget.h"
 
 #include "data/VolumeData.h"
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDebug>
 #include <QFormLayout>
 #include <QSignalBlocker>
 #include <QVBoxLayout>
@@ -22,8 +24,13 @@
 #include <vtkPiecewiseFunction.h>
 #include <vtkPlane.h>
 #include <vtkGPUVolumeRayCastMapper.h>
+#include <vtkMultiBlockDataSet.h>
+#include <vtkMultiBlockVolumeMapper.h>
 #include <vtkObjectFactory.h>
+#include <vtkOpenGLRenderWindow.h>
+#include <vtkPlaneCollection.h>
 #include <vtkSmartVolumeMapper.h>
+#include <vtkTextureObject.h>
 #include <vtkVolume.h>
 #include <vtkVolumeMapper.h>
 #include <vtkVolumeProperty.h>
@@ -60,6 +67,14 @@ VolumeSink::VolumeSink(QObject* parent) : LegacyModuleSink(parent)
   m_volumeMapper->SetScalarModeToUsePointFieldData();
   m_volumeMapper->SetBlendMode(vtkVolumeMapper::COMPOSITE_BLEND);
   m_volumeMapper->UseJitteringOn();
+
+  // Mirror the relevant settings onto the bricked mapper so that switching
+  // between the two (when a volume crosses the texture-size cap) is seamless.
+  // vtkMultiBlockVolumeMapper forwards these to its per-brick sub-mappers and
+  // enables ray jittering on each by default. Jittering doubles here as the
+  // mechanism that hides any residual brick-seam artifacts.
+  m_multiBlockMapper->SetScalarModeToUsePointFieldData();
+  m_multiBlockMapper->SetBlendMode(vtkVolumeMapper::COMPOSITE_BLEND);
 
   m_volumeProperty->SetInterpolationType(VTK_LINEAR_INTERPOLATION);
   m_volumeProperty->SetAmbient(0.0);
@@ -139,12 +154,68 @@ bool VolumeSink::consume(const QMap<QString, PortData>& inputs)
     m_labelMapDefaultsApplied = true;
   }
 
-  m_volumeMapper->SetInputData(volume->imageData());
+  updateMapperForInput(volume->imageData());
   applyActiveScalars();
   m_volume->SetVisibility(visibility() ? 1 : 0);
 
   onMetadataChanged();
   return true;
+}
+
+int VolumeSink::maxTextureSize() const
+{
+  if (renderView()) {
+    if (auto* glRW =
+          vtkOpenGLRenderWindow::SafeDownCast(renderView()->GetRenderWindow())) {
+      // GetMaximumTextureSize3D only returns a value when the GL context is
+      // current; consume() usually runs outside a render, so make the window
+      // current first. This avoids over-bricking on high-limit GPUs (e.g.
+      // NVIDIA reports 16384) when we would otherwise hit the fallback.
+      if (glRW->GetNeverRendered() == 0) {
+        glRW->MakeCurrent();
+      }
+      int maxSize = vtkTextureObject::GetMaximumTextureSize3D(glRW);
+      if (maxSize > 0) {
+        return maxSize;
+      }
+    }
+  }
+  // No usable GL context yet (e.g. the view has not rendered once). 2048 is the
+  // smallest GL_MAX_3D_TEXTURE_SIZE we expect to encounter, so bricking to it is
+  // always safe for correctness; on a higher-limit GPU it just means we may
+  // brick a volume that would have fit, until the next data update re-queries
+  // the now-current context.
+  return 2048;
+}
+
+void VolumeSink::updateMapperForInput(vtkImageData* image)
+{
+  const int maxTex = maxTextureSize();
+  if (exceedsTextureLimit(image, maxTex)) {
+    // Too big for a single 3-D texture: brick it and render with resident
+    // per-brick textures. Holding m_brickedVolume keeps the bricks alive.
+    m_brickedVolume = brickVolume(image, maxTex);
+    m_multiBlockMapper->SetInputDataObject(m_brickedVolume);
+    if (!m_usingMultiBlock) {
+      m_volume->SetMapper(m_multiBlockMapper);
+      m_usingMultiBlock = true;
+      // A clip set up while the volume still fit in one texture stops having
+      // any effect now that we render in bricks - tell the user why.
+      auto* planes = m_volumeMapper->GetClippingPlanes();
+      if (planes && planes->GetNumberOfItems() > 0) {
+        warnClippingUnsupported();
+      }
+    }
+  } else {
+    // Fits in one texture: keep the original single-mapper path so normal
+    // volumes render exactly as before, with no bricking overhead.
+    m_volumeMapper->SetInputData(image);
+    m_brickedVolume = nullptr;
+    if (m_usingMultiBlock) {
+      m_volume->SetMapper(m_volumeMapper);
+      m_usingMultiBlock = false;
+    }
+  }
 }
 
 void VolumeSink::updateColorMap()
@@ -254,7 +325,9 @@ int VolumeSink::blendingMode() const
 
 void VolumeSink::setBlendingMode(int mode)
 {
+  // Keep both mappers in sync so the setting survives a switch between them.
   m_volumeMapper->SetBlendMode(mode);
+  m_multiBlockMapper->SetBlendMode(mode);
   emit renderNeeded();
 }
 
@@ -281,6 +354,11 @@ bool VolumeSink::jittering() const
 
 void VolumeSink::setJittering(bool enabled)
 {
+  // Applies to the single-texture path only. vtkMultiBlockVolumeMapper forces
+  // jittering on for each brick and exposes no way to change it, nor any access
+  // to its per-brick mappers, so the toggle has no effect on bricked
+  // (over-2048) volumes - which is the safe default, since jittering also helps
+  // hide brick seams.
   m_volumeMapper->SetUseJittering(enabled ? 1 : 0);
   emit renderNeeded();
 }
@@ -340,15 +418,34 @@ void VolumeSink::applyActiveScalars()
   }
   if (selected && selected->GetName()) {
     m_volumeMapper->SelectScalarArray(selected->GetName());
+    m_multiBlockMapper->SelectScalarArray(selected->GetName());
   }
 }
 
 // --- Clipping ---
 
+void VolumeSink::warnClippingUnsupported() const
+{
+  qWarning("VolumeSink: clipping is not supported for volumes larger than the "
+           "GPU's 3-D texture size limit. This volume is rendered in bricks, so "
+           "the clipping plane will have no effect. Reduce the volume below the "
+           "limit (e.g. subsample or crop) to use clipping.");
+}
+
+// NOTE: Clipping planes apply to the single-texture path only. VTK 9.6's
+// vtkMultiBlockVolumeMapper does not forward clipping planes to its per-brick
+// mappers and exposes no access to them, so clipping has no effect on bricked
+// (over-2048) volumes. The planes are still tracked on m_volumeMapper so that
+// clipping works as soon as the volume drops back under the texture-size cap.
+// TODO(3.x): to clip bricked volumes we would need to manage the per-brick
+// mappers ourselves rather than delegating to vtkMultiBlockVolumeMapper.
 void VolumeSink::addClippingPlane(vtkPlane* plane)
 {
   if (plane) {
     m_volumeMapper->AddClippingPlane(plane);
+    if (m_usingMultiBlock) {
+      warnClippingUnsupported();
+    }
     emit renderNeeded();
   }
 }
