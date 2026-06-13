@@ -8,12 +8,80 @@
 #include <vtkImageData.h>
 #include <vtkMath.h>
 
+#include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace tomviz {
 
 // Mirrors the bin count in HistogramManager::PopulateHistogram.
 constexpr int kHistogramBins = 256;
+
+/**
+ * Compute the finite value range used for histogram binning, reading the raw
+ * buffer directly.
+ *
+ * This deliberately avoids vtkDataArray::GetRange()/GetFiniteRange(), which
+ * lazily cache their result inside the array's vtkInformation object. That
+ * cache write is NOT thread-safe: the histogram runs on a background thread
+ * while the main (render) thread touches the same shared array, and concurrent
+ * range caching corrupts the Information's reference counts -> "delete object
+ * with non-zero reference count" -> crash in vtkGarbageCollector. Computing the
+ * range from the buffer here keeps the background thread read-only with respect
+ * to the shared array.
+ *
+ * \param useMagnitude when true and numComponents > 1, ranges over the vector
+ *   magnitude (matching GetFiniteRange(range, -1) and the multi-component
+ *   binning path in CalculateHistogram). Otherwise ranges over the raw
+ *   component values (matching the per-component range used for the 2D
+ *   histogram). For single-component arrays the two are equivalent.
+ */
+template <typename T>
+void ComputeFiniteRange(const T* values, const vtkIdType numTuples,
+                        const vtkIdType numComponents, const bool useMagnitude,
+                        double range[2])
+{
+  double minValue = std::numeric_limits<double>::max();
+  double maxValue = -std::numeric_limits<double>::max();
+
+  if (useMagnitude && numComponents > 1) {
+    for (vtkIdType j = 0; j < numTuples; ++j) {
+      double squaredSum = 0.0;
+      bool valid = true;
+      for (vtkIdType c = 0; c < numComponents; ++c) {
+        double value = static_cast<double>(values[j * numComponents + c]);
+        if (!vtkMath::IsFinite(value)) {
+          valid = false;
+          break;
+        }
+        squaredSum += value * value;
+      }
+      if (valid) {
+        double mag = std::sqrt(squaredSum);
+        minValue = std::min(minValue, mag);
+        maxValue = std::max(maxValue, mag);
+      }
+    }
+  } else {
+    const vtkIdType total = numTuples * numComponents;
+    for (vtkIdType i = 0; i < total; ++i) {
+      double value = static_cast<double>(values[i]);
+      if (vtkMath::IsFinite(value)) {
+        minValue = std::min(minValue, value);
+        maxValue = std::max(maxValue, value);
+      }
+    }
+  }
+
+  if (minValue > maxValue) {
+    // No finite values found; fall back to a benign range.
+    minValue = 0.0;
+    maxValue = 0.0;
+  }
+
+  range[0] = minValue;
+  range[1] = maxValue;
+}
 
 /** Single component integral type specialization. */
 template <typename T,
