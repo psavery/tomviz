@@ -1,8 +1,11 @@
+import logging
 from pathlib import Path
 
 import h5py
 
 from .scan_metadata import _expand_scan_range
+
+logger = logging.getLogger(__name__)
 
 
 def ic_names(working_directory, scan_range=''):
@@ -36,9 +39,11 @@ def ic_names(working_directory, scan_range=''):
             with h5py.File(f, 'r') as rf:
                 names = rf["xrfmap"]["scalers"]["name"]
                 return [x.decode() for x in names]
-        except Exception:
+        except Exception as e:
             # Unreadable (e.g. permission denied) or unexpected structure -
             # skip it and try the next candidate rather than failing outright.
+            logger.warning('Skipping unreadable HDF5 file %s: %s: %s', f,
+                           type(e).__name__, e)
             continue
 
     return []

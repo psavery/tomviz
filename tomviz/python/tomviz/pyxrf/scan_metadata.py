@@ -1,9 +1,12 @@
 """Read scan metadata from PyXRF HDF5 files for the dialog scan table."""
 from __future__ import annotations
 
+import logging
 import os
 
 import h5py
+
+logger = logging.getLogger(__name__)
 
 
 def _expand_scan_range(scan_range: str) -> list[int]:
@@ -75,8 +78,10 @@ def read_scan_metadata(working_directory: str,
                     'status': status if status else 'success',
                     'filename': os.path.basename(path),
                 }
-        except Exception:
+        except Exception as e:
             failed_files[sid] = os.path.basename(path)
+            logger.warning('Failed to read scan %s from %s: %s: %s', sid, path,
+                           type(e).__name__, e)
 
     results = []
     for sid in expected_ids:
