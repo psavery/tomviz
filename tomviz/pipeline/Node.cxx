@@ -8,13 +8,12 @@
 #include "NodeExecutor.h"
 #include "NodeExecutorFactory.h"
 #include "OutputPort.h"
+#include "ThreadUtils.h"
 #include "data/VolumeData.h"
 
 #include <vtkImageData.h>
 
 #include <QJsonArray>
-#include <QMetaObject>
-#include <QThread>
 
 namespace tomviz {
 namespace pipeline {
@@ -323,11 +322,7 @@ void Node::applyOutputs(const QMap<QString, PortData>& outputs)
     }
   };
 
-  if (QThread::currentThread() == thread()) {
-    apply();
-  } else {
-    QMetaObject::invokeMethod(this, apply, Qt::BlockingQueuedConnection);
-  }
+  runOnThread(this, apply);
 }
 
 NodeExecutor* Node::nodeExecutor() const

@@ -56,6 +56,9 @@ void GatedEditorWidget::applyChangesToOperator()
 
 bool GatedEditorWidget::inputsReady() const
 {
+  if (!m_node) {
+    return false;
+  }
   for (auto* input : m_node->inputPorts()) {
     if (!input->link() || input->isStale() || !input->hasData()) {
       return false;
@@ -69,12 +72,15 @@ bool GatedEditorWidget::inputsReady() const
 
 void GatedEditorWidget::onRunRequested()
 {
+  if (!m_node) {
+    return;
+  }
   m_pipeline->executeUpstreamOf(m_node);
 }
 
 void GatedEditorWidget::onExecutionFinished()
 {
-  if (!m_notReadyWidget) {
+  if (!m_notReadyWidget || !m_node) {
     return;
   }
 
@@ -111,6 +117,12 @@ void GatedEditorWidget::onExecutionFinished()
 
 bool GatedEditorWidget::buildInner()
 {
+  // The factory closure captures the target node by raw pointer, so never
+  // invoke it once the node is gone - guard here so buildInner() is safe
+  // regardless of which caller reaches it.
+  if (!m_node) {
+    return false;
+  }
   m_inner = m_factory(this);
   if (m_inner) {
     m_layout->addWidget(m_inner, 1);

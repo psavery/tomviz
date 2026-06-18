@@ -2,6 +2,7 @@
    It is released under the 3-Clause BSD License, see "LICENSE". */
 
 #include "VolumeSink.h"
+#include "ThreadUtils.h"
 #include "VolumeBricking.h"
 #include "VolumeSinkWidget.h"
 
@@ -164,28 +165,36 @@ bool VolumeSink::consume(const QMap<QString, PortData>& inputs)
 
 int VolumeSink::maxTextureSize() const
 {
-  if (renderView()) {
-    if (auto* glRW =
-          vtkOpenGLRenderWindow::SafeDownCast(renderView()->GetRenderWindow())) {
-      // GetMaximumTextureSize3D only returns a value when the GL context is
-      // current; consume() usually runs outside a render, so make the window
-      // current first. This avoids over-bricking on high-limit GPUs (e.g.
-      // NVIDIA reports 16384) when we would otherwise hit the fallback.
-      if (glRW->GetNeverRendered() == 0) {
-        glRW->MakeCurrent();
-      }
-      int maxSize = vtkTextureObject::GetMaximumTextureSize3D(glRW);
-      if (maxSize > 0) {
-        return maxSize;
+  // GL queries (and MakeCurrent below) must run on the thread that owns the
+  // render window's GL context - the GUI thread. consume() runs on the pipeline
+  // worker thread, so callOnThread() marshals the query over rather than calling
+  // MakeCurrent here, which would abort with the Qt fatal "Cannot make
+  // QOpenGLContext current in a different thread".
+  return callOnThread(const_cast<VolumeSink*>(this), [this]() -> int {
+    TOMVIZ_ASSERT_GUI_THREAD();
+    if (renderView()) {
+      if (auto* glRW = vtkOpenGLRenderWindow::SafeDownCast(
+            renderView()->GetRenderWindow())) {
+        // GetMaximumTextureSize3D only returns a value when the GL context is
+        // current; consume() usually runs outside a render, so make the window
+        // current first. This avoids over-bricking on high-limit GPUs (e.g.
+        // NVIDIA reports 16384) when we would otherwise hit the fallback.
+        if (glRW->GetNeverRendered() == 0) {
+          glRW->MakeCurrent();
+        }
+        int maxSize = vtkTextureObject::GetMaximumTextureSize3D(glRW);
+        if (maxSize > 0) {
+          return maxSize;
+        }
       }
     }
-  }
-  // No usable GL context yet (e.g. the view has not rendered once). 2048 is the
-  // smallest GL_MAX_3D_TEXTURE_SIZE we expect to encounter, so bricking to it is
-  // always safe for correctness; on a higher-limit GPU it just means we may
-  // brick a volume that would have fit, until the next data update re-queries
-  // the now-current context.
-  return 2048;
+    // No usable GL context yet (e.g. the view has not rendered once). 2048 is
+    // the smallest GL_MAX_3D_TEXTURE_SIZE we expect to encounter, so bricking
+    // to it is always safe for correctness; on a higher-limit GPU it just means
+    // we may brick a volume that would have fit, until the next data update
+    // re-queries the now-current context.
+    return 2048;
+  });
 }
 
 void VolumeSink::updateMapperForInput(vtkImageData* image)

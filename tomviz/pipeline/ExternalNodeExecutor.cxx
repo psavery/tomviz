@@ -11,6 +11,7 @@
 #include "Pipeline.h"
 #include "PortData.h"
 #include "ProgressReader.h"
+#include "ThreadUtils.h"
 #include "SourceNode.h"
 
 #include "Tvh5Format.h"
@@ -29,7 +30,6 @@
 #include <QMetaObject>
 #include <QProcess>
 #include <QProcessEnvironment>
-#include <QThread>
 #include <QTemporaryDir>
 
 namespace tomviz {
@@ -523,12 +523,7 @@ bool ExternalNodeExecutor::execute(Node* node)
     populated = populateOutputs(node, targetNodeId, outputStatePath);
     m_outputsFinalized.store(true);
   };
-  if (QThread::currentThread() == node->thread()) {
-    applyOutputs();
-  } else {
-    QMetaObject::invokeMethod(node, applyOutputs,
-                              Qt::BlockingQueuedConnection);
-  }
+  runOnThread(node, applyOutputs);
   if (!populated) {
     node->setExecState(NodeExecState::Failed);
     return false;

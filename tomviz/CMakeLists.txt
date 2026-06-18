@@ -339,6 +339,7 @@ set(SOURCES
   pipeline/transforms/SnapshotTransform.cxx
   pipeline/transforms/SnapshotTransform.h
   pipeline/PortUtils.h
+  pipeline/ThreadUtils.h
   pipeline/pybind11/PybindVTKTypeCaster.h
   pipeline/DeferredLinkInfo.h
   pipeline/sinks/VolumeStatsSink.cxx

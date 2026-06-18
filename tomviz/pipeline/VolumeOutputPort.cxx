@@ -3,13 +3,11 @@
 
 #include "VolumeOutputPort.h"
 
+#include "ThreadUtils.h"
 #include "data/VolumeData.h"
 
 #include <vtkImageData.h>
 #include <vtkNew.h>
-
-#include <QMetaObject>
-#include <QThread>
 
 namespace tomviz {
 namespace pipeline {
@@ -47,11 +45,7 @@ void VolumeOutputPort::setIntermediateData(const PortData& incoming)
     emit intermediateDataApplied();
   };
 
-  if (QThread::currentThread() == thread()) {
-    apply();
-  } else {
-    QMetaObject::invokeMethod(this, apply, Qt::BlockingQueuedConnection);
-  }
+  runOnThread(this, apply);
 }
 
 } // namespace pipeline
