@@ -916,6 +916,11 @@ if(APPLE AND TOMVIZ_MACOSX_BUNDLE)
   list(APPEND exec_sources icons/tomviz.icns)
   set(MACOSX_BUNDLE_ICON_FILE tomviz.icns)
   set(MACOSX_BUNDLE_BUNDLE_VERSION "${tomviz_version}")
+  # A non-empty bundle identifier and name are required for macOS to present
+  # privacy-gated native panels (NSOpenPanel/NSSavePanel). Without them the
+  # native QFileDialog silently fails to appear. Match the packaged bundle id.
+  set(MACOSX_BUNDLE_GUI_IDENTIFIER "org.tomviz.tomviz")
+  set(MACOSX_BUNDLE_BUNDLE_NAME "tomviz")
   set_source_files_properties(icons/tomviz.icns PROPERTIES
     MACOSX_PACKAGE_LOCATION Resources)
 elseif(WIN32)
