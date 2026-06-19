@@ -40,7 +40,7 @@ void AddPythonSourceReaction::onTriggered()
 
   // Add the source to the pipeline before opening the dialog. This is
   // what gives us the cancel-rollback symmetry with transform
-  // insertion: NodeEditDialog::onCancel removes the node from the
+  // insertion: NodeEditDialog::reject() removes the node from the
   // pipeline (and deletes it). On OK we finish the standard source
   // scaffolding (sinks, color map, execute) via completeSourceSetup.
   LoadDataReaction::addSourceToPipeline(source);

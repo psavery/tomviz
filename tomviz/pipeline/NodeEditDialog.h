@@ -21,9 +21,11 @@ class Pipeline;
 /// A dialog for configuring node parameters with Apply/OK/Cancel.
 ///
 /// Two modes:
-///   - **Insertion mode**: The node is being added. Apply/OK completes
-///     the insertion and executes the pipeline. Cancel removes the node
-///     (and any input/output links described by DeferredLinkInfo).
+///   - **Insertion mode**: The node has already been added and spliced into
+///     the pipeline (eagerly, so the preview shows its final position).
+///     Apply/OK executes the pipeline and commits. Cancel removes the node
+///     and restores the original links and node states captured in
+///     DeferredLinkInfo, so it is a true no-op.
 ///   - **Edit mode**: The node already exists. Apply/OK re-applies
 ///     parameters and executes. Cancel just closes the dialog.
 ///
@@ -48,6 +50,11 @@ public:
 
   Node* node() const;
 
+  /// Overridden so that every cancel path -- the Cancel button, the Escape
+  /// key, and the window close button -- funnels through here and rolls back
+  /// an in-progress insertion.
+  void reject() override;
+
 signals:
   /// Emitted after Apply/OK completes an insertion.
   void insertionCompleted(Node* node);
@@ -58,7 +65,6 @@ signals:
 private slots:
   void onApply();
   void onOkay();
-  void onCancel();
 
 protected:
   void showEvent(QShowEvent* event) override;

@@ -922,15 +922,31 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   connect(userGuideAction, &QAction::triggered, this, &MainWindow::openUserGuide);
   QAction* introAction = m_ui->menuHelp->addAction("Intro to 3D Visualization");
   connect(introAction, &QAction::triggered, this, &MainWindow::openVisIntro);
-#ifdef TOMVIZ_DATA
-  QAction* reconAction =
-    sampleDataMenu->addAction("Star Nanoparticle (Reconstruction)");
-  QAction* tiltAction =
-    sampleDataMenu->addAction("Star Nanoparticle (Tilt Series)");
-  connect(reconAction, &QAction::triggered, this, &MainWindow::openRecon);
-  connect(tiltAction, &QAction::triggered, this, &MainWindow::openTilt);
-  sampleDataMenu->addSeparator();
-#endif
+  // Only show the bundled sample data entries if the data files are actually
+  // present. The conda-forge package ships without them, while the packaged
+  // installers (DMG/MSI) include them, so this lets a single binary work both
+  // ways without a compile-time flag.
+  QString dataDir =
+    QApplication::applicationDirPath() + "/../share/tomviz/Data";
+  bool haveRecon =
+    QFileInfo(dataDir + "/Recon_NanoParticle_doi_10.1021-nl103400a.emd")
+      .exists();
+  bool haveTilt =
+    QFileInfo(dataDir + "/TiltSeries_NanoParticle_doi_10.1021-nl103400a.emd")
+      .exists();
+  if (haveRecon) {
+    QAction* reconAction =
+      sampleDataMenu->addAction("Star Nanoparticle (Reconstruction)");
+    connect(reconAction, &QAction::triggered, this, &MainWindow::openRecon);
+  }
+  if (haveTilt) {
+    QAction* tiltAction =
+      sampleDataMenu->addAction("Star Nanoparticle (Tilt Series)");
+    connect(tiltAction, &QAction::triggered, this, &MainWindow::openTilt);
+  }
+  if (haveRecon || haveTilt) {
+    sampleDataMenu->addSeparator();
+  }
   QAction* constantDataAction =
     sampleDataMenu->addAction("Generate Constant Dataset");
   new AddPythonSourceReaction(constantDataAction,

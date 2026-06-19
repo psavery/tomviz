@@ -46,7 +46,7 @@ class GenerateTiltSeriesOperator(tomviz.operators.CancelableOperator):
 
             # Rotate volume about x-axis
             rotatedVolume = np.empty_like(volume_pad)
-            scipy.ndimage.interpolation.rotate(
+            scipy.ndimage.rotate(
                 volume_pad, angles[i], axes=(1, 2), reshape=False, order=1,
                 output=rotatedVolume)
             # Calculate projection

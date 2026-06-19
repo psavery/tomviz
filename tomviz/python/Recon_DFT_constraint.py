@@ -47,8 +47,8 @@ class ReconConstrintedDFMOperator(tomviz.operators.CancelableOperator):
             (Nx, Ny, Nz) = recon_F.shape
             #Note: Nz = np.int64(Ny/2+1)
             Ntot = Nx * Ny * Ny
-            f = pyfftw.n_byte_align_empty((Nx, Ny, Nz), 16, dtype=np.complex64)
-            r = pyfftw.n_byte_align_empty((Nx, Ny, Ny), 16, dtype=np.float32)
+            f = pyfftw.empty_aligned((Nx, Ny, Nz), dtype=np.complex64, n=16)
+            r = pyfftw.empty_aligned((Nx, Ny, Ny), dtype=np.float32, n=16)
             fft_forward = pyfftw.FFTW(r, f, axes=(0, 1, 2))
             fft_inverse = pyfftw.FFTW(
                 f, r, direction='FFTW_BACKWARD', axes=(0, 1, 2))
@@ -166,16 +166,16 @@ def dfm3(input, angles, Npad):
     # Initialization
     Nz = Ny // 2 + 1
     w = np.zeros((Nx, Ny, Nz), dtype=np.float32) #store weighting factors
-    v = pyfftw.n_byte_align_empty((Nx, Ny, Nz), 16, dtype=np.complex64)
+    v = pyfftw.empty_aligned((Nx, Ny, Nz), dtype=np.complex64, n=16)
     v = np.zeros(v.shape, dtype=np.float32) \
         + 1j * np.zeros(v.shape, dtype=np.float32)
-    recon = pyfftw.n_byte_align_empty(
-        (Nx, Ny, Ny), 16, dtype=np.float32, order='F')
+    recon = pyfftw.empty_aligned(
+        (Nx, Ny, Ny), dtype=np.float32, order='F', n=16)
     recon_fftw_object = pyfftw.FFTW(
         v, recon, direction='FFTW_BACKWARD', axes=(0, 1, 2))
 
-    p = pyfftw.n_byte_align_empty((Nx, Npad), 16, dtype=np.float32)
-    pF = pyfftw.n_byte_align_empty((Nx, Npad // 2 + 1), 16, dtype=np.complex64)
+    p = pyfftw.empty_aligned((Nx, Npad), dtype=np.float32, n=16)
+    pF = pyfftw.empty_aligned((Nx, Npad // 2 + 1), dtype=np.complex64, n=16)
     p_fftw_object = pyfftw.FFTW(p, pF, axes=(0, 1))
 
     dk = np.double(Ny) / np.double(Npad)
@@ -246,8 +246,8 @@ def bilinear(kz_new, ky_new, sz, sy, N, p):
 def radial_average(tiltseries, kr_cutoffs):
     (Nx, Ny, Nproj) = tiltseries.shape
 
-    f = pyfftw.n_byte_align_empty((Nx, Ny // 2 + 1), 16, dtype=np.complex64)
-    r = pyfftw.n_byte_align_empty((Nx, Ny), 16, dtype=np.float32)
+    f = pyfftw.empty_aligned((Nx, Ny // 2 + 1), dtype=np.complex64, n=16)
+    r = pyfftw.empty_aligned((Nx, Ny), dtype=np.float32, n=16)
     p_fftw_object = pyfftw.FFTW(r, f, axes=(0, 1))
     Ir = np.zeros(kr_cutoffs.size)
     I = np.zeros(kr_cutoffs.size)

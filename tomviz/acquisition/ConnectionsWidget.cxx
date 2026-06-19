@@ -173,7 +173,7 @@ void ConnectionsWidget::editConnection(Connection conn, size_t row)
   // First delete the current connection, to prevent always adding an extra one
   // when editing
   this->m_connections.removeAt(row);
-  auto item = this->m_ui->connectionsWidget->takeItem(row);
+  auto item = this->m_ui->connectionsWidget->takeItem(static_cast<int>(row));
   delete item;
 
   bool replaced = false;

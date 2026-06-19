@@ -593,6 +593,7 @@ public:
 
     Python::Dict kwargs;
     kwargs.set("working_directory", workingDirectory());
+    kwargs.set("scan_range", scanRange());
     auto res = func.call(kwargs);
 
     if (!res.isValid()) {

@@ -768,7 +768,7 @@ std::array<T, 3> make_array(std::initializer_list<T> list)
 {
   auto array = std::array<T, 3>();
   int i = 0;
-  foreach (T t, list) {
+  for (const T& t : list) {
     array[i++] = t;
   }
   return array;

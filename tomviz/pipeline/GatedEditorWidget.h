@@ -8,6 +8,7 @@
 #include "PortData.h"
 
 #include <QList>
+#include <QPointer>
 
 #include <functional>
 #include <memory>
@@ -48,9 +49,12 @@ private:
   void onRunRequested();
   void onExecutionFinished();
   bool inputsReady() const;
-  void buildInner();
+  bool buildInner();
 
-  Node* m_node;
+  // QPointer so a node destroyed while this editor is still open (e.g. the
+  // pipeline rebuilds nodes on execution finish) auto-nulls here instead of
+  // leaving a dangling pointer for the executionFinished slot to dereference.
+  QPointer<Node> m_node;
   Pipeline* m_pipeline;
   EditorFactory m_factory;
   QVBoxLayout* m_layout = nullptr;

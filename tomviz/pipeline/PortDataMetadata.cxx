@@ -5,11 +5,10 @@
 
 #include "ColorMap.h"
 #include "PortType.h"
+#include "ThreadUtils.h"
 #include "data/VolumeData.h"
 
-#include <QMetaObject>
 #include <QObject>
-#include <QThread>
 
 #include <vtkPiecewiseFunction.h>
 
@@ -110,12 +109,7 @@ void inheritOutputMetadata(QObject* threadOwner,
     // Future payload types with inheritable metadata: dispatch here.
   };
 
-  if (!threadOwner || QThread::currentThread() == threadOwner->thread()) {
-    apply();
-  } else {
-    QMetaObject::invokeMethod(threadOwner, apply,
-                              Qt::BlockingQueuedConnection);
-  }
+  runOnThread(threadOwner, apply);
 }
 
 } // namespace pipeline

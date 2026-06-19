@@ -304,7 +304,8 @@ public:
                           stridesVector.data(), countsVector.data(), nullptr);
 
       // Finally, create the mem space
-      memSpace = H5Screate_simple(ndims, countsVector.data(), nullptr);
+      memSpace =
+        H5Screate_simple(static_cast<int>(ndims), countsVector.data(), nullptr);
       memSpaceCloser.reset(memSpace);
     }
 
@@ -696,7 +697,7 @@ int H5ReadWrite::dimensionCount(const string& path)
     return -1;
   }
 
-  return dims.size();
+  return static_cast<int>(dims.size());
 }
 
 template <typename T>
@@ -954,7 +955,8 @@ template unsigned long long H5ReadWrite::attribute(const string&, const string&,
                                                    bool*);
 template float H5ReadWrite::attribute(const string&, const string&, bool*);
 template double H5ReadWrite::attribute(const string&, const string&, bool*);
-template string H5ReadWrite::attribute(const string&, const string&, bool*);
+// attribute<string> is explicitly specialized above, so no explicit
+// instantiation is needed (and one here would have no effect).
 
 // readData(): single-dimensional
 template vector<char> H5ReadWrite::readData(const string&);
@@ -1012,10 +1014,8 @@ template bool H5ReadWrite::setAttribute(const string&, const string&,
                                         unsigned long long);
 template bool H5ReadWrite::setAttribute(const string&, const string&, float);
 template bool H5ReadWrite::setAttribute(const string&, const string&, double);
-template bool H5ReadWrite::setAttribute(const string&, const string&,
-                                        const string&);
-template bool H5ReadWrite::setAttribute(const string&, const string&,
-                                        const char*);
+// setAttribute<const string&> and setAttribute<const char*> are explicitly
+// specialized above, so explicit instantiations here would have no effect.
 
 // writeData
 template bool H5ReadWrite::writeData(const string&, const string&,

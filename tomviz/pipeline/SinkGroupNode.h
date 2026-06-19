@@ -36,6 +36,12 @@ public:
 
   bool execute() override;
 
+  /// Re-show the visualizations of all child sinks. Counterpart of the
+  /// resetVisualization() fan-out done when this group's input is
+  /// disconnected; used to restore modules when a cancelled deferred
+  /// insertion recreates the group's original input link.
+  void restorePresentation() override;
+
   /// All sink nodes currently connected to this group's output ports.
   QList<SinkNode*> sinks() const;
 

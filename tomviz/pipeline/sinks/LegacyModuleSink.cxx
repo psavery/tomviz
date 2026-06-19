@@ -84,8 +84,8 @@ void applyColorMapJson(vtkSMProxy* cmap, const QJsonObject& json)
     for (int i = 0; i < n; ++i) {
       pwf->GetNodeValue(i, buffer.data() + 4 * i);
     }
-    vtkSMPropertyHelper(omapProxy, "Points").Set(buffer.data(),
-                                                  buffer.size());
+    vtkSMPropertyHelper(omapProxy, "Points")
+      .Set(buffer.data(), static_cast<unsigned int>(buffer.size()));
     omapProxy->UpdateVTKObjects();
   }
 }
@@ -290,6 +290,18 @@ void LegacyModuleSink::clearVisualization()
 void LegacyModuleSink::resetVisualization()
 {
   clearVisualization();
+  emit renderNeeded();
+}
+
+void LegacyModuleSink::restoreVisualization()
+{
+  // Re-apply the current visibility flag. Each subclass's setVisibility()
+  // override pushes visibility onto its props/widgets unconditionally before
+  // the base call, so this re-shows props that clearVisualization() hid even
+  // though m_visible never changed (the base call's guard then suppresses a
+  // redundant visibilityChanged signal). The VTK objects still hold the last
+  // consumed data, so nothing needs to be re-read or re-executed.
+  setVisibility(m_visible);
   emit renderNeeded();
 }
 

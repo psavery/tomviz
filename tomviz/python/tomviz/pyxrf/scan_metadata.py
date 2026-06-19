@@ -1,10 +1,12 @@
 """Read scan metadata from PyXRF HDF5 files for the dialog scan table."""
 from __future__ import annotations
 
-import glob
+import logging
 import os
 
 import h5py
+
+logger = logging.getLogger(__name__)
 
 
 def _expand_scan_range(scan_range: str) -> list[int]:
@@ -15,14 +17,20 @@ def _expand_scan_range(scan_range: str) -> list[int]:
         part = part.strip()
         if not part:
             continue
-        if ':' in part:
-            pieces = part.split(':')
-            start = int(pieces[0])
-            stop = int(pieces[1])
-            stride = int(pieces[2]) if len(pieces) > 2 else 1
-            ids.update(range(start, stop + 1, stride))
-        else:
-            ids.add(int(part))
+        try:
+            if ':' in part:
+                pieces = part.split(':')
+                start = int(pieces[0])
+                stop = int(pieces[1])
+                stride = int(pieces[2]) if len(pieces) > 2 else 1
+                if stride == 0:
+                    continue
+                ids.update(range(start, stop + 1, stride))
+            else:
+                ids.add(int(part))
+        except (ValueError, IndexError):
+            # Skip malformed segments rather than aborting the whole parse.
+            continue
     return sorted(ids)
 
 
@@ -32,27 +40,28 @@ def read_scan_metadata(working_directory: str,
 
     Each dict has keys: scan_id, theta, status, filename.
 
-    If *scan_range* is provided, any ID in the range without an HDF5 file
-    gets a ``"fail"`` status entry.  The list is sorted by theta for
-    successful scans, with failed scans appended at the end sorted by ID.
+    Any ID in the range without an HDF5 file gets a ``"missing"`` status
+    entry, and a file that exists but cannot be read gets a ``"fail"`` entry.
+    The list is sorted by scan ID.
+
+    If *scan_range* is empty, an empty list is returned: the table is only
+    populated for an explicit scan range, never for every file present.
     """
     wd = working_directory
 
-    # Build a map from scan_id -> file path for all matching HDF5 files
-    files_by_id: dict[int, str] = {}
-    for path in glob.glob(os.path.join(wd, 'scan2D_*.h5')):
-        basename = os.path.basename(path)
-        # Extract scan ID from filename like scan2D_12345.h5
-        try:
-            sid = int(basename.replace('scan2D_', '').replace('.h5', ''))
-            files_by_id[sid] = path
-        except ValueError:
-            pass
+    expected_ids = _expand_scan_range(scan_range) if scan_range else []
+    if not expected_ids:
+        # No explicit scan range -> show nothing rather than every HDF5 file.
+        return []
 
-    # Read metadata from HDF5 files
+    # Only read the files for the scan IDs the user asked for, so out-of-range
+    # (and possibly unreadable) files are never opened.
     found: dict[int, dict] = {}
     failed_files: dict[int, str] = {}
-    for sid, path in files_by_id.items():
+    for sid in expected_ids:
+        path = os.path.join(wd, f'scan2D_{sid}.h5')
+        if not os.path.isfile(path):
+            continue
         try:
             with h5py.File(path, 'r') as f:
                 md = f['xrfmap/scan_metadata']
@@ -69,38 +78,28 @@ def read_scan_metadata(working_directory: str,
                     'status': status if status else 'success',
                     'filename': os.path.basename(path),
                 }
-        except Exception:
+        except Exception as e:
             failed_files[sid] = os.path.basename(path)
+            logger.warning('Failed to read scan %s from %s: %s: %s', sid, path,
+                           type(e).__name__, e)
 
-    expected_ids = _expand_scan_range(scan_range) if scan_range else []
-
-    if expected_ids:
-        results = []
-        for sid in expected_ids:
-            if sid in found:
-                results.append(found[sid])
-            elif sid in failed_files:
-                results.append({
-                    'scan_id': sid,
-                    'theta': 0.0,
-                    'status': 'fail',
-                    'filename': failed_files[sid],
-                })
-            else:
-                results.append({
-                    'scan_id': sid,
-                    'theta': 0.0,
-                    'status': 'missing',
-                    'filename': '',
-                })
-    else:
-        results = list(found.values())
-        for sid, fname in failed_files.items():
+    results = []
+    for sid in expected_ids:
+        if sid in found:
+            results.append(found[sid])
+        elif sid in failed_files:
             results.append({
                 'scan_id': sid,
                 'theta': 0.0,
                 'status': 'fail',
-                'filename': fname,
+                'filename': failed_files[sid],
+            })
+        else:
+            results.append({
+                'scan_id': sid,
+                'theta': 0.0,
+                'status': 'missing',
+                'filename': '',
             })
 
     results.sort(key=lambda r: r['scan_id'])

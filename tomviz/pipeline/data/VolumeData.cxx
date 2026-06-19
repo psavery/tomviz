@@ -375,7 +375,8 @@ void VolumeData::syncColorMapToProxy()
     for (int i = 0; i < n; ++i) {
       m_opacity->GetNodeValue(i, buffer.data() + 4 * i);
     }
-    vtkSMPropertyHelper(omap, "Points").Set(buffer.data(), buffer.size());
+    vtkSMPropertyHelper(omap, "Points")
+      .Set(buffer.data(), static_cast<unsigned int>(buffer.size()));
     omap->UpdateVTKObjects();
   }
 }

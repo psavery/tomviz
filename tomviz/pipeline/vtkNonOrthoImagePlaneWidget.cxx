@@ -1851,7 +1851,7 @@ void vtkNonOrthoImagePlaneWidget::GeneratePlaneOutline()
   }
 
   vtkCellArray* cells = vtkCellArray::New();
-  cells->Allocate(cells->EstimateSize(4, 2));
+  cells->AllocateEstimate(4, 2);
   vtkIdType pts[2];
   pts[0] = 3;
   pts[1] = 2; // top edge

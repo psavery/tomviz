@@ -27,9 +27,9 @@ public:
   QVariant headerData(int section, Qt::Orientation orientation,
                       int role) const override;
 
-  Qt::ItemFlags flags(const QModelIndex& index) const;
+  Qt::ItemFlags flags(const QModelIndex& index) const override;
   bool setData(const QModelIndex& index, const QVariant& value,
-               int role = Qt::EditRole);
+               int role = Qt::EditRole) override;
 
   QList<ArrayInfo> getArraysInfo() const;
 

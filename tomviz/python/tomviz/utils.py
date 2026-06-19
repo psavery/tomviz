@@ -16,7 +16,7 @@ from tomviz.dataset import Dataset as AbstractDataset
 
 def zoom_shape(input: np.ndarray, zoom: np.ndarray) -> tuple[int]:
     """
-    Returns the shape of the output array for scipy.ndimage.interpolation.zoom
+    Returns the shape of the output array for scipy.ndimage.zoom
     """
 
     if isinstance(zoom, (int, float,)):
@@ -29,7 +29,7 @@ def zoom_shape(input: np.ndarray, zoom: np.ndarray) -> tuple[int]:
 def rotate_shape(input: np.ndarray, angle: float,
                  axes: tuple[int, int]) -> tuple[int]:
     """
-    Returns the shape of the output array of scipy.ndimage.interpolation.rotate
+    Returns the shape of the output array of scipy.ndimage.rotate
     derived from: https://github.com/scipy/scipy/blob/v0.16.1/scipy/ndimage/ \
     interpolation.py #L578. We are duplicating the code here so we can generate
     an array of the right shape and array order to pass into the rotate

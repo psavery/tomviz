@@ -4,6 +4,8 @@ from typing import Callable
 import importlib.util
 import inspect
 import shutil
+import time
+import urllib.error
 import urllib.request
 import zipfile
 
@@ -82,7 +84,23 @@ def download_file(url: str, destination: str):
             print(f"\rDownload Progress: {progress}% ({downloaded_mb:.2f}/{total_size_mb:.2f} MB)")
 
     print(f'Downloading "{url}" to "{filename}"')
-    urllib.request.urlretrieve(url, filename, reporthook=download_progress_hook)
+    # Retry on transient network errors (e.g. a 5xx from the data server) with
+    # exponential backoff, since the test fixtures are downloaded at run time.
+    attempts = 5
+    for attempt in range(1, attempts + 1):
+        try:
+            urllib.request.urlretrieve(url, filename,
+                                       reporthook=download_progress_hook)
+            break
+        except (urllib.error.URLError, TimeoutError) as e:
+            # Don't retry on 4xx (client) errors - those won't fix themselves.
+            code = getattr(e, 'code', None)
+            if (code is not None and 400 <= code < 500) or attempt == attempts:
+                raise
+            wait = 2 ** (attempt - 1)
+            print(f'Download failed ({e}); retrying in {wait}s '
+                  f'({attempt}/{attempts - 1})')
+            time.sleep(wait)
     print('\n')
 
     shutil.copy(filename, destination)

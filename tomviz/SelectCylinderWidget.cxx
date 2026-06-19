@@ -40,7 +40,7 @@ public:
     self->InitializeObjectBase();
     return self;
   }
-  vtkTypeMacro(CylinderWidgetCustom, vtkImplicitCylinderWidget);
+  vtkTypeMacro(CylinderWidgetCustom, vtkImplicitCylinderWidget)
 
   void setupInteraction()
   {

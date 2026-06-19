@@ -584,7 +584,7 @@ int main(int argc, char** argv)
   auto* srcLayout = new QVBoxLayout(srcGroup);
   auto* srcLabelEdit = new QLineEdit("New Source");
   srcLayout->addWidget(srcLabelEdit);
-  auto [srcIn, srcOut] = makePortGrid(srcLayout, false, true, 0, 1);
+  auto srcPorts = makePortGrid(srcLayout, false, true, 0, 1);
   auto* srcButton = new QPushButton("Add Source");
   srcLayout->addWidget(srcButton);
   centralLayout->addWidget(srcGroup);
@@ -594,7 +594,7 @@ int main(int argc, char** argv)
   auto* xfLayout = new QVBoxLayout(xfGroup);
   auto* xfLabelEdit = new QLineEdit("New Transform");
   xfLayout->addWidget(xfLabelEdit);
-  auto [xfIn, xfOut] = makePortGrid(xfLayout, true, true, 1, 1);
+  auto xfPorts = makePortGrid(xfLayout, true, true, 1, 1);
   auto* xfButton = new QPushButton("Add Transform");
   xfLayout->addWidget(xfButton);
   centralLayout->addWidget(xfGroup);
@@ -604,7 +604,7 @@ int main(int argc, char** argv)
   auto* sinkLayout = new QVBoxLayout(sinkGroup);
   auto* sinkLabelEdit = new QLineEdit("New Sink");
   sinkLayout->addWidget(sinkLabelEdit);
-  auto [sinkIn, sinkOut] = makePortGrid(sinkLayout, true, false, 1, 0);
+  auto sinkPorts = makePortGrid(sinkLayout, true, false, 1, 0);
   auto* sinkButton = new QPushButton("Add Sink");
   sinkLayout->addWidget(sinkButton);
   centralLayout->addWidget(sinkGroup);
@@ -641,7 +641,7 @@ int main(int argc, char** argv)
     if (!p) return;
     QString label = srcLabelEdit->text();
     if (label.isEmpty()) label = "Source";
-    auto outputs = collectPorts(srcOut, "out");
+    auto outputs = collectPorts(srcPorts.second, "out");
     auto* src = new SourceNode();
     src->setLabel(label);
     for (auto& [name, type] : outputs) {
@@ -655,8 +655,8 @@ int main(int argc, char** argv)
     if (!p) return;
     QString label = xfLabelEdit->text();
     if (label.isEmpty()) label = "Transform";
-    auto inputs = collectPorts(xfIn, "in");
-    auto outputs = collectPorts(xfOut, "out");
+    auto inputs = collectPorts(xfPorts.first, "in");
+    auto outputs = collectPorts(xfPorts.second, "out");
     auto* xform = new DemoTransform(label, inputs, outputs);
     p->addNode(xform);
   });
@@ -666,7 +666,7 @@ int main(int argc, char** argv)
     if (!p) return;
     QString label = sinkLabelEdit->text();
     if (label.isEmpty()) label = "Sink";
-    auto inputs = collectPorts(sinkIn, "in");
+    auto inputs = collectPorts(sinkPorts.first, "in");
     auto* sink = new DemoSink(label, inputs);
     p->addNode(sink);
   });

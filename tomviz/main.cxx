@@ -3,6 +3,7 @@
 
 #include <QApplication>
 
+#include <QLoggingCategory>
 #include <QSplashScreen>
 #include <QSurfaceFormat>
 
@@ -58,6 +59,18 @@ int main(int argc, char** argv)
   tomviz::InitializePythonEnvironment(argc, argv);
 
   QApplication app(argc, argv);
+
+#ifdef Q_OS_MAC
+  // macOS has no font family named "Monospace". ParaView's
+  // pqPythonSyntaxHighlighter constructs a QFont("Monospace") and realizes it
+  // (via QFontMetrics) in its constructor, which forces Qt to scan the entire
+  // font-family alias table and emit a "Populating font family aliases took
+  // ..." warning. We don't control that ParaView code, and a font
+  // substitution does not help because Qt only consults substitutions after
+  // the failed direct lookup that triggers the scan. Silence the warning
+  // category; the one-time scan still happens but is harmless.
+  QLoggingCategory::setFilterRules("qt.qpa.fonts.warning=false");
+#endif
 
   QPixmap pixmap(":/icons/tomvizfull.png");
   QSplashScreen splash(pixmap);

@@ -135,7 +135,7 @@ public:
 
     bool visible = show && hasInteractor && hasTimeSteps;
 
-    if (visible != textWidget->GetEnabled()) {
+    if (visible != static_cast<bool>(textWidget->GetEnabled())) {
       textWidget->SetEnabled(visible);
       render();
     }

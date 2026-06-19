@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.ndimage.interpolation import zoom
+from scipy.ndimage import zoom
 
 from tomviz import utils
 

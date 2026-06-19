@@ -5,14 +5,13 @@
 
 #include "Link.h"
 #include "PortDataDiskCache.h"
+#include "ThreadUtils.h"
 #include "data/VolumeData.h"
 
 #include <QDebug>
 #include <QDir>
-#include <QMetaObject>
 #include <QPointer>
 #include <QTemporaryFile>
-#include <QThread>
 
 #include <cstdlib>
 
@@ -397,11 +396,7 @@ void OutputPort::setIntermediateData(const PortData& data)
     setData(data);
     emit intermediateDataApplied();
   };
-  if (QThread::currentThread() == thread()) {
-    apply();
-  } else {
-    QMetaObject::invokeMethod(this, apply, Qt::BlockingQueuedConnection);
-  }
+  runOnThread(this, apply);
 }
 
 bool OutputPort::isStale() const

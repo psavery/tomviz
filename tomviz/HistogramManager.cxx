@@ -40,8 +40,19 @@ void PopulateHistogram(vtkImageData* input, vtkTable* output)
     return;
   }
 
-  // The bin values are the centers, extending +/- half an inc either side
-  arrayPtr->GetFiniteRange(minmax, -1);
+  // The bin values are the centers, extending +/- half an inc either side.
+  // Compute the range from the buffer rather than via arrayPtr->GetFiniteRange:
+  // GetFiniteRange caches its result in the array's vtkInformation, and that
+  // write races with the main (render) thread's use of the same shared array
+  // (see tomviz::ComputeFiniteRange).
+  switch (arrayPtr->GetDataType()) {
+    vtkTemplateMacro(tomviz::ComputeFiniteRange(
+      reinterpret_cast<VTK_TT*>(arrayPtr->GetVoidPointer(0)),
+      arrayPtr->GetNumberOfTuples(), arrayPtr->GetNumberOfComponents(),
+      /*useMagnitude=*/true, minmax));
+    default:
+      break;
+  }
   if (minmax[0] == minmax[1]) {
     minmax[1] = minmax[0] + 1.0;
   }
@@ -108,11 +119,17 @@ void Populate2DHistogram(vtkImageData* input, vtkImageData* output)
     return;
   }
 
-  // The bin values are the centers, extending +/- half an inc either side
-  for (int i = 0; i < arrayPtr->GetNumberOfComponents(); ++i) {
-    double* tmp = arrayPtr->GetFiniteRange(i);
-    minmax[0] = std::min(minmax[0], tmp[0]);
-    minmax[1] = std::max(minmax[1], tmp[1]);
+  // The bin values are the centers, extending +/- half an inc either side.
+  // Compute the range from the buffer rather than via arrayPtr->GetFiniteRange
+  // so the background thread stays read-only with respect to the shared array
+  // (see tomviz::ComputeFiniteRange).
+  switch (arrayPtr->GetDataType()) {
+    vtkTemplateMacro(tomviz::ComputeFiniteRange(
+      reinterpret_cast<VTK_TT*>(arrayPtr->GetVoidPointer(0)),
+      arrayPtr->GetNumberOfTuples(), arrayPtr->GetNumberOfComponents(),
+      /*useMagnitude=*/false, minmax));
+    default:
+      break;
   }
 
   if (minmax[0] == minmax[1]) {

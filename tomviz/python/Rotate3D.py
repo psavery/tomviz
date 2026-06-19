@@ -26,7 +26,7 @@ def transform(dataset, rotation_angle=90.0, rotation_axis=0):
     axes = (axis1, axis2)
     shape = utils.rotate_shape(data_py, rotation_angle, axes=axes)
     data_py_return = np.empty(shape, data_py.dtype, order='F')
-    ndimage.interpolation.rotate(
+    ndimage.rotate(
         data_py, rotation_angle, output=data_py_return, axes=axes)
 
     dataset.active_scalars = data_py_return

@@ -184,13 +184,14 @@ void RecentFilesMenu::aboutToShowMenu()
 
   int index = 0;
 
-  foreach (QJsonValue file, json["readers"].toArray()) {
+  const auto readers = json["readers"].toArray();
+  for (const QJsonValue& file : readers) {
     if (file.isObject()) {
       auto object = file.toObject();
       auto fileNamesArray = object["fileNames"].toArray();
       QStringList fileNames;
-      foreach (file, fileNamesArray) {
-        fileNames << file.toString("<bug>");
+      for (const QJsonValue& fileName : fileNamesArray) {
+        fileNames << fileName.toString("<bug>");
       }
       QString label = fileNames[0];
       QString toolTip;
@@ -215,7 +216,8 @@ void RecentFilesMenu::aboutToShowMenu()
     menu->addAction("State files")->setEnabled(false);
   }
 
-  foreach (QJsonValue file, json["states"].toArray()) {
+  const auto stateFiles = json["states"].toArray();
+  for (const QJsonValue& file : stateFiles) {
     if (file.isObject()) {
       auto object = file.toObject();
       auto actn = menu->addAction(QIcon(":/icons/tomviz.png"),
@@ -229,7 +231,8 @@ void RecentFilesMenu::aboutToShowMenu()
     menu->addAction("Template files")->setEnabled(false);
   }
 
-  foreach (QJsonValue file, json["templates"].toArray()) {
+  const auto templateFiles = json["templates"].toArray();
+  for (const QJsonValue& file : templateFiles) {
     if (file.isObject()) {
       auto object = file.toObject();
       auto actn = menu->addAction(QIcon(":/icons/tomviz.png"),

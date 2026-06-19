@@ -170,7 +170,7 @@ void DockerPipelineExecutor::cancel(std::function<void()> canceled)
   auto stopInvocation = stop(m_containerId);
   connect(stopInvocation, &docker::DockerStopInvocation::finished,
           stopInvocation,
-          [this, canceled](int exitCode, QProcess::ExitStatus exitStatus) {
+          [canceled](int exitCode, QProcess::ExitStatus exitStatus) {
             Q_UNUSED(exitStatus)
             if (!exitCode) {
               canceled();

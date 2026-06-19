@@ -339,6 +339,7 @@ set(SOURCES
   pipeline/transforms/SnapshotTransform.cxx
   pipeline/transforms/SnapshotTransform.h
   pipeline/PortUtils.h
+  pipeline/ThreadUtils.h
   pipeline/pybind11/PybindVTKTypeCaster.h
   pipeline/DeferredLinkInfo.h
   pipeline/sinks/VolumeStatsSink.cxx
@@ -347,6 +348,8 @@ set(SOURCES
   pipeline/sinks/LegacyModuleSink.h
   pipeline/sinks/VolumeSink.cxx
   pipeline/sinks/VolumeSink.h
+  pipeline/sinks/VolumeBricking.cxx
+  pipeline/sinks/VolumeBricking.h
   pipeline/sinks/SliceSink.cxx
   pipeline/sinks/SliceSink.h
   pipeline/sinks/ContourSink.cxx
@@ -451,6 +454,13 @@ list(APPEND SOURCES
   loguru/loguru.hpp
 )
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/loguru)
+
+# loguru is vendored third-party code; silence warnings we will not patch
+# upstream for (empty variadic macro args and a benign snprintf truncation).
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  set_source_files_properties(loguru/loguru.cpp PROPERTIES
+    COMPILE_OPTIONS "-Wno-c++20-extensions;-Wno-format-truncation")
+endif()
 
 list(APPEND SOURCES
   legacy/modules/Module.cxx
@@ -906,6 +916,11 @@ if(APPLE AND TOMVIZ_MACOSX_BUNDLE)
   list(APPEND exec_sources icons/tomviz.icns)
   set(MACOSX_BUNDLE_ICON_FILE tomviz.icns)
   set(MACOSX_BUNDLE_BUNDLE_VERSION "${tomviz_version}")
+  # A non-empty bundle identifier and name are required for macOS to present
+  # privacy-gated native panels (NSOpenPanel/NSSavePanel). Without them the
+  # native QFileDialog silently fails to appear. Match the packaged bundle id.
+  set(MACOSX_BUNDLE_GUI_IDENTIFIER "org.tomviz.tomviz")
+  set(MACOSX_BUNDLE_BUNDLE_NAME "tomviz")
   set_source_files_properties(icons/tomviz.icns PROPERTIES
     MACOSX_PACKAGE_LOCATION Resources)
 elseif(WIN32)
@@ -1006,7 +1021,6 @@ install(TARGETS tomvizlib
   ARCHIVE DESTINATION "${INSTALL_ARCHIVE_DIR}")
 
 if(tomviz_data_DIR)
-  add_definitions(-DTOMVIZ_DATA)
   install(DIRECTORY "${tomviz_data_DIR}"
     DESTINATION "${tomviz_data_install_dir}"
     USE_SOURCE_PERMISSIONS

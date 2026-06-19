@@ -126,6 +126,9 @@ EditNodeWidget* CropTransform::createPropertiesWidget(Pipeline* pipeline,
     this, pipeline,
     [this](QWidget* p) -> EditNodeWidget* {
       auto vol = inputPorts()[0]->data().value<VolumeDataPtr>();
+      if (!vol || !vol->imageData()) {
+        return nullptr;
+      }
       return new CropWidget(this, vol, p);
     },
     parent);

@@ -261,7 +261,7 @@ QList<pipeline::SourceNode*> LoadDataReaction::loadData(bool isTimeSeries)
 
       // Also set the number of time steps in the sequence to match
       // (this only matters if the user switches to "Sequence" play mode)
-      tomviz::setAnimationNumberOfFrames(times.size());
+      tomviz::setAnimationNumberOfFrames(static_cast<int>(times.size()));
     }
   }
 

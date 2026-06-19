@@ -117,7 +117,7 @@ public:
       if (!ds->isTransient()) {
         auto fileNames = readerProps["fileNames"].toArray();
         QJsonArray relativeNames;
-        foreach (QJsonValue name, fileNames) {
+        for (const QJsonValue& name : fileNames) {
           relativeNames.append(stateDir.relativeFilePath(name.toString()));
         }
         readerProps["fileNames"] = relativeNames;
@@ -161,7 +161,7 @@ public:
       if (reader.contains("fileNames") && reader["fileNames"].isArray()) {
         auto fileNames = reader["fileNames"].toArray();
         QJsonArray absoluteFileNames;
-        foreach (const QJsonValue& path, fileNames) {
+        for (const QJsonValue& path : fileNames) {
           absoluteFileNames.append(absolute(path.toString()));
         }
         reader["fileNames"] = absoluteFileNames;
@@ -1205,7 +1205,8 @@ DataSource* ModuleManager::loadDataSource(QJsonObject& dsObject)
     auto reader = dsObject["reader"].toObject();
 
     if (reader.contains("fileNames")) {
-      foreach (const QJsonValue& value, reader["fileNames"].toArray()) {
+      const auto fileNamesArray = reader["fileNames"].toArray();
+      for (const QJsonValue& value : fileNamesArray) {
         // Verify the file exists before adding it to the list.
         if (QFileInfo::exists(value.toString())) {
           fileNames << value.toString();
