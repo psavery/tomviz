@@ -4,7 +4,7 @@
 #include "SaveLoadStateReaction.h"
 
 #include "ActiveObjects.h"
-#include "legacy/modules/ModuleManager.h"
+#include "MainWindow.h"
 #include "pipeline/LegacyStateLoader.h"
 #include "pipeline/Pipeline.h"
 #include "pipeline/PipelineStateIO.h"
@@ -75,7 +75,7 @@ bool SaveLoadStateReaction::saveState()
     if (success) {
       // Only set the most recent state file if the user picked a file
       // to save via a file dialog, and the save was successful.
-      ModuleManager::instance().setMostRecentStateFile(filename);
+      MainWindow::instance()->setMostRecentStateFile(filename);
     }
     return success;
   }
@@ -127,7 +127,7 @@ bool SaveLoadStateReaction::loadState(const QString& filename)
     RecentFilesMenu::pushStateFile(filename);
     // Set the most recent state file if we successfully loaded a
     // state, whether it was done programmatically or via file dialog
-    ModuleManager::instance().setMostRecentStateFile(filename);
+    MainWindow::instance()->setMostRecentStateFile(filename);
   }
 
   return success;

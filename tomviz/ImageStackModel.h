@@ -6,7 +6,7 @@
 
 #include <QAbstractTableModel>
 
-#include "legacy/DataSource.h"
+#include "pipeline/PortType.h"
 
 #include <QFileInfo>
 #include <QModelIndex>
@@ -37,14 +37,14 @@ public:
 
 public slots:
   void onFilesInfoChanged(QList<ImageInfo> filesInfo);
-  void onStackTypeChanged(DataSource::DataSourceType stackType);
+  void onStackTypeChanged(pipeline::PortType stackType);
 
 signals:
   void toggledSelected(int row, bool value);
 
 private:
   QList<ImageInfo> m_filesInfo;
-  DataSource::DataSourceType m_stackType = DataSource::DataSourceType::Volume;
+  pipeline::PortType m_stackType = pipeline::PortType::Volume;
   const int c_numCol = 5;
   const int c_checkCol = 0;
   const int c_fileCol = 1;

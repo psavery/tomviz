@@ -6,7 +6,6 @@
 #include "ActiveObjects.h"
 #include "EmdFormat.h"
 #include "LoadDataReaction.h"
-#include "MoleculeSource.h"
 
 #include "pipeline/InputPort.h"
 #include "pipeline/Link.h"

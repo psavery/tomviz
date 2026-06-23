@@ -16,14 +16,11 @@ class H5ReadWrite;
 
 namespace tomviz {
 
-class DataSource;
-
 class EmdFormat
 {
 public:
   static bool read(const std::string& fileName, vtkImageData* data,
                    const QVariantMap& options = QVariantMap());
-  static bool write(const std::string& fileName, DataSource* source);
   static bool write(const std::string& fileName, vtkImageData* image);
 
   // Read EMD data from a specified node in the HDF5 file

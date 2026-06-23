@@ -42,8 +42,6 @@
 #include "LoadPaletteReaction.h"
 #include "LoadStackReaction.h"
 #include "LoadTimeSeriesReaction.h"
-#include "legacy/modules/ModuleManager.h"
-#include "legacy/modules/ModuleMenu.h"
 #include "PipelineModuleMenu.h"
 #include "pipeline/Pipeline.h"
 #include "pipeline/PipelineExecutor.h"
@@ -66,10 +64,6 @@
 #include "MoleculeProperties.h"
 #include "CentralWidget.h"
 #include "OperatorSearchDialog.h"
-#include "PassiveAcquisitionWidget.h"
-#include "legacy/Pipeline.h"
-#include "legacy/PipelineManager.h"
-#include "legacy/PipelineProxy.h"
 #include "ProgressDialogManager.h"
 #include "PtychoRunner.h"
 #include "PyXRFRunner.h"
@@ -77,7 +71,6 @@
 #include "PythonUtilities.h"
 #include "RecentFilesMenu.h"
 #include "ReconstructionReaction.h"
-#include "RegexGroupSubstitution.h"
 #include "ResetReaction.h"
 #include "SaveDataReaction.h"
 #include "SaveLoadStateReaction.h"
@@ -88,11 +81,8 @@
 #include "SetTiltAnglesReaction.h"
 #include "Utilities.h"
 #include "ViewMenuManager.h"
-#include "legacy/modules/VolumeManager.h"
 #include "WelcomeDialog.h"
 #include "tomvizConfig.h"
-
-#include "legacy/PipelineModel.h"
 
 #include <QAction>
 #include <QCloseEvent>
@@ -145,16 +135,6 @@ MainWindow* MainWindow::instance()
 MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   : QMainWindow(parent, flags), m_ui(new Ui::MainWindow)
 {
-  VolumeManager::instance();
-  connect(&ModuleManager::instance(), &ModuleManager::enablePythonConsole, this,
-          &MainWindow::setEnabledPythonConsole);
-
-  connect(&ModuleManager::instance(), &ModuleManager::mouseOverVoxel, this,
-          &MainWindow::onMouseOverVoxel);
-
-  connect(&ModuleManager::instance(),
-          &ModuleManager::mostRecentStateFileChanged, this,
-          &MainWindow::updateSaveStateEnableState);
 
   // Update back light azimuth default on view.
   connect(pqApplicationCore::instance()->getServerManagerModel(),
@@ -193,13 +173,6 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   // don't think tomviz should import ParaView modules by default in Python
   // shell.
   pqPythonShell::setPreamble(QStringList());
-
-  connect(m_ui->pythonConsole, &pqPythonShell::executing,
-          [this](bool executing) {
-            if (!executing) {
-              this->syncPythonToApp();
-            }
-          });
 
   // Hide these dock widgets when tomviz is first opened. If they are later
   // opened and remain open while tomviz is shut down, their visibility and
@@ -659,9 +632,6 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   // Populate the menu with templates
   findPipelineTemplates();
 
-  // Register our factories for Python wrapping.
-  PipelineProxyFactory::registerWithFactory();
-
   // Build Tomography menu
   // ################################################################
   QAction* setVolumeDataTypeAction =
@@ -748,9 +718,10 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
 
   // Set up reactions for Tomography Menu
   //#################################################################
-  new SetDataTypeReaction(setVolumeDataTypeAction, this, DataSource::Volume);
-  new SetDataTypeReaction(setTiltDataTypeAction, this, DataSource::TiltSeries);
-  // new SetDataTypeReaction(setFibDataTypeAction, this, DataSource::FIB);
+  new SetDataTypeReaction(setVolumeDataTypeAction, this,
+                          pipeline::PortType::Volume);
+  new SetDataTypeReaction(setTiltDataTypeAction, this,
+                          pipeline::PortType::TiltSeries);
   new SetTiltAnglesReaction(setTiltAnglesAction, this);
 
   new AddPythonTransformReaction(
@@ -984,17 +955,12 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
 
   // Add the acquisition client experimentally.
   m_ui->actionAcquisition->setEnabled(false);
-  m_ui->actionPassiveAcquisition->setEnabled(false);
 
   connect(m_ui->actionAcquisition, &QAction::triggered, this,
           [this]() { openDialog<AcquisitionWidget>(&m_acquisitionWidget); });
 
   connect(m_ui->actionAnimationHelper, &QAction::triggered, this, [this]() {
     openDialog<AnimationHelperDialog>(&m_animationHelperDialog);
-  });
-
-  connect(m_ui->actionPassiveAcquisition, &QAction::triggered, this, [this]() {
-    openDialog<PassiveAcquisitionWidget>(&m_passiveAcquisitionDialog);
   });
 
   // Prepopulate the previously seen python readers/writers
@@ -1007,7 +973,6 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   auto operators = initPython();
 
   m_ui->actionAcquisition->setEnabled(true);
-  m_ui->actionPassiveAcquisition->setEnabled(true);
   registerCustomOperators(operators);
 
   auto dataBroker = new DataBroker(this);
@@ -1065,7 +1030,6 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
 
 MainWindow::~MainWindow()
 {
-  ModuleManager::instance().reset();
   QString autosaveFile = getAutosaveFile();
   if (QFile::exists(autosaveFile) && !QFile::remove(autosaveFile)) {
     std::cerr << "Failed to remove autosave file." << std::endl;
@@ -1076,7 +1040,6 @@ std::vector<OperatorDescription> MainWindow::initPython()
 {
   Python::initialize();
   Connection::registerType();
-  RegexGroupSubstitution::registerType();
   auto operators = findCustomOperators();
   FileFormatManager::instance().registerPythonReaders();
   FileFormatManager::instance().registerPythonWriters();
@@ -1216,7 +1179,8 @@ void MainWindow::dropEvent(QDropEvent* e)
 
 void MainWindow::closeEvent(QCloseEvent* e)
 {
-  if (ModuleManager::instance().hasRunningOperators()) {
+  auto* activePipeline = ActiveObjects::instance().pipeline();
+  if (activePipeline && activePipeline->isExecuting()) {
     QMessageBox::StandardButton response =
       QMessageBox::question(this, "Close tomviz?",
                             "You have transforms that are not completed "
@@ -1227,7 +1191,7 @@ void MainWindow::closeEvent(QCloseEvent* e)
       e->ignore();
       return;
     }
-  } else if (ModuleManager::instance().hasDataSources()) {
+  } else if (activePipeline && !activePipeline->nodes().isEmpty()) {
     QMessageBox::StandardButton response =
       QMessageBox::question(this, "Close?", "Are you sure you want to exit?");
     if (response == QMessageBox::No) {
@@ -1238,10 +1202,9 @@ void MainWindow::closeEvent(QCloseEvent* e)
   // This is a little hackish, but we must ensure all PV proxy unregister calls
   // happen early enough in application destruction that the ParaView proxy
   // management code can still run without segfaulting.
-  PipelineManager::instance().removeAllPipelines();
-  ModuleManager::instance().removeAllModules();
-  ModuleManager::instance().removeAllDataSources();
-  ModuleManager::instance().removeAllMoleculeSources();
+  if (activePipeline) {
+    activePipeline->clear();
+  }
   e->accept();
 }
 
@@ -1302,7 +1265,16 @@ void MainWindow::autosave()
 
 QString MainWindow::mostRecentStateFile() const
 {
-  return ModuleManager::instance().mostRecentStateFile();
+  return m_mostRecentStateFile;
+}
+
+void MainWindow::setMostRecentStateFile(const QString& fileName)
+{
+  if (m_mostRecentStateFile == fileName) {
+    return;
+  }
+  m_mostRecentStateFile = fileName;
+  updateSaveStateEnableState();
 }
 
 void MainWindow::updateSaveStateEnableState()
@@ -1535,26 +1507,6 @@ void MainWindow::onMouseOverVoxel(const vtkVector3i& ijk, double v)
   statusBar()->showMessage(
     QString("(%1, %2, %3) : %4").arg(ijk[0]).arg(ijk[1]).arg(ijk[2]).arg(v),
     5000);
-}
-
-void MainWindow::syncPythonToApp()
-{
-  Python python;
-  auto tomvizState = python.import("tomviz.state");
-  if (!tomvizState.isValid()) {
-    qCritical() << "Failed to import tomviz.state";
-    return;
-  }
-
-  auto sync = tomvizState.findFunction("sync");
-  if (!sync.isValid()) {
-    qCritical() << "Unable to locate sync.";
-    return;
-  }
-
-  Python::Tuple args(0);
-  Python::Dict kwargs;
-  sync.call(args, kwargs);
 }
 
 void MainWindow::findPipelineTemplates() {

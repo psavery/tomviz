@@ -2,17 +2,10 @@
    It is released under the 3-Clause BSD License, see "LICENSE". */
 
 #include "DataBrokerSaveReaction.h"
-#include "DataBrokerSaveDialog.h"
 
-#include "legacy/DataSource.h"
-#include "GenericHDF5Format.h"
-#include "LoadDataReaction.h"
 #include "Utilities.h"
 
-#include <vtkImageData.h>
-
 #include <QDebug>
-#include <QMessageBox>
 
 namespace tomviz {
 
@@ -39,61 +32,9 @@ void DataBrokerSaveReaction::setDataBrokerInstalled(bool installed)
 
 void DataBrokerSaveReaction::saveData()
 {
-  auto dataBroker = new DataBroker(tomviz::mainWidget());
-  DataBrokerSaveDialog dialog(dataBroker, tomviz::mainWidget());
-
-  if (dialog.exec() == QDialog::Accepted) {
-    auto name = dialog.name();
-
-    // TODO: migrate to new pipeline
-    DataSource* ds = nullptr; // was: ActiveObjects::instance().activeDataSource()
-    if (ds == nullptr) {
-      qWarning() << "No active data source!";
-      return;
-    }
-
-    auto data = ds->imageData();
-
-    vtkNew<vtkImageData> permutedData;
-    if (DataSource::hasTiltAngles(data)) {
-      // No deep copies of data needed. Just re-label the axes.
-      permutedData->ShallowCopy(data);
-      relabelXAndZAxes(permutedData);
-    } else {
-      // Need to re-order to C ordering before writing
-      GenericHDF5Format::reorderData(data, permutedData,
-                                     ReorderMode::FortranToC);
-    }
-
-    tomviz::mainWidget()->setCursor(Qt::WaitCursor);
-    auto call = dataBroker->saveData("fxi", name, data);
-    connect(
-      call, &SaveDataCall::complete, dataBroker,
-      [dataBroker, this](const QString& id) {
-        dataBroker->deleteLater();
-        tomviz::mainWidget()->unsetCursor();
-        QMessageBox messageBox(
-          QMessageBox::Information, "tomviz",
-          QString(
-            "The active dataset was successfully exported to DataBroker: %1")
-            .arg(id),
-          QMessageBox::Ok, m_mainWindow);
-        messageBox.exec();
-      });
-
-    connect(call, &DataBrokerCall::error, dataBroker,
-            [dataBroker, this](const QString& errorMessage) {
-              tomviz::mainWidget()->unsetCursor();
-              dataBroker->deleteLater();
-              QMessageBox messageBox(
-                QMessageBox::Warning, "tomviz",
-                QString("Error export data to DataBroker: %1. Please check "
-                        "message log for details.")
-                  .arg(errorMessage),
-                QMessageBox::Ok, m_mainWindow);
-              messageBox.exec();
-            });
-  }
+  // TODO: migrate to new pipeline. Export to DataBroker is not yet supported
+  // with the new pipeline; the action is disabled in the constructor.
+  qWarning() << "Export to DataBroker is not supported in the new pipeline.";
 }
 
 } // namespace tomviz
