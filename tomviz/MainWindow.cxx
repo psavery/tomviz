@@ -1605,9 +1605,13 @@ void MainWindow::initPipeline()
   connect(p, &pipeline::Pipeline::nodeAdded, this,
           &MainWindow::onNodeSelected);
 
-  // Per-node rescale of existing color maps. Uses cached VTK objects
-  // (not SM proxy creation), so safe while the worker thread is still
-  // running subsequent nodes.
+  // Per-node rescale of existing color maps. rescaleColorMap() pushes
+  // SM proxy state through the ParaView session, which is not
+  // thread-safe against the worker thread's node execution. The
+  // ThreadedExecutor parks its worker at a per-node barrier until this
+  // handler returns (see ExecutionWorker::run), so no operator runs
+  // concurrently with the rescale below — this previously crashed with
+  // a SIGBUS inside vtkSMProxy::UpdateVTKObjects.
   connect(p->executor(), &pipeline::PipelineExecutor::nodeExecutionFinished,
           this, [](pipeline::Node* node, bool success) {
     if (!success) {

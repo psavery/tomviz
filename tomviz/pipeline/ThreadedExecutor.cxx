@@ -14,6 +14,7 @@
 #include "PortData.h"
 
 #include <QHash>
+#include <QSemaphore>
 #include <QThread>
 
 #include <memory>
@@ -42,8 +43,10 @@ class ExecutionWorker : public QObject
 
 public:
   ExecutionWorker(std::atomic<bool>& cancelFlag,
-                  std::atomic<Node*>& currentNode)
-    : m_cancelFlag(cancelFlag), m_currentNode(currentNode)
+                  std::atomic<Node*>& currentNode,
+                  QObject* mainThreadContext, QSemaphore& syncSem)
+    : m_cancelFlag(cancelFlag), m_currentNode(currentNode),
+      m_mainThreadContext(mainThreadContext), m_syncSem(syncSem)
   {
   }
 
@@ -51,6 +54,12 @@ public slots:
   void run(const QList<Node*>& nodes, Pipeline* pipeline)
   {
     Q_UNUSED(pipeline);
+
+    // Drop any stray barrier permit left by a previous run that was
+    // cancelled while parked at the per-node barrier below, so this
+    // run's first barrier actually waits for the main thread.
+    while (m_syncSem.tryAcquire()) {
+    }
 
     // Per-plan strong-ref retainer; see DefaultExecutor::execute for the
     // detailed rationale. Local to this slot so it drops as soon as the
@@ -118,6 +127,26 @@ public slots:
       m_currentNode.store(nullptr);
       emit nodeFinished(node, success);
 
+      // Barrier: don't start the next node until the main thread has
+      // drained this node's nodeExecutionFinished handlers. The
+      // color-map rescale wired to that signal pushes ParaView SM proxy
+      // state through the session (vtkSMProxy::UpdateVTKObjects), which
+      // is not thread-safe against the operator we'd otherwise start
+      // running here concurrently — that race was the SIGBUS in
+      // VolumeData::rescaleColorMap. The release is posted *after* the
+      // queued nodeFinished above (same receiver, same thread → FIFO),
+      // so by the time it runs the handlers have finished. The
+      // cancel-checked timeout keeps ~ThreadedExecutor's QThread::wait()
+      // from deadlocking against a worker parked here during teardown.
+      QMetaObject::invokeMethod(
+        m_mainThreadContext, [this]() { m_syncSem.release(); },
+        Qt::QueuedConnection);
+      while (!m_syncSem.tryAcquire(1, 50)) {
+        if (m_cancelFlag.load()) {
+          break;
+        }
+      }
+
       for (auto* input : node->inputPorts()) {
         input->clearHandle();
       }
@@ -145,11 +174,14 @@ signals:
 private:
   std::atomic<bool>& m_cancelFlag;
   std::atomic<Node*>& m_currentNode;
+  QObject* m_mainThreadContext;
+  QSemaphore& m_syncSem;
 };
 
 ThreadedExecutor::ThreadedExecutor(QObject* parent)
   : PipelineExecutor(parent), m_thread(new QThread(this)),
-    m_worker(new ExecutionWorker(m_cancelRequested, m_currentNode))
+    m_worker(new ExecutionWorker(m_cancelRequested, m_currentNode, this,
+                                 m_syncSem))
 {
   m_worker->moveToThread(m_thread);
 

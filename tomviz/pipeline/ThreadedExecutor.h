@@ -6,6 +6,8 @@
 
 #include "PipelineExecutor.h"
 
+#include <QSemaphore>
+
 #include <atomic>
 
 class QThread;
@@ -31,6 +33,12 @@ private:
   void executePending();
 
   QThread* m_thread = nullptr;
+  // Per-node barrier: the worker releases nothing itself; the main
+  // thread releases one permit after each node's nodeExecutionFinished
+  // handlers (the color-map rescale) have run, letting the worker start
+  // the next node. Constructed before m_worker so the reference handed
+  // to the worker is valid. See the barrier in ExecutionWorker::run.
+  QSemaphore m_syncSem;
   ExecutionWorker* m_worker = nullptr;
   std::atomic<bool> m_cancelRequested{ false };
   std::atomic<bool> m_running{ false };
