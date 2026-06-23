@@ -226,6 +226,15 @@ QString findPrefix(const QStringList& fileNames);
 /// Convenience function to get the main widget (useful for dialog parenting).
 QWidget* mainWidget();
 
+/// Promote a top-level widget to a Qt::Tool window so it reliably floats above
+/// the main window. On macOS a parented modeless QDialog is only hinted (not
+/// guaranteed) to stack above its parent and can slip behind the main window
+/// when the user clicks it; a Qt::Tool window floats above the application's
+/// windows while leaving them interactive. Call this before the widget is
+/// first shown. Any existing window hint flags (frameless, title-only, etc.)
+/// are preserved.
+void floatAboveMainWindow(QWidget* widget);
+
 QJsonValue toJson(vtkVariant variant);
 QJsonValue toJson(vtkSMProperty* prop);
 bool setProperties(const QJsonObject& props, vtkSMProxy* proxy);

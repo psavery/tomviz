@@ -7,6 +7,7 @@
 #include "EmdFormat.h"
 #include "FileFormatManager.h"
 #include "PythonWriter.h"
+#include "Utilities.h"
 
 #include "pipeline/OutputPort.h"
 #include "pipeline/PortData.h"
@@ -233,7 +234,7 @@ void SaveDataReaction::onTriggered()
     filters << writer->getFileDialogFilter();
   }
 
-  QFileDialog dialog(nullptr);
+  QFileDialog dialog(tomviz::mainWidget());
   dialog.setFileMode(QFileDialog::AnyFile);
   dialog.setNameFilters(filters);
   dialog.setObjectName("FileOpenDialog-tomviz");

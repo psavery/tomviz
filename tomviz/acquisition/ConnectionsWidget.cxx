@@ -28,7 +28,7 @@ ConnectionsWidget::ConnectionsWidget(QWidget* parent)
 
   // New
   connect(m_ui->newConnectionButton, &QPushButton::clicked, [this]() {
-    ConnectionDialog dialog;
+    ConnectionDialog dialog("", "", 8080, this);
     auto r = dialog.exec();
 
     if (r != QDialog::Accepted) {
@@ -150,7 +150,7 @@ void ConnectionsWidget::sortConnections()
 
 void ConnectionsWidget::editConnection(Connection conn, size_t row)
 {
-  ConnectionDialog dialog(conn.name(), conn.hostName(), conn.port());
+  ConnectionDialog dialog(conn.name(), conn.hostName(), conn.port(), this);
   auto r = dialog.exec();
 
   if (r != QDialog::Accepted) {

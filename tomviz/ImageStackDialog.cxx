@@ -129,7 +129,7 @@ void ImageStackDialog::openFileDialog(int mode)
   QStringList filters;
   filters << "TIFF Image files (*.tiff *.tif)";
 
-  QFileDialog dialog(nullptr);
+  QFileDialog dialog(this);
   if (mode == QFileDialog::ExistingFiles) {
     dialog.setFileMode(QFileDialog::ExistingFiles);
     dialog.setNameFilters(filters);

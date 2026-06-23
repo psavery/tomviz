@@ -987,6 +987,20 @@ QWidget* mainWidget()
   return pqCoreUtilities::mainWidget();
 }
 
+void floatAboveMainWindow(QWidget* widget)
+{
+  if (!widget) {
+    return;
+  }
+  // Replace the window type (e.g. Qt::Dialog) with Qt::Tool while preserving
+  // the hint flags, so the window floats above the main window on macOS rather
+  // than slipping behind it.
+  auto flags = widget->windowFlags();
+  flags &= ~Qt::WindowType_Mask;
+  flags |= Qt::Tool;
+  widget->setWindowFlags(flags);
+}
+
 QJsonValue toJson(vtkVariant variant)
 {
   auto type = variant.GetType();

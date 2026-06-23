@@ -102,7 +102,7 @@ void ExportDataReaction::onTriggered()
     return;
   }
 
-  QFileDialog dialog(nullptr);
+  QFileDialog dialog(tomviz::mainWidget());
   dialog.setFileMode(QFileDialog::AnyFile);
   dialog.setNameFilters(filters);
   dialog.setObjectName("FileOpenDialog-tomviz"); // avoid name collision?

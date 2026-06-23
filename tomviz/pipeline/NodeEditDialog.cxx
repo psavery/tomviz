@@ -62,6 +62,10 @@ Node* NodeEditDialog::node() const
 
 void NodeEditDialog::init()
 {
+  // Float above the main window so the dialog does not slip behind it on
+  // macOS while the user keeps working in the render view.
+  floatAboveMainWindow(this);
+
   m_node->setEditing(true);
 
   // Suppress the auto-execute wiring so the dialog controls execution.

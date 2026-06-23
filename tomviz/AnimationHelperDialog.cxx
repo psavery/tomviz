@@ -519,6 +519,9 @@ public:
 AnimationHelperDialog::AnimationHelperDialog(QWidget* parent)
   : QDialog(parent), m_internal(new Internal(this))
 {
+  // Float above the main window so the dialog does not slip behind it on
+  // macOS.
+  floatAboveMainWindow(this);
 }
 
 AnimationHelperDialog::~AnimationHelperDialog() = default;

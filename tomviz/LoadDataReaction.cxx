@@ -200,7 +200,7 @@ QList<pipeline::SourceNode*> LoadDataReaction::loadData(bool isTimeSeries)
 
   filters << "All files (*.*)";
 
-  QFileDialog dialog(nullptr);
+  QFileDialog dialog(tomviz::mainWidget());
   dialog.setFileMode(QFileDialog::ExistingFiles);
   dialog.setNameFilters(filters);
   dialog.setObjectName("FileOpenDialog-tomviz"); // avoid name collision?

@@ -3,6 +3,8 @@
 
 #include "OperatorSearchDialog.h"
 
+#include "Utilities.h"
+
 #include <QAction>
 #include <QHash>
 #include <QKeyEvent>

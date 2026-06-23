@@ -573,7 +573,7 @@ bool GenericHDF5Format::read(const std::string& fileName, vtkImageData* image,
   if (selectedDatasets.empty()) {
     QString msg = "At least one volume must be selected";
     std::cerr << msg.toStdString() << std::endl;
-    QMessageBox::critical(nullptr, "Invalid Selection", msg);
+    QMessageBox::critical(tomviz::mainWidget(), "Invalid Selection", msg);
     return false;
   }
 
@@ -584,7 +584,7 @@ bool GenericHDF5Format::read(const std::string& fileName, vtkImageData* image,
     auto msg =
       QString("Failed to read the data at: ") + selectedDatasets[0].c_str();
     std::cerr << msg.toStdString() << std::endl;
-    QMessageBox::critical(nullptr, "Read Failed", msg);
+    QMessageBox::critical(tomviz::mainWidget(), "Read Failed", msg);
     return false;
   }
 
@@ -598,7 +598,7 @@ bool GenericHDF5Format::read(const std::string& fileName, vtkImageData* image,
     if (!addScalarArray(reader, path, image, path)) {
       auto msg = QString("Failed to read or add the data of: ") + path.c_str();
       std::cerr << msg.toStdString() << std::endl;
-      QMessageBox::critical(nullptr, "Failure", msg);
+      QMessageBox::critical(tomviz::mainWidget(), "Failure", msg);
       return false;
     }
   }
