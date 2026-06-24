@@ -86,6 +86,15 @@ QList<Node*> Pipeline::nodes() const
 
 void Pipeline::clear()
 {
+  // Stop any in-flight execution and wait for the worker to leave the
+  // current node before deleting anything. Otherwise the worker thread
+  // can still be executing a node we delete below and emit from / touch
+  // the freed Node — a SIGSEGV. The close-while-running path
+  // (MainWindow::closeEvent -> clear()) is the one that hits this.
+  if (m_executor && m_executor->isRunning()) {
+    m_executor->cancelAndWait();
+  }
+
   // Drop links first so their removal signals fire while both
   // endpoint nodes are still alive. removeNode() itself also scrubs
   // any remaining links connected to the node and deletes the node;

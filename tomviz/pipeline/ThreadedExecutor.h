@@ -27,6 +27,7 @@ public:
 
   void execute(const QList<Node*>& nodes, Pipeline* pipeline) override;
   void cancel() override;
+  void cancelAndWait() override;
   bool isRunning() const override;
 
 private:

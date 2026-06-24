@@ -15,6 +15,7 @@
 
 #include <QCoreApplication>
 #include <QEvent>
+#include <QEventLoop>
 #include <QHash>
 #include <QSemaphore>
 #include <QThread>
@@ -278,6 +279,36 @@ void ThreadedExecutor::cancel()
     // its subprocess).
     node->cancelExecution();
   }
+}
+
+void ThreadedExecutor::cancelAndWait()
+{
+  if (!m_running.load()) {
+    return;
+  }
+  // Drop any queued follow-up run so executePending() can't restart us
+  // out from under the wait below.
+  m_pendingPipeline = nullptr;
+  m_pendingNodes.clear();
+  cancel();
+
+  // Block until the worker leaves the current node and run() returns.
+  // The worker only checks the cancel flag at node boundaries (a running
+  // Python transform isn't interrupted mid-call), so we must wait for it
+  // — Pipeline::clear() deletes nodes right after this, and the worker
+  // emitting from / touching a freed Node is a SIGSEGV. executionComplete
+  // fires from our executionDone handler once the worker is idle; a
+  // nested event loop keeps delivering the worker's queued signals (and
+  // any sink consume() marshaled to this thread) until then, so it can't
+  // deadlock. ExcludeUserInputEvents avoids acting on stray clicks while
+  // we're tearing down.
+  QEventLoop loop;
+  auto conn = connect(this, &PipelineExecutor::executionComplete, &loop,
+                      &QEventLoop::quit);
+  if (m_running.load()) {
+    loop.exec(QEventLoop::ExcludeUserInputEvents);
+  }
+  disconnect(conn);
 }
 
 bool ThreadedExecutor::isRunning() const
