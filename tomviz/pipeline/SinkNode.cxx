@@ -6,6 +6,7 @@
 #include "InputPort.h"
 #include "Link.h"
 #include "OutputPort.h"
+#include "ThreadUtils.h"
 
 namespace tomviz {
 namespace pipeline {
@@ -48,10 +49,27 @@ void SinkNode::onIntermediateData()
     }
   }
   if (!inputs.isEmpty()) {
-    prepareConsume(inputs);
-    bool success = consume(inputs);
-    postConsume(success);
+    runConsume(inputs);
   }
+}
+
+bool SinkNode::runConsume(const QMap<QString, PortData>& inputs)
+{
+  // execute() and onIntermediateData() both run on the pipeline worker
+  // thread. Sinks that touch GUI / GL / SM-proxy state opt in via
+  // consumeOnGuiThread() so the whole trio hops to the GUI thread once
+  // (the worker blocks until it returns), rather than marshaling each
+  // access individually.
+  auto body = [&]() {
+    prepareConsume(inputs);
+    bool ok = consume(inputs);
+    postConsume(ok);
+    return ok;
+  };
+  if (consumeOnGuiThread()) {
+    return callOnThread(this, body);
+  }
+  return body();
 }
 
 bool SinkNode::execute()
@@ -74,9 +92,7 @@ bool SinkNode::execute()
     }
   }
 
-  prepareConsume(inputs);
-  bool success = consume(inputs);
-  postConsume(success);
+  bool success = runConsume(inputs);
 
   if (success) {
     m_retainedInputs = handles;

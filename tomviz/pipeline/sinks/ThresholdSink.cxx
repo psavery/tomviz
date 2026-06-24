@@ -144,9 +144,9 @@ bool ThresholdSink::consume(const QMap<QString, PortData>& inputs)
     m_upper = mid + 0.1 * delta;
   }
 
-  // All SM proxy work must happen on the main thread.
-  QMetaObject::invokeMethod(this, &ThresholdSink::setupOrUpdatePipeline,
-                            Qt::QueuedConnection);
+  // SM proxy work must happen on the GUI thread; consume() runs there
+  // now (consumeOnGuiThread()).
+  setupOrUpdatePipeline();
 
   onMetadataChanged();
   return true;

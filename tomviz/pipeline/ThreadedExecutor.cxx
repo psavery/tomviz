@@ -13,6 +13,8 @@
 #include "Pipeline.h"
 #include "PortData.h"
 
+#include <QCoreApplication>
+#include <QEvent>
 #include <QHash>
 #include <QSemaphore>
 #include <QThread>
@@ -210,7 +212,19 @@ ThreadedExecutor::~ThreadedExecutor()
   m_pendingNodes.clear();
   cancel();
   m_thread->quit();
-  m_thread->wait();
+  // The worker may be parked in a BlockingQueuedConnection marshaling a
+  // sink's consume() onto this (the GUI) thread (see SinkNode::runConsume
+  // / ThreadUtils) or in the per-node barrier above. A bare wait() would
+  // deadlock the first case: the worker can't return until we service the
+  // posted call, but wait() doesn't run our event loop. Pump just the
+  // queued meta-calls until the thread exits so any in-flight marshal
+  // completes and the worker unwinds. Restricting to MetaCall avoids
+  // re-dispatching paint/timer/input events mid-teardown. When the worker
+  // is idle (the common case) wait(10) returns at once and nothing is
+  // pumped.
+  while (!m_thread->wait(10)) {
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::MetaCall);
+  }
   delete m_worker;
 }
 
