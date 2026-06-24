@@ -30,6 +30,7 @@
 #include <vtkSMTransferFunctionManager.h>
 #include <vtkSMTransferFunctionProxy.h>
 #include <vtkSMViewProxy.h>
+#include <vtkWeakPointer.h>
 
 namespace tomviz {
 namespace pipeline {
@@ -519,11 +520,19 @@ void LegacyModuleSink::resetCameraIfFirstSink()
     }
   }
 
-  // Schedule camera reset on the main thread
-  auto* renderViewProxy = vtkSMRenderViewProxy::SafeDownCast(m_viewProxy);
+  // Schedule camera reset on the main thread. Capture the view as a
+  // weak pointer, not raw: m_viewProxy is itself weak because the sink
+  // doesn't own the view (it's torn down by pqDeleteReaction::deleteAll()
+  // on reset / state reload). This queued call runs on `this` (the
+  // sink), which can outlive the view, so a raw capture could fire
+  // ResetCamera() on a freed proxy.
+  vtkWeakPointer<vtkSMRenderViewProxy> renderViewProxy(
+    vtkSMRenderViewProxy::SafeDownCast(m_viewProxy));
   if (renderViewProxy) {
     QMetaObject::invokeMethod(this, [renderViewProxy]() {
-      renderViewProxy->ResetCamera();
+      if (renderViewProxy) {
+        renderViewProxy->ResetCamera();
+      }
     }, Qt::QueuedConnection);
   }
 }

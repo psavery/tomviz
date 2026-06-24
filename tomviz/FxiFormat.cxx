@@ -3,7 +3,6 @@
 
 #include "FxiFormat.h"
 
-#include "legacy/DataSource.h"
 #include "GenericHDF5Format.h"
 #include "Utilities.h"
 
@@ -42,68 +41,6 @@ bool FxiFormat::read(const std::string& fileName, vtkImageData* image,
 {
   std::string path = "/img_tomo";
   return readDataSet(fileName, path, image, options);
-}
-
-bool FxiFormat::read(const std::string& fileName, DataSource* dataSource,
-                     const QVariantMap& options)
-{
-  vtkNew<vtkImageData> image;
-  if (!read(fileName, image, options)) {
-    std::cerr << "Failed to read data in: " + fileName + "\n";
-    return false;
-  }
-
-  dataSource->setData(image);
-
-  // Use the same strides and volume bounds for the dark and white data,
-  // except for the tilt axis.
-  QVariantMap darkWhiteOptions = options;
-  int strides[3];
-  int bs[6];
-  dataSource->subsampleStrides(strides);
-  dataSource->subsampleVolumeBounds(bs);
-
-  QVariantList stridesList = { 1, strides[1], strides[2] };
-  QVariantList boundsList = { 0, 1, bs[2], bs[3], bs[4], bs[5] };
-
-  darkWhiteOptions["subsampleStrides"] = stridesList;
-  darkWhiteOptions["subsampleVolumeBounds"] = boundsList;
-  darkWhiteOptions["askForSubsample"] = false;
-
-  // Read in the dark and white image data as well
-  vtkNew<vtkImageData> darkImage, whiteImage;
-  readDark(fileName, darkImage, darkWhiteOptions);
-  if (darkImage->GetPointData()->GetNumberOfArrays() != 0)
-    dataSource->setDarkData(std::move(darkImage));
-
-  readWhite(fileName, whiteImage, darkWhiteOptions);
-  if (whiteImage->GetPointData()->GetNumberOfArrays() != 0)
-    dataSource->setWhiteData(std::move(whiteImage));
-
-  QVector<double> angles = readTheta(fileName, options);
-
-  if (angles.isEmpty()) {
-    // Re-order the data to Fortran ordering
-    GenericHDF5Format::reorderData(image, ReorderMode::CToFortran);
-    GenericHDF5Format::reorderData(dataSource->darkData(),
-                                   ReorderMode::CToFortran);
-    GenericHDF5Format::reorderData(dataSource->whiteData(),
-                                   ReorderMode::CToFortran);
-  } else {
-    // No re-order needed. Just re-label the axes.
-    relabelXAndZAxes(image);
-    relabelXAndZAxes(dataSource->darkData());
-    relabelXAndZAxes(dataSource->whiteData());
-    dataSource->setTiltAngles(angles);
-    dataSource->setType(DataSource::TiltSeries);
-  }
-
-  auto metadata = readMetadata(fileName, options);
-  dataSource->setMetadata(metadata);
-
-  dataSource->dataModified();
-
-  return true;
 }
 
 HDF5ReadResult FxiFormat::readAll(const std::string& fileName,

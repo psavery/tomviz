@@ -7,7 +7,6 @@
 
 #include "ActiveObjects.h"
 #include "MainWindow.h"
-#include "legacy/modules/ModuleManager.h"
 
 #include <pqApplicationCore.h>
 #include <pqSettings.h>

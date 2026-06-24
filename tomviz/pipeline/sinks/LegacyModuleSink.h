@@ -166,6 +166,14 @@ protected:
   /// otherwise.
   void postConsume(bool success) override;
 
+  // Legacy module sinks own render-window actors / SM proxies and touch
+  // them throughout the consume() trio (postConsume() rebinds the color
+  // map via SM proxies, subclasses set actor visibility, etc.), so run
+  // the whole trio on the GUI thread. Subclasses that do heavy compute
+  // in consume() (e.g. SegmentSink runs an embedded Python script) opt
+  // back out.
+  bool consumeOnGuiThread() const override { return true; }
+
   void onInputDisconnected(InputPort* port) override;
   void restorePresentation() override { restoreVisualization(); }
 

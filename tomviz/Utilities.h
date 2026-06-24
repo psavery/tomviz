@@ -53,8 +53,6 @@ struct Attributes
   static const char* FILENAME;
 };
 
-class DataSource;
-
 //===========================================================================
 // Functions for converting from pqProxy to vtkSMProxy and vice-versa.
 //===========================================================================
@@ -163,7 +161,7 @@ vtkPVArrayInformation* scalarArrayInformation(vtkSMSourceProxy* proxy);
 /// Rescales the colorMap (and associated opacityMap) using the transformed data
 /// range from the data source. This will respect the "LockScalarRange" property
 /// on the colorMap i.e. if user locked the scalar range, it won't be rescaled.
-bool rescaleColorMap(vtkSMProxy* colorMap, DataSource* dataSource);
+bool rescaleColorMap(vtkSMProxy* colorMap, vtkSMSourceProxy* dataProxy);
 
 // Given the root of a file and an extension, reades the file fileName +
 // extension and returns the content in a QString.
@@ -299,11 +297,9 @@ QString getSizeNearestThousand(T num, bool labelAsBytes = false)
 }
 
 void addPlaceholderNodes(vtkColorTransferFunction* lut, const double range[2]);
-void addPlaceholderNodes(vtkColorTransferFunction* lut, DataSource* ds);
 void removePlaceholderNodes(vtkColorTransferFunction* lut);
 
 void addPlaceholderNodes(vtkPiecewiseFunction* opacity, const double range[2]);
-void addPlaceholderNodes(vtkPiecewiseFunction* opacity, DataSource* ds);
 void removePlaceholderNodes(vtkPiecewiseFunction* opacity);
 
 double rescale(double val, double oldMin, double oldMax, double newMin,
@@ -312,10 +308,8 @@ void rescaleNodes(vtkColorTransferFunction* lut, double newMin, double newMax);
 void rescaleNodes(vtkPiecewiseFunction* opacity, double newMin, double newMax);
 void removePointsOutOfRange(vtkColorTransferFunction* lut,
                             const double range[2]);
-void removePointsOutOfRange(vtkColorTransferFunction* lut, DataSource* ds);
 void removePointsOutOfRange(vtkPiecewiseFunction* opacity,
                             const double range[2]);
-void removePointsOutOfRange(vtkPiecewiseFunction* opacity, DataSource* ds);
 
 // Load a plugin by path
 bool loadPlugin(QString path);

@@ -13,8 +13,6 @@
 #include "ImageStackDialog.h"
 #include "ImageStackModel.h"
 #include "LoadStackReaction.h"
-#include "legacy/Pipeline.h"
-#include "legacy/PipelineManager.h"
 #include "PythonReader.h"
 #include "PythonUtilities.h"
 #include "RAWFileReaderDialog.h"

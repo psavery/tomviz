@@ -3,8 +3,9 @@
 
 #include "GenericHDF5Format.h"
 
+#include "pipeline/data/VolumeData.h"
+
 #include <DataExchangeFormat.h>
-#include "legacy/DataSource.h"
 #include <Hdf5SubsampleWidget.h>
 #include <Utilities.h>
 
@@ -240,12 +241,12 @@ bool GenericHDF5Format::addScalarArray(h5::H5ReadWrite& reader,
   // Set up the strides and counts
   int strides[3] = { 1, 1, 1 };
   size_t start[3], counts[3];
-  if (DataSource::wasSubsampled(image)) {
+  if (pipeline::VolumeData::wasSubsampled(image)) {
     // If the main image was subsampled, we need to use the same
     // subsampling for the scalars
-    DataSource::subsampleStrides(image, strides);
+    pipeline::VolumeData::subsampleStrides(image, strides);
     int bs[6];
-    DataSource::subsampleVolumeBounds(image, bs);
+    pipeline::VolumeData::subsampleVolumeBounds(image, bs);
 
     for (int i = 0; i < 3; ++i) {
       start[i] = static_cast<size_t>(bs[i * 2]);
@@ -270,7 +271,7 @@ bool GenericHDF5Format::addScalarArray(h5::H5ReadWrite& reader,
   for (int i = 0; i < 3; ++i) {
     if (vtkCounts[i] != imageDims[i]) {
       std::stringstream ss;
-      if (DataSource::wasSubsampled(image)) {
+      if (pipeline::VolumeData::wasSubsampled(image)) {
         ss << "Subsampled dimensions of ";
       } else {
         ss << "Dimensions of ";
@@ -353,8 +354,8 @@ bool GenericHDF5Format::readVolume(h5::H5ReadWrite& reader,
     QVariantList list = options["subsampleVolumeBounds"].toList();
     for (int i = 0; i < list.size() && i < 6; ++i)
       bs[i] = list[i].toInt();
-    DataSource::setWasSubsampled(image, true);
-    DataSource::setSubsampleVolumeBounds(image, bs);
+    pipeline::VolumeData::setWasSubsampled(image, true);
+    pipeline::VolumeData::setSubsampleVolumeBounds(image, bs);
   } else {
     // Set it to the defaults
     for (int i = 0; i < 3; ++i) {
@@ -372,8 +373,8 @@ bool GenericHDF5Format::readVolume(h5::H5ReadWrite& reader,
         strides[i] = 1;
     }
 
-    DataSource::setWasSubsampled(image, true);
-    DataSource::setSubsampleStrides(image, strides);
+    pipeline::VolumeData::setWasSubsampled(image, true);
+    pipeline::VolumeData::setSubsampleStrides(image, strides);
   }
 
   bool askForSubsample = false;
@@ -402,12 +403,12 @@ bool GenericHDF5Format::readVolume(h5::H5ReadWrite& reader,
     Hdf5SubsampleWidget widget(dimensions, size);
     layout.addWidget(&widget);
 
-    if (DataSource::wasSubsampled(image)) {
+    if (pipeline::VolumeData::wasSubsampled(image)) {
       // If it was previously subsampled, start with the previous values
-      DataSource::subsampleStrides(image, strides);
+      pipeline::VolumeData::subsampleStrides(image, strides);
       widget.setStrides(strides);
 
-      DataSource::subsampleVolumeBounds(image, bs);
+      pipeline::VolumeData::subsampleVolumeBounds(image, bs);
       widget.setBounds(bs);
     }
 
@@ -428,9 +429,9 @@ bool GenericHDF5Format::readVolume(h5::H5ReadWrite& reader,
     widget.bounds(bs);
     widget.strides(strides);
 
-    DataSource::setWasSubsampled(image, true);
-    DataSource::setSubsampleStrides(image, strides);
-    DataSource::setSubsampleVolumeBounds(image, bs);
+    pipeline::VolumeData::setWasSubsampled(image, true);
+    pipeline::VolumeData::setSubsampleStrides(image, strides);
+    pipeline::VolumeData::setSubsampleVolumeBounds(image, bs);
   }
 
   // Do one final check to make sure all bounds are valid
@@ -450,7 +451,7 @@ bool GenericHDF5Format::readVolume(h5::H5ReadWrite& reader,
 
   if (changed) {
     // Update the volume bounds that were used
-    DataSource::setSubsampleVolumeBounds(image, bs);
+    pipeline::VolumeData::setSubsampleVolumeBounds(image, bs);
   }
 
   // Set up the strides and counts
@@ -620,8 +621,8 @@ bool GenericHDF5Format::read(const std::string& fileName, vtkImageData* image,
   } else {
     // No deep copying of the data needed. Just relabel the X and Z axes.
     relabelXAndZAxes(image);
-    DataSource::setTiltAngles(image, angles);
-    DataSource::setType(image, DataSource::TiltSeries);
+    pipeline::VolumeData::setTiltAngles(image, angles);
+    pipeline::VolumeData::setType(image, pipeline::VolumeData::DataType::TiltSeries);
   }
 
   // Made it to the end...

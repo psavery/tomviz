@@ -29,9 +29,6 @@ class capsule;
 
 namespace tomviz {
 
-class DataSource;
-class DataSourceBase;
-
 class Python
 {
 
@@ -60,7 +57,6 @@ public:
     Object(const QList<long>& intList);
     Object(const QList<double>& floatList);
     Object(const Variant& value);
-    Object(const DataSourceBase& source);
     Object(PyObject* obj);
 
     Object& operator=(const Object& other);
@@ -191,9 +187,6 @@ public:
   /// Prepends the path to the sys.path variable calls
   /// vtkPythonPythonInterpreter::PrependPythonPath(...)  to do the work.
   static void prependPythonPath(std::string dir);
-
-  /// Create an internal Dataset object for operators to use
-  static Object createDataset(vtkObjectBase* data, const DataSource& source);
 
 private:
   vtkPythonScopeGilEnsurer* m_ensurer = nullptr;

@@ -101,19 +101,16 @@ bool PlotSink::consume(const QMap<QString, PortData>& inputs)
 
   m_table = tablePtr;
 
-  // Defer VTK chart manipulation to the main thread — consume() runs on
-  // the pipeline worker thread, but vtkChartXY / vtkPVContextView objects
-  // belong to the GUI thread.
-  QMetaObject::invokeMethod(this, [this]() {
-    if (m_chart) {
-      addAllPlots();
+  // vtkChartXY / vtkPVContextView belong to the GUI thread; consume()
+  // runs there (consumeOnGuiThread()), so manipulate the chart directly.
+  if (m_chart) {
+    addAllPlots();
 
-      if (m_contextView) {
-        m_contextView->Update();
-      }
+    if (m_contextView) {
+      m_contextView->Update();
     }
-    emit renderNeeded();
-  }, Qt::QueuedConnection);
+  }
+  emit renderNeeded();
 
   return true;
 }

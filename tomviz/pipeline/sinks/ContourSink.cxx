@@ -147,9 +147,9 @@ bool ContourSink::consume(const QMap<QString, PortData>& inputs)
   m_flyingEdges->Update();
   m_mapper->SetInputDataObject(m_flyingEdges->GetOutput());
 
-  // Defer panel update to the main thread (consume() runs on a worker thread).
-  QMetaObject::invokeMethod(this, &ContourSink::updatePanel,
-                            Qt::QueuedConnection);
+  // consume() runs on the GUI thread (consumeOnGuiThread()), so refresh
+  // the panel directly.
+  updatePanel();
 
   onMetadataChanged();
   emit renderNeeded();

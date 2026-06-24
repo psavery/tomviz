@@ -22,7 +22,6 @@ namespace tomviz {
 
 class AboutDialog;
 class DataSource;
-class MoleculeSource;
 class Module;
 struct OperatorDescription;
 class OperatorSearchDialog;
@@ -51,6 +50,8 @@ public:
   static MainWindow* instance();
 
   pipeline::Pipeline* pipeline() const;
+
+  void setMostRecentStateFile(const QString& fileName);
 
 protected:
   void showEvent(QShowEvent* event) override;
@@ -103,7 +104,6 @@ private:
   static std::vector<OperatorDescription> findCustomOperators();
   void registerCustomOperators(std::vector<OperatorDescription> operators);
   static std::vector<OperatorDescription> initPython();
-  void syncPythonToApp();
   void updateSaveStateEnableState();
   QString mostRecentStateFile() const;
 
@@ -138,11 +138,12 @@ private:
   QMetaObject::Connection m_editingChangedConn;
   QPointer<QWidget> m_dynamicPropertiesWidget;
 
+  QString m_mostRecentStateFile;
+
   // Lazily loaded dialogs
   QWidget* m_aboutDialog = nullptr;
   QWidget* m_acquisitionWidget = nullptr;
   QWidget* m_animationHelperDialog = nullptr;
-  QWidget* m_passiveAcquisitionDialog = nullptr;
 
   template <class T>
   void openDialog(QWidget**);

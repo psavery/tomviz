@@ -126,9 +126,9 @@ bool RulerSink::consume(const QMap<QString, PortData>& inputs)
 
   m_pendingImage = volume->imageData();
 
-  // All SM proxy work must happen on the main thread.
-  QMetaObject::invokeMethod(this, &RulerSink::setupOrUpdatePipeline,
-                            Qt::QueuedConnection);
+  // SM proxy work must happen on the GUI thread; consume() runs there
+  // now (consumeOnGuiThread()).
+  setupOrUpdatePipeline();
 
   return true;
 }

@@ -59,10 +59,8 @@ ImageStackDialog::ImageStackDialog(QWidget* parent)
 
   m_ui->loadedContainer->hide();
   m_ui->stackTypeCombo->setDisabled(true);
-  m_ui->stackTypeCombo->insertItem(DataSource::DataSourceType::Volume,
-                                   QString("Volume"));
-  m_ui->stackTypeCombo->insertItem(DataSource::DataSourceType::TiltSeries,
-                                   QString("Tilt Series"));
+  m_ui->stackTypeCombo->insertItem(0, QString("Volume"));
+  m_ui->stackTypeCombo->insertItem(1, QString("Tilt Series"));
 
   // Due to an overloaded signal I am force to use static_cast here.
   QObject::connect(m_ui->stackTypeCombo, static_cast<void (QComboBox::*)(int)>(
@@ -100,12 +98,13 @@ void ImageStackDialog::setStackSummary(const QList<ImageInfo>& summary,
   setAcceptDrops(false);
 }
 
-void ImageStackDialog::setStackType(const DataSource::DataSourceType& stackType)
+void ImageStackDialog::setStackType(pipeline::PortType stackType)
 {
   if (m_stackType != stackType) {
     m_stackType = stackType;
     emit stackTypeChanged(m_stackType);
-    m_ui->stackTypeCombo->setCurrentIndex(m_stackType);
+    m_ui->stackTypeCombo->setCurrentIndex(
+      m_stackType == pipeline::PortType::TiltSeries ? 1 : 0);
   }
 }
 
@@ -171,13 +170,13 @@ void ImageStackDialog::processFiles(const QStringList& fileNames)
   bool isVolume = false;
   bool isTilt = false;
   bool isNumbered = false;
-  DataSource::DataSourceType stackType = DataSource::DataSourceType::Volume;
+  pipeline::PortType stackType = pipeline::PortType::Volume;
 
   isVolume = detectVolume(fNames, summary);
   if (!isVolume) {
     isTilt = detectTilt(fNames, summary);
     if (isTilt) {
-      stackType = DataSource::DataSourceType::TiltSeries;
+      stackType = pipeline::PortType::TiltSeries;
     } else {
       isNumbered = detectVolume(fNames, summary, false);
       if (!isNumbered) {
@@ -389,7 +388,7 @@ QList<ImageInfo> ImageStackDialog::getStackSummary() const
   return m_summary;
 }
 
-DataSource::DataSourceType ImageStackDialog::getStackType() const
+pipeline::PortType ImageStackDialog::getStackType() const
 {
   return m_stackType;
 }
@@ -407,10 +406,10 @@ void ImageStackDialog::onImageToggled(int row, bool value)
 
 void ImageStackDialog::onStackTypeChanged(int stackType)
 {
-  if (stackType == DataSource::DataSourceType::Volume) {
-    setStackType(DataSource::DataSourceType::Volume);
-  } else if (stackType == DataSource::DataSourceType::TiltSeries) {
-    setStackType(DataSource::DataSourceType::TiltSeries);
+  if (stackType == 0) {
+    setStackType(pipeline::PortType::Volume);
+  } else if (stackType == 1) {
+    setStackType(pipeline::PortType::TiltSeries);
   }
 }
 

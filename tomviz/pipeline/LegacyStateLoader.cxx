@@ -6,7 +6,6 @@
 #include "ActiveObjects.h"
 #include "EmdFormat.h"
 #include "LoadDataReaction.h"
-#include "MoleculeSource.h"
 
 #include "pipeline/InputPort.h"
 #include "pipeline/Link.h"
@@ -64,6 +63,7 @@
 #include <vtkSMViewProxy.h>
 #include <vtkSmartPointer.h>
 #include <vtkVector.h>
+#include <vtkWeakPointer.h>
 #include <vtk_pugixml.h>
 
 #include <sstream>
@@ -937,9 +937,12 @@ void LegacyStateLoader::scheduleViewStateApply(const QJsonObject& state,
   if (viewJson.isEmpty() || !view || !pipeline) {
     return;
   }
+  // Weak pointer: the view may be destroyed before this fires (see the
+  // note in scheduleViewStatesApply); applyViewState() no-ops on null.
+  vtkWeakPointer<vtkSMViewProxy> weakView(view);
   QObject::connect(
     pipeline, &Pipeline::executionFinished, pipeline,
-    [view, viewJson]() { applyViewState(view, viewJson); },
+    [weakView, viewJson]() { applyViewState(weakView, viewJson); },
     Qt::SingleShotConnection);
 }
 
@@ -976,10 +979,25 @@ void LegacyStateLoader::scheduleViewStatesApply(const QJsonObject& state,
     }
     applyViewState(view, viewJson, /*cameraToo=*/false);
 
+    // Capture the view as a weak pointer. This connection is bound to
+    // the long-lived `pipeline` (ResetReaction only calls
+    // Pipeline::clear(), so the Pipeline survives a reset / re-load),
+    // but the view proxy is destroyed by pqDeleteReaction::deleteAll()
+    // in the next restoreViewsAndLayouts(). If a prior load left this
+    // connection pending — its pipeline never reached "any sink
+    // Current", so it never self-disconnected — a later execute would
+    // otherwise fire applyViewState() on a freed view and crash.
+    vtkWeakPointer<vtkSMViewProxy> weakView(view);
     auto conn = std::make_shared<QMetaObject::Connection>();
     *conn = QObject::connect(
       pipeline, &Pipeline::executionFinished, pipeline,
-      [view, viewJson, pipeline, conn]() {
+      [weakView, viewJson, pipeline, conn]() {
+        if (!weakView) {
+          // View was torn down by a reset / subsequent load. Drop the
+          // stale connection so it stops firing.
+          QObject::disconnect(*conn);
+          return;
+        }
         // A SinkNode only reaches NodeState::Current after consume()
         // succeeded — so "any sink Current" reliably discriminates
         // the real execute from the synthetic executionFinished we
@@ -1008,8 +1026,8 @@ void LegacyStateLoader::scheduleViewStatesApply(const QJsonObject& state,
         //    first-render adjust on a freshly-created view; letting
         //    that settle before we push our camera prevents it from
         //    clipping our saved position.
-        QTimer::singleShot(0, pipeline, [view, viewJson, conn]() {
-          applyViewState(view, viewJson, /*cameraToo=*/true);
+        QTimer::singleShot(0, pipeline, [weakView, viewJson, conn]() {
+          applyViewState(weakView, viewJson, /*cameraToo=*/true);
           QObject::disconnect(*conn);
         });
       });

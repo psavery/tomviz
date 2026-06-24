@@ -4,7 +4,6 @@
 #include "SaveWebReaction.h"
 
 #include "ActiveObjects.h"
-#include "legacy/modules/ModuleManager.h"
 
 #include "pqActiveObjects.h"
 #include "pqCoreUtilities.h"

@@ -50,14 +50,10 @@ set(_pythonpath "${_pythonpath}${_separator}${ITK_DIR}/Wrapping/Generators/Pytho
 set(_pythonpath "${_pythonpath}${_separator}$ENV{PYTHONPATH}")
 
 # Add the test cases
-# OperatorPython, ModulePlot, PipelineExecution, DockerUtilities test legacy
-# infrastructure (legacy::OperatorPython / legacy modules / legacy Pipeline)
-# that's being removed and are no longer kept in sync.
 add_cxx_test(Variant)
 add_cxx_test(ScanID)
 add_cxx_test(Utilities)
 add_cxx_test(VolumeBricking)
-add_cxx_qtest(InterfaceBuilder)
 # AcquisitionClient needs the `bottle` Python package (acquisition/requirements-dev.txt)
 # to start its test server; not part of the conda build env, so disabled here.
 # if(NOT WIN32)

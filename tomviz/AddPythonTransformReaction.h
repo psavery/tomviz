@@ -10,7 +10,6 @@
 
 namespace tomviz {
 class DataSource;
-class OperatorPython;
 
 namespace pipeline {
 class OutputPort;
@@ -25,7 +24,7 @@ public:
                              const QString& source,
                              const QString& json = QString());
 
-  OperatorPython* addExpression(DataSource* source = nullptr);
+  void addExpression(DataSource* source = nullptr);
 
   void setInteractive(bool isInteractive) { interactive = isInteractive; }
 
