@@ -56,6 +56,7 @@
 #include <QMessageBox>
 #include <QSettings>
 #include <QSignalBlocker>
+#include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -315,16 +316,33 @@ void HistogramWidget::onColorFunctionChanged()
     // Avoid infinite recursion
     return;
   }
-  m_updatingColorFunction = true;
 
-  updateLUTProxy();
-  if (m_LUT) {
-    m_LUT->Build();
-    renderViews();
-    emit colorMapUpdated();
+  // This slot is wired to the color transfer function's ModifiedEvent, which
+  // can fire reentrantly from deep inside another mutation of the *same*
+  // function -- e.g. VolumeData::rescaleColorMap() ->
+  // vtkSMProxy::UpdateVTKObjects() -> vtkColorTransferFunction::UpdateRange().
+  // Rebuilding the LUT here (Build() -> SetAnnotations()) while that outer
+  // mutation is still on the stack corrupts the function's internal arrays and
+  // crashes in ~vtkVariant. Defer the rebuild to the next event-loop turn so
+  // it runs after the mutation unwinds; the pending flag coalesces the
+  // multi-Hz churn from live operator updates.
+  if (m_colorFunctionUpdatePending) {
+    return;
   }
+  m_colorFunctionUpdatePending = true;
+  QTimer::singleShot(0, this, [this]() {
+    m_colorFunctionUpdatePending = false;
+    m_updatingColorFunction = true;
 
-  m_updatingColorFunction = false;
+    updateLUTProxy();
+    if (m_LUT) {
+      m_LUT->Build();
+      renderViews();
+      emit colorMapUpdated();
+    }
+
+    m_updatingColorFunction = false;
+  });
 }
 
 void HistogramWidget::onScalarOpacityFunctionChanged()
