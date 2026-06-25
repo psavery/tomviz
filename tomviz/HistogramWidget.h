@@ -133,6 +133,10 @@ private:
   // To prevent infinite recursion...
   bool m_updatingColorFunction = false;
 
+  // Coalesces the deferred color-function rebuild (see
+  // onColorFunctionChanged) so reentrant ModifiedEvents don't pile up.
+  bool m_colorFunctionUpdatePending = false;
+
   static const int m_defaultAutoContrastThreshold = 5000;
   int m_currentAutoContrastThreshold = 5000;
 };
