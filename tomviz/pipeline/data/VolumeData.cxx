@@ -24,7 +24,10 @@
 #include <vtkSMTransferFunctionManager.h>
 #include <vtkSMTransferFunctionProxy.h>
 
+#include <QCoreApplication>
 #include <QJsonArray>
+#include <QMetaObject>
+#include <QThread>
 
 #include <array>
 
@@ -70,9 +73,31 @@ VolumeData::~VolumeData()
   // unique, counter-based name. The proxy manager holds its own reference,
   // so dropping our vtkSmartPointer isn't enough — without this unregister
   // the proxy lives until app exit and every load/reset cycle adds another.
-  if (m_colorMap) {
+  if (!m_colorMap) {
+    return;
+  }
+
+  // UnRegisterProxy mutates the ParaView session proxy manager, which is
+  // not thread-safe and must run on the GUI thread. A VolumeData is a port
+  // payload whose lifetime is governed by shared_ptr refcounting, and the
+  // pipeline executor can drop the last ref on the worker thread (inflight
+  // eviction, clearHandle, the OnDisk deleter) — destroying us there.
+  // Touching the proxy manager off the GUI thread races
+  // pqServerManagerObserver / pqServerManagerModel and crashes in
+  // onProxyRegistered. Marshal the unregister to the GUI thread; the proxy
+  // manager's own reference keeps the captured proxy alive until the queued
+  // call runs.
+  vtkSmartPointer<vtkSMProxy> proxy = m_colorMap;
+  auto unregister = [proxy]() {
     vtkNew<vtkSMParaViewPipelineController> controller;
-    controller->UnRegisterProxy(m_colorMap);
+    controller->UnRegisterProxy(proxy);
+  };
+
+  auto* app = QCoreApplication::instance();
+  if (!app || QThread::currentThread() == app->thread()) {
+    unregister();
+  } else {
+    QMetaObject::invokeMethod(app, unregister, Qt::QueuedConnection);
   }
 }
 
