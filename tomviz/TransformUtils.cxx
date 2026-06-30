@@ -168,6 +168,15 @@ static pipeline::DeferredLinkInfo appendTransformAtPortDeferred(
     deferred.linksToRestore.append({ targetPort, sinkInput });
     pip->removeLink(m.link);
     pip->createLink(m.newOut, sinkInput);
+    // removeLink() reset this terminal sink/group's visualization. Re-show it
+    // (the VTK objects still hold the last data) so the downstream module
+    // stays on screen while the dialog is open. Nothing clears it again until
+    // the not-yet-run transform produces output and the sink swaps it in
+    // directly, so it also stays visible all through execution. Mirrors the
+    // restorePresentation() the dialog's cancel path performs.
+    if (auto* node = sinkInput->node()) {
+      node->restorePresentation();
+    }
   }
   return deferred;
 }
