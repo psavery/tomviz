@@ -898,17 +898,19 @@ void vtkNonOrthoImagePlaneWidget::Push(double* p1, double* p2)
     double spacing[3];
     double origin[3];
     double center[3];
-    int dims[3];
+    int extent[6];
     ImageData->GetSpacing(spacing);
     ImageData->GetOrigin(origin);
-    ImageData->GetDimensions(dims);
+    ImageData->GetExtent(extent);
     GetCenter(center);
-    // SetSliceIndex() places the plane at origin + index * spacing, so the
-    // origin must be subtracted here or the two mappings disagree whenever
-    // the volume's origin is nonzero. Keep the plane inside the volume.
+    // SetSliceIndex() treats the index as relative to the extent minimum
+    // (which is nonzero after e.g. a crop), so the origin and extent
+    // minimum must both be removed here or the two mappings disagree.
+    // Keep the plane inside the volume.
     int n = vtkMath::Round((center[axis] + dotV - origin[axis]) /
-                           spacing[axis]);
-    n = vtkMath::ClampValue(n, 0, dims[axis] - 1);
+                           spacing[axis]) -
+            extent[2 * axis];
+    n = vtkMath::ClampValue(n, 0, extent[2 * axis + 1] - extent[2 * axis]);
     SetSliceIndex(n);
     return;
   }
@@ -1522,6 +1524,8 @@ void vtkNonOrthoImagePlaneWidget::SetSliceIndex(int index)
   outInfo->Get(vtkDataObject::ORIGIN(), origin);
   double spacing[3];
   outInfo->Get(vtkDataObject::SPACING(), spacing);
+  int extent[6];
+  outInfo->Get(vtkStreamingDemandDrivenPipeline::WHOLE_EXTENT(), extent);
   double planeOrigin[3];
   this->PlaneSource->GetOrigin(planeOrigin);
   double pt1[3];
@@ -1529,16 +1533,18 @@ void vtkNonOrthoImagePlaneWidget::SetSliceIndex(int index)
   double pt2[3];
   this->PlaneSource->GetPoint2(pt2);
 
+  // The index is relative to the extent minimum, which is nonzero for
+  // volumes produced by e.g. a crop, so slice 0 is the volume's min face.
   if (this->PlaneOrientation == 2) {
-    planeOrigin[2] = origin[2] + index * spacing[2];
+    planeOrigin[2] = origin[2] + (extent[4] + index) * spacing[2];
     pt1[2] = planeOrigin[2];
     pt2[2] = planeOrigin[2];
   } else if (this->PlaneOrientation == 1) {
-    planeOrigin[1] = origin[1] + index * spacing[1];
+    planeOrigin[1] = origin[1] + (extent[2] + index) * spacing[1];
     pt1[1] = planeOrigin[1];
     pt2[1] = planeOrigin[1];
   } else if (this->PlaneOrientation == 0) {
-    planeOrigin[0] = origin[0] + index * spacing[0];
+    planeOrigin[0] = origin[0] + (extent[0] + index) * spacing[0];
     pt1[0] = planeOrigin[0];
     pt2[0] = planeOrigin[0];
   } else {
@@ -1569,15 +1575,22 @@ int vtkNonOrthoImagePlaneWidget::GetSliceIndex()
   outInfo->Get(vtkDataObject::ORIGIN(), origin);
   double spacing[3];
   outInfo->Get(vtkDataObject::SPACING(), spacing);
+  int extent[6];
+  outInfo->Get(vtkStreamingDemandDrivenPipeline::WHOLE_EXTENT(), extent);
   double planeOrigin[3];
   this->PlaneSource->GetOrigin(planeOrigin);
 
+  // Return the index relative to the extent minimum, mirroring
+  // SetSliceIndex().
   if (this->PlaneOrientation == 2) {
-    return vtkMath::Round((planeOrigin[2] - origin[2]) / spacing[2]);
+    return vtkMath::Round((planeOrigin[2] - origin[2]) / spacing[2]) -
+           extent[4];
   } else if (this->PlaneOrientation == 1) {
-    return vtkMath::Round((planeOrigin[1] - origin[1]) / spacing[1]);
+    return vtkMath::Round((planeOrigin[1] - origin[1]) / spacing[1]) -
+           extent[2];
   } else if (this->PlaneOrientation == 0) {
-    return vtkMath::Round((planeOrigin[0] - origin[0]) / spacing[0]);
+    return vtkMath::Round((planeOrigin[0] - origin[0]) / spacing[0]) -
+           extent[0];
   } else {
     vtkGenericWarningMacro(
       "only works for ortho planes: set plane orientation first");
