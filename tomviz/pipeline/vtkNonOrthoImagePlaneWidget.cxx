@@ -846,9 +846,13 @@ void vtkNonOrthoImagePlaneWidget::OnMouseMove()
 
   this->ComputeDisplayToWorld(double(X), double(Y), z, pickPoint);
 
-  // Transform the points via rotation
-  this->DisplayTransform->TransformPoint(prevPickPoint, prevPickPoint);
-  this->DisplayTransform->TransformPoint(pickPoint, pickPoint);
+  // The picked points are in world coordinates, while the plane source
+  // lives in the dataset's coordinate system (the actors render through
+  // DisplayTransform). Map the picks back with the inverse, as Move() does.
+  this->DisplayTransform->GetLinearInverse()->TransformPoint(prevPickPoint,
+                                                             prevPickPoint);
+  this->DisplayTransform->GetLinearInverse()->TransformPoint(pickPoint,
+                                                             pickPoint);
 
   if (this->State == vtkNonOrthoImagePlaneWidget::Pushing) {
     this->Push(prevPlanePoint, pickPoint);
@@ -890,13 +894,21 @@ void vtkNonOrthoImagePlaneWidget::Push(double* p1, double* p2)
   float dotV = vtkMath::Dot(v, norm);
 
   if (this->PlaneOrientation >= 0) {
+    int axis = this->PlaneOrientation;
     double spacing[3];
+    double origin[3];
     double center[3];
+    int dims[3];
     ImageData->GetSpacing(spacing);
+    ImageData->GetOrigin(origin);
+    ImageData->GetDimensions(dims);
     GetCenter(center);
-    int n;
-    n = int((center[this->PlaneOrientation] + dotV) /
-            spacing[this->PlaneOrientation]);
+    // SetSliceIndex() places the plane at origin + index * spacing, so the
+    // origin must be subtracted here or the two mappings disagree whenever
+    // the volume's origin is nonzero. Keep the plane inside the volume.
+    int n = vtkMath::Round((center[axis] + dotV - origin[axis]) /
+                           spacing[axis]);
+    n = vtkMath::ClampValue(n, 0, dims[axis] - 1);
     SetSliceIndex(n);
     return;
   }
