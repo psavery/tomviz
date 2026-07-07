@@ -28,6 +28,16 @@
 #define TOMVIZ_HAS_VISKORES
 #endif
 
+#ifdef _WIN32
+// On hybrid-graphics laptops, ask the NVIDIA and AMD drivers to run tomviz
+// on the discrete GPU instead of the power-saving integrated one. The
+// drivers look for these exported symbols in the executable.
+extern "C" {
+__declspec(dllexport) unsigned long NvOptimusEnablement = 0x00000001;
+__declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
+}
+#endif
+
 int main(int argc, char** argv)
 {
   // Set up loguru, for printing stack traces on crashes
