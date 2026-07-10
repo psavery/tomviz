@@ -923,6 +923,8 @@ void PipelineStripWidget::connectPipeline()
               QOverload<>::of(&QWidget::update));
       connect(port, &OutputPort::dataLocationChanged, this,
               [this](DataLocation) { update(); });
+      connect(port, &OutputPort::persistenceChanged, this,
+              QOverload<>::of(&QWidget::update));
     }
     auto* sink = qobject_cast<LegacyModuleSink*>(node);
     if (sink) {

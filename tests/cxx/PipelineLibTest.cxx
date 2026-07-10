@@ -18,6 +18,7 @@
 #include "ThreadedExecutor.h"
 #include "TransformNode.h"
 
+#include "PipelineSettings.h"
 #include "PipelineStateIO.h"
 #include "SinkGroupNode.h"
 #include "Tvh5Format.h"
@@ -704,6 +705,133 @@ TEST_F(PipelineLibTest, OnDiskStateFileRoundTrip)
   ASSERT_TRUE(loadedPort);
   EXPECT_TRUE(loadedPort->isPersistent());
   EXPECT_EQ(loadedPort->persistenceMode(), PersistenceMode::OnDisk);
+}
+
+TEST_F(PipelineLibTest, InMemoryStateFileRoundTripUnderOnDiskDefault)
+{
+  // "persistent: true" with no persistenceMode key means InMemory, but
+  // a freshly-constructed transform port carries the application-wide
+  // default. Loading must reset the medium to InMemory instead of
+  // keeping the construction default (regression: ports saved as
+  // "Persist in Memory" came back as "Persist on Disk"). Also verify
+  // an explicitly transient port survives the same trip.
+  auto& settings = PipelineSettings::instance();
+  auto previousDefault = settings.transformPersistenceDefault();
+  settings.setTransformPersistenceDefault(
+    TransformPersistenceDefault::OnDisk);
+
+  auto* source = new SphereSource();
+  source->setDimensions(4, 4, 4);
+  pipeline->addNode(source);
+  auto* inMemory = new ThresholdTransform();
+  inMemory->setLabel("inMemory");
+  pipeline->addNode(inMemory);
+  auto* transient = new ThresholdTransform();
+  transient->setLabel("transient");
+  pipeline->addNode(transient);
+
+  auto* inMemoryPort = inMemory->outputPort("mask");
+  ASSERT_TRUE(inMemoryPort->isPersistent());
+  ASSERT_EQ(inMemoryPort->persistenceMode(), PersistenceMode::OnDisk);
+  inMemoryPort->setPersistenceMode(PersistenceMode::InMemory);
+  transient->outputPort("mask")->setPersistent(false);
+
+  QJsonObject json;
+  ASSERT_TRUE(PipelineStateIO::save(pipeline, json));
+
+  auto newPipeline = std::make_unique<Pipeline>();
+  ASSERT_TRUE(PipelineStateIO::load(newPipeline.get(), json));
+  OutputPort* loadedInMemory = nullptr;
+  OutputPort* loadedTransient = nullptr;
+  for (auto* node : newPipeline->nodes()) {
+    if (node->label() == QLatin1String("inMemory")) {
+      loadedInMemory = node->outputPort("mask");
+    } else if (node->label() == QLatin1String("transient")) {
+      loadedTransient = node->outputPort("mask");
+    }
+  }
+  ASSERT_TRUE(loadedInMemory);
+  ASSERT_TRUE(loadedTransient);
+  EXPECT_TRUE(loadedInMemory->isPersistent());
+  EXPECT_EQ(loadedInMemory->persistenceMode(), PersistenceMode::InMemory);
+  EXPECT_FALSE(loadedTransient->isPersistent());
+
+  settings.setTransformPersistenceDefault(previousDefault);
+}
+
+TEST_F(PipelineLibTest, PersistenceChangeSignals)
+{
+  // Policy switches must emit persistenceChanged, and residency moves
+  // performed by the reconcile (evict, reload, drop) must keep
+  // dataLocationChanged accurate so UI badges track the real state.
+  auto* source = new SphereSource();
+  source->setDimensions(4, 4, 4);
+  pipeline->addNode(source);
+  auto* port = source->outputPort("volume"); // persistent InMemory
+  ASSERT_TRUE(source->execute());
+  ASSERT_EQ(port->dataLocation(), DataLocation::InMemory);
+
+  int persistenceChanges = 0;
+  QObject::connect(port, &OutputPort::persistenceChanged, port,
+                   [&persistenceChanges]() { ++persistenceChanges; });
+  QList<DataLocation> locations;
+  QObject::connect(
+    port, &OutputPort::dataLocationChanged, port,
+    [&locations](DataLocation loc) { locations.append(loc); });
+
+  // InMemory -> OnDisk: the port unpins, the deleter evicts to disk.
+  port->setPersistenceMode(PersistenceMode::OnDisk);
+  EXPECT_EQ(persistenceChanges, 1);
+  ASSERT_FALSE(locations.isEmpty());
+  EXPECT_EQ(locations.last(), DataLocation::OnDisk);
+  EXPECT_EQ(port->dataLocation(), DataLocation::OnDisk);
+
+  // OnDisk -> InMemory: reloads from the cache file and pins.
+  locations.clear();
+  port->setPersistenceMode(PersistenceMode::InMemory);
+  EXPECT_EQ(persistenceChanges, 2);
+  ASSERT_FALSE(locations.isEmpty());
+  EXPECT_EQ(locations.last(), DataLocation::InMemory);
+  EXPECT_EQ(port->dataLocation(), DataLocation::InMemory);
+
+  // Persistent -> transient with no other holder: the data drops.
+  locations.clear();
+  port->setPersistent(false);
+  EXPECT_EQ(persistenceChanges, 3);
+  ASSERT_FALSE(locations.isEmpty());
+  EXPECT_EQ(locations.last(), DataLocation::None);
+  EXPECT_FALSE(port->hasData());
+
+  // Setting the same values again is a no-op: no spurious signals.
+  port->setPersistent(false);
+  port->setPersistenceMode(PersistenceMode::InMemory);
+  EXPECT_EQ(persistenceChanges, 3);
+}
+
+TEST_F(PipelineLibTest, TransientDropEmitsDataLocationNone)
+{
+  // When the last consumer of a transient port's payload drops its
+  // handle, the universal deleter must report the payload as gone so
+  // residency cues (RAM badge) don't keep showing freed data.
+  auto* source = new SphereSource();
+  source->setDimensions(4, 4, 4);
+  pipeline->addNode(source);
+  auto* port = source->outputPort("volume");
+  port->setPersistent(false);
+  ASSERT_TRUE(source->execute());
+
+  QList<DataLocation> locations;
+  QObject::connect(
+    port, &OutputPort::dataLocationChanged, port,
+    [&locations](DataLocation loc) { locations.append(loc); });
+
+  // Executor-style handoff: take the strong ref out of the port, then
+  // drop it as the last holder.
+  { auto handle = port->take(); }
+
+  ASSERT_FALSE(locations.isEmpty());
+  EXPECT_EQ(locations.last(), DataLocation::None);
+  EXPECT_FALSE(port->hasData());
 }
 
 TEST_F(PipelineLibTest, FanInMultipleInputs)

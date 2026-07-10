@@ -51,6 +51,7 @@
 #include "pipeline/Node.h"
 #include "pipeline/TransformNode.h"
 #include "pipeline/OutputPort.h"
+#include "pipeline/PassthroughOutputPort.h"
 #include "pipeline/InputPort.h"
 #include "pipeline/Link.h"
 #include "pipeline/PortData.h"
@@ -505,6 +506,12 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   m_pipelineStrip->setPortMenuProvider(
     [this](pipeline::OutputPort* port, QMenu& menu) {
       if (!port) {
+        return;
+      }
+      // Passthrough ports (sink-group outputs) forward upstream data
+      // and pin isPersistent() to false; a persistence choice here
+      // would silently do nothing, so don't offer one.
+      if (qobject_cast<pipeline::PassthroughOutputPort*>(port)) {
         return;
       }
       auto* p = pipeline();

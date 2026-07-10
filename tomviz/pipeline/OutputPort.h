@@ -161,6 +161,13 @@ public:
 signals:
   void dataChanged();
   void staleChanged(bool stale);
+
+  /// Emitted when the persistence policy changes: the persistent flag
+  /// (setPersistent) or the backing medium (setPersistenceMode). UI
+  /// showing policy cues (pin badge, menus) refreshes on this; actual
+  /// payload residency changes are reported separately via
+  /// dataLocationChanged.
+  void persistenceChanged();
   void effectiveTypeChanged(PortType newType);
   void intermediateDataApplied();
 
