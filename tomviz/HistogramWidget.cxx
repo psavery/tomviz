@@ -752,7 +752,9 @@ void HistogramWidget::onPresetClicked()
 
 void HistogramWidget::resetAutoContrastState()
 {
-  m_currentAutoContrastThreshold = m_defaultAutoContrastThreshold;
+  // 0 mimics ImageJ, which zeroes autoThreshold on reset so the next
+  // auto-contrast starts over at the default threshold.
+  m_currentAutoContrastThreshold = 0;
 }
 
 void HistogramWidget::onBrightnessAndContrastClicked()
@@ -842,7 +844,7 @@ void HistogramWidget::autoAdjustContrast(vtkDataArray* histogram,
   }
   int hmin = i;
 
-  for (i = 255; i >= 0; --i) {
+  for (i = static_cast<int>(numBins) - 1; i >= 0; --i) {
     double count = histogram->GetTuple1(i);
     count = count > limit ? 0 : count;
     if (count > threshold) {
@@ -856,8 +858,11 @@ void HistogramWidget::autoAdjustContrast(vtkDataArray* histogram,
     return;
   }
 
-  double min = histMin + hmin * binSize;
-  double max = histMin + hmax * binSize;
+  // The extents column holds bin centers; ImageJ maps indices to bin left
+  // edges, so shift down half a bin to match.
+  double binStart = histMin - binSize / 2;
+  double min = binStart + hmin * binSize;
+  double max = binStart + hmax * binSize;
   if (min == max) {
     min = range[0];
     max = range[1];
@@ -965,6 +970,14 @@ void HistogramWidget::rescaleTransferFunction(vtkSMProxy* lutProxy, double min,
     vtkSMPropertyHelper(m_LUTProxy, "ScalarOpacityFunction").GetAsProxy();
 
   removePlaceholderNodes();
+  // RescaleTransferFunction operates on the proxy's control points property,
+  // not the client-side object we just stripped the placeholder nodes from.
+  // Sync the client state into the property first; otherwise the placeholder
+  // nodes still in the property span the full data range, which makes the
+  // rescale a no-op (or compresses the real window instead of setting it).
+  // The opacity property needs no sync: onScalarOpacityFunctionChanged
+  // already mirrors every client-side opacity change into it.
+  updateLUTProxy();
   vtkSMTransferFunctionProxy::RescaleTransferFunction(lutProxy, min, max);
   vtkSMTransferFunctionProxy::RescaleTransferFunction(opacityMap, min, max);
   addPlaceholderNodes();

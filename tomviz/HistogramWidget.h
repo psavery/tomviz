@@ -137,8 +137,11 @@ private:
   // onColorFunctionChanged) so reentrant ModifiedEvents don't pile up.
   bool m_colorFunctionUpdatePending = false;
 
+  // Matches ImageJ's ContrastAdjuster: AUTO_THRESHOLD is the starting
+  // threshold divisor, and the current value must begin below 10 so the
+  // first "Auto" press uses the full AUTO_THRESHOLD before halving.
   static const int m_defaultAutoContrastThreshold = 5000;
-  int m_currentAutoContrastThreshold = 5000;
+  int m_currentAutoContrastThreshold = 0;
 };
 } // namespace tomviz
 
