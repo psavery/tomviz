@@ -34,9 +34,8 @@ def transform(dataset, algorithm='gridrec', num_iter=5, reg_par=0.1,
     # Apply circular mask
     rec = tomopy.circ_mask(rec, axis=0, ratio=0.95, val=0.0)
 
-    # Transpose back to expected Tomviz format
-    rec = np.transpose(rec, (2, 1, 0))
-
+    # TomoPy already returns the rotation axis along axis 0 (X), matching
+    # the (Nslice, N, N) convention of the other Tomviz recon operators.
     child = dataset.create_child_dataset()
     child.active_scalars = rec
 
