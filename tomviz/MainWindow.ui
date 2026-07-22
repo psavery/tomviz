@@ -133,7 +133,7 @@
    <property name="minimumSize">
     <size>
      <width>250</width>
-     <height>300</height>
+     <height>50</height>
     </size>
    </property>
    <property name="windowTitle">
@@ -232,7 +232,7 @@
    <property name="minimumSize">
     <size>
      <width>250</width>
-     <height>300</height>
+     <height>50</height>
     </size>
    </property>
    <property name="windowTitle">

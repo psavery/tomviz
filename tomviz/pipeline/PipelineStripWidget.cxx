@@ -19,6 +19,7 @@
 #include <QApplication>
 #include <QContextMenuEvent>
 #include <QFontMetrics>
+#include <QHelpEvent>
 #include <QKeyEvent>
 #include <QMenu>
 #include <QMouseEvent>
@@ -27,6 +28,7 @@
 #include <QPainterPathStroker>
 #include <QStyle>
 #include <QStyleOption>
+#include <QToolTip>
 
 #include <cmath>
 
@@ -42,6 +44,21 @@ static bool canHaveBreakpoint(Node* node)
   return qobject_cast<SourceNode*>(node) != nullptr ||
          qobject_cast<TransformNode*>(node) != nullptr;
 }
+
+// Invert an RGB color, preserving alpha. Used to make a selected link (and
+// its endpoint port outlines) read as clearly picked against its normal
+// port-type color.
+static QColor invertColor(const QColor& c)
+{
+  return QColor(255 - c.red(), 255 - c.green(), 255 - c.blue(), c.alpha());
+}
+
+// Marching-ants geometry (in pen-width units) and per-tick phase step.
+// Keep kLinkDashPeriod = on + off so the timer can wrap the phase.
+static constexpr qreal kLinkDashOn = 1.0;
+static constexpr qreal kLinkDashOff = 0.5;
+static constexpr qreal kLinkDashPeriod = kLinkDashOn + kLinkDashOff;
+static constexpr qreal kLinkDashStep = 0.18;
 
 // Render an icon tinted to the given color, preserving alpha/opacity.
 static void paintTintedIcon(QPainter& painter, const QIcon& icon,
@@ -120,6 +137,16 @@ PipelineStripWidget::PipelineStripWidget(QWidget* parent) : QWidget(parent)
   m_spinnerTimer.setInterval(50);
   connect(&m_spinnerTimer, &QTimer::timeout, this, [this]() {
     m_spinnerAngle = (m_spinnerAngle + 30) % 360;
+    update();
+  });
+
+  // Marching-ants flow along a hovered/selected link. The dash offset is
+  // expressed in pen-width units; the pattern period is dash + gap (see
+  // paintConnections), so wrap the phase at that period to bound it.
+  m_marchTimer.setInterval(40);
+  connect(&m_marchTimer, &QTimer::timeout, this, [this]() {
+    m_marchPhase = std::fmod(
+      m_marchPhase - kLinkDashStep + kLinkDashPeriod, kLinkDashPeriod);
     update();
   });
 }
@@ -578,6 +605,36 @@ void PipelineStripWidget::setExpanded(Node* node, bool expanded)
   update();
 }
 
+void PipelineStripWidget::setLinkAnimationOnHover(bool enabled)
+{
+  if (m_animateLinkOnHover != enabled) {
+    m_animateLinkOnHover = enabled;
+    updateLinkAnimationTimer();
+    update();
+  }
+}
+
+void PipelineStripWidget::setLinkAnimationOnSelection(bool enabled)
+{
+  if (m_animateLinkOnSelection != enabled) {
+    m_animateLinkOnSelection = enabled;
+    updateLinkAnimationTimer();
+    update();
+  }
+}
+
+void PipelineStripWidget::updateLinkAnimationTimer()
+{
+  bool shouldRun = (m_hoveredLink && m_animateLinkOnHover) ||
+                   (m_selectedLink && m_animateLinkOnSelection);
+  if (shouldRun && !m_marchTimer.isActive()) {
+    m_marchTimer.start();
+  } else if (!shouldRun && m_marchTimer.isActive()) {
+    m_marchTimer.stop();
+    m_marchPhase = 0.0;
+  }
+}
+
 QSize PipelineStripWidget::minimumSizeHint() const
 {
   return QSize(100, 50);
@@ -673,12 +730,20 @@ void PipelineStripWidget::rebuildLayout()
           nGutterInputs++;
         }
       }
+      // Gutter approach lanes sit at DotClearance above the node top — i.e.
+      // PortClearance above the DotRadius dot overflow reserved above — with
+      // each further lane a LaneSpacing higher. Reserve up to the topmost
+      // lane plus a small margin so the horizontal run clears the node above.
+      // (Reserving only nGutter*LaneSpacing left it a pixel short.)
+      int gutterInputSpace =
+        nGutterInputs > 0
+          ? PortClearance + (nGutterInputs - 1) * LaneSpacing + 3
+          : 0;
       int inputLinkSpace = 0;
       if (nGutterInputs > 0 && nDirectInputs > 0) {
-        inputLinkSpace =
-          qMax(nGutterInputs * LaneSpacing, DirectConnectionSpacing);
+        inputLinkSpace = qMax(gutterInputSpace, DirectConnectionSpacing);
       } else if (nGutterInputs > 0) {
-        inputLinkSpace = nGutterInputs * LaneSpacing;
+        inputLinkSpace = gutterInputSpace;
       } else if (nDirectInputs > 0) {
         inputLinkSpace = DirectConnectionSpacing;
       }
@@ -703,12 +768,12 @@ void PipelineStripWidget::rebuildLayout()
       nodeHeight += PortCardSpacing; // top padding below header
       nodeHeight += outputs.size() * PortCardHeight;
       nodeHeight += (outputs.size() - 1) * PortCardSpacing;
-      nodeHeight += PortIndent; // bottom padding
+      nodeHeight += PortContentPad; // bottom padding
     } else if (showMembers) {
       nodeHeight += PortCardSpacing; // top padding below header
       nodeHeight += groupMembers.size() * PortCardHeight;
       nodeHeight += (groupMembers.size() - 1) * PortCardSpacing;
-      nodeHeight += PortIndent; // bottom padding
+      nodeHeight += PortContentPad; // bottom padding
     }
 
     // Compute indentation level based on node type and connections.
@@ -760,8 +825,8 @@ void PipelineStripWidget::rebuildLayout()
         portItem.node = node;
         portItem.port = port;
         portItem.rect =
-          QRect(GutterWidth + Padding + indent + PortIndent, portY,
-                cardWidth - indent - 2 * PortIndent, PortCardHeight);
+          QRect(GutterWidth + Padding + indent + PortContentPad, portY,
+                cardWidth - indent - 2 * PortContentPad, PortCardHeight);
         m_layout.append(portItem);
         portY += PortCardHeight + PortCardSpacing;
       }
@@ -772,8 +837,8 @@ void PipelineStripWidget::rebuildLayout()
         memberItem.type = LayoutItem::GroupMemberCard;
         memberItem.node = member; // the member sink (for selection)
         memberItem.rect =
-          QRect(GutterWidth + Padding + indent + PortIndent, portY,
-                cardWidth - indent - 2 * PortIndent, PortCardHeight);
+          QRect(GutterWidth + Padding + indent + PortContentPad, portY,
+                cardWidth - indent - 2 * PortContentPad, PortCardHeight);
         m_layout.append(memberItem);
         portY += PortCardHeight + PortCardSpacing;
       }
@@ -1050,6 +1115,64 @@ void PipelineStripWidget::selectLink(Link* link)
   emit linkSelected(link);
 }
 
+void PipelineStripWidget::navigateVertical(int direction)
+{
+  // Build a vertically-ordered list of navigable targets: every layout item
+  // (nodes, port cards, group members) plus every link. Links live outside
+  // m_layout, so keyboard traversal has to merge the two by screen position.
+  struct Nav
+  {
+    int y;
+    int layoutIndex; // >= 0 for a layout item, -1 for a link
+    Link* link;      // non-null for a link
+  };
+  QList<Nav> navs;
+  for (int i = 0; i < m_layout.size(); ++i) {
+    navs.append({ m_layout[i].rect.center().y(), i, nullptr });
+  }
+  for (auto& lg : m_linkGeometries) {
+    navs.append(
+      { qRound(lg.path.boundingRect().center().y()), -1, lg.link });
+  }
+  if (navs.isEmpty()) {
+    return;
+  }
+  std::sort(navs.begin(), navs.end(),
+            [](const Nav& a, const Nav& b) { return a.y < b.y; });
+
+  // Locate the current selection within the ordered list.
+  int cur = -1;
+  for (int i = 0; i < navs.size(); ++i) {
+    if (m_selectedLink) {
+      if (navs[i].link == m_selectedLink) {
+        cur = i;
+        break;
+      }
+    } else if (navs[i].layoutIndex >= 0 &&
+               navs[i].layoutIndex == m_selectedIndex) {
+      cur = i;
+      break;
+    }
+  }
+
+  int next;
+  if (cur < 0) {
+    // Nothing selected yet: enter from the top when going down, bottom up.
+    next = (direction > 0) ? 0 : navs.size() - 1;
+  } else {
+    next = cur + direction;
+    if (next < 0 || next >= navs.size()) {
+      return; // clamp at the ends
+    }
+  }
+
+  if (navs[next].link) {
+    selectLink(navs[next].link);
+  } else {
+    selectItem(navs[next].layoutIndex);
+  }
+}
+
 Link* PipelineStripWidget::linkHitTest(const QPoint& pos) const
 {
   QPainterPathStroker stroker;
@@ -1069,6 +1192,54 @@ Link* PipelineStripWidget::linkHitTest(const QPoint& pos) const
   return nullptr;
 }
 
+QString PipelineStripWidget::tooltipAt(const QPoint& pos) const
+{
+  // Priority mirrors hit-testing: output port, then link (drawn on top of
+  // cards), then card sub-regions. Nodes themselves have no tooltip.
+  if (auto* outPort = outputPortHitTest(pos)) {
+    // The sink-group "+" passthrough is an add-to-group affordance.
+    if (qobject_cast<SinkGroupNode*>(outPort->node())) {
+      return tr("Drag to a sink input to join the group");
+    }
+    return tr("Output port: %1").arg(portTypeToString(outPort->type()));
+  }
+  if (linkHitTest(pos)) {
+    return tr("Link");
+  }
+  int idx = hitTest(pos);
+  if (idx >= 0 && idx < m_layout.size()) {
+    const auto& item = m_layout[idx];
+    // Expanded output ports (port cards) get the same tooltip as the dots.
+    if (item.type == LayoutItem::PortCard && item.port) {
+      return tr("Output port: %1").arg(portTypeToString(item.port->type()));
+    }
+    // Breakpoint button in the node header.
+    if (item.type == LayoutItem::NodeCard && item.node &&
+        canHaveBreakpoint(item.node) &&
+        breakpointRect(item.rect).contains(pos)) {
+      return item.node->isAtBreakpoint() ? tr("Resume execution")
+                                         : tr("Create breakpoint");
+    }
+  }
+  return QString();
+}
+
+bool PipelineStripWidget::event(QEvent* e)
+{
+  if (e->type() == QEvent::ToolTip) {
+    auto* helpEvent = static_cast<QHelpEvent*>(e);
+    QString text = tooltipAt(helpEvent->pos());
+    if (text.isEmpty()) {
+      QToolTip::hideText();
+      e->ignore();
+    } else {
+      QToolTip::showText(helpEvent->globalPos(), text, this);
+    }
+    return true;
+  }
+  return QWidget::event(e);
+}
+
 // --- Painting ---
 
 void PipelineStripWidget::paintEvent(QPaintEvent* event)
@@ -1076,6 +1247,12 @@ void PipelineStripWidget::paintEvent(QPaintEvent* event)
   Q_UNUSED(event);
   QPainter painter(this);
   painter.setRenderHint(QPainter::Antialiasing);
+
+  // Keep the marching-ants timer in sync with the current hover/selection
+  // state. Doing it here makes it self-correcting: any path that changes
+  // hover or selection ends in update(), so the timer starts/stops without
+  // sprinkling calls across every mutation site.
+  updateLinkAnimationTimer();
 
   // Layer 1: Node and port cards (behind links)
   for (int i = 0; i < m_layout.size(); ++i) {
@@ -1101,6 +1278,8 @@ void PipelineStripWidget::paintEvent(QPaintEvent* event)
     if (item.type == LayoutItem::NodeCard) {
       paintInputDots(painter, item);
       paintOutputDots(painter, item);
+    } else if (item.type == LayoutItem::PortCard) {
+      paintPortCardIcon(painter, item, i == m_selectedIndex);
     }
   }
 
@@ -1330,7 +1509,6 @@ void PipelineStripWidget::paintPortCard(QPainter& painter,
   auto* port = item.port;
 
   QColor color = portTypeColor(port);
-  bool isTip = (m_tipOutputPort == port);
   bool isDim = isPortDimmed(port);
   if (isDim) {
     color = dimmed(color);
@@ -1342,6 +1520,64 @@ void PipelineStripWidget::paintPortCard(QPainter& painter,
   painter.setBrush(selected ? color : palette().window());
   painter.setPen(QPen(color, 1.5));
   painter.drawPath(path);
+
+  // The icon square + persistence badges are painted later, in the port
+  // indicator layer (see paintPortCardIcon), so links and the selection halo
+  // don't draw over them.
+  int sqEdge = r.height();
+
+  int x = r.left() + sqEdge + 6; // 2px extra inset from icon square
+
+  // Port name
+  QColor fg = selected ? palette().highlightedText().color() : palette().text().color();
+  if (isDim) {
+    fg = dimmed(fg);
+  }
+  QFont portFont = font();
+  portFont.setPixelSize(11);
+  painter.setFont(portFont);
+  painter.setPen(fg);
+  QFontMetrics fm(portFont);
+
+  // Menu dots on the right
+  int menuPad = 8;
+  int menuAreaWidth = HeaderIconSize;
+  int menuCX = r.right() - menuPad;
+  int menuCY = r.top() + r.height() / 2;
+
+  QColor dotColor = selected ? palette().highlightedText().color() : palette().buttonText().color();
+  if (isDim) {
+    dotColor = dimmed(dotColor);
+  }
+  qreal dotR = 1.5;
+  int dotGap = 4;
+  painter.setBrush(dotColor);
+  painter.setPen(Qt::NoPen);
+  painter.drawEllipse(QPointF(menuCX, menuCY - dotGap), dotR, dotR);
+  painter.drawEllipse(QPointF(menuCX, menuCY), dotR, dotR);
+  painter.drawEllipse(QPointF(menuCX, menuCY + dotGap), dotR, dotR);
+
+  int labelWidth = r.right() - menuPad - menuAreaWidth - x;
+  QString name = fm.elidedText(port->name(), Qt::ElideRight, labelWidth);
+  painter.setPen(fg);
+  painter.drawText(QRect(x, r.top(), labelWidth, r.height()),
+                   Qt::AlignVCenter | Qt::AlignLeft, name);
+}
+
+void PipelineStripWidget::paintPortCardIcon(QPainter& painter,
+                                            const LayoutItem& item,
+                                            bool selected)
+{
+  auto r = item.rect;
+  auto* port = item.port;
+
+  QColor color = portTypeColor(port);
+  // Suppress the tip outline while a link is selected (see paintOutputDots).
+  bool isTip = (m_tipOutputPort == port) && !m_selectedLink;
+  bool isDim = isPortDimmed(port);
+  if (isDim) {
+    color = dimmed(color);
+  }
 
   // Icon square on the left (same height as the port card, no padding)
   int sqEdge = r.height();
@@ -1363,9 +1599,15 @@ void PipelineStripWidget::paintPortCard(QPainter& painter,
                             OutputSquareRadius + 2);
   }
 
+  // When this port is the selected link's origin, recolor only the icon
+  // square's outline to the link's inverted color (not an outer ring, which
+  // reads as the tip/selection outline, and not the icon inside).
+  bool isLinkSource = m_selectedLink && m_selectedLink->from() == port;
+  QColor squareColor = isLinkSource ? invertColor(portTypeColor(port)) : color;
+
   // Draw the icon square (on top of any outline)
   painter.setBrush(selected ? color : palette().window());
-  painter.setPen(QPen(color, 1.5));
+  painter.setPen(QPen(squareColor, 1.5));
   painter.drawRoundedRect(sqRect, OutputSquareRadius, OutputSquareRadius);
 
   // Port icon inside the square
@@ -1415,43 +1657,7 @@ void PipelineStripWidget::paintPortCard(QPainter& painter,
         break;
     }
   }
-
-  int x = r.left() + sqEdge + 6; // 2px extra inset from icon square
-
-  // Port name
-  QColor fg = selected ? palette().highlightedText().color() : palette().text().color();
-  if (isDim) {
-    fg = dimmed(fg);
-  }
-  QFont portFont = font();
-  portFont.setPixelSize(11);
-  painter.setFont(portFont);
-  painter.setPen(fg);
-  QFontMetrics fm(portFont);
-
-  // Menu dots on the right
-  int menuPad = 8;
-  int menuAreaWidth = HeaderIconSize;
-  int menuCX = r.right() - menuPad;
-  int menuCY = r.top() + r.height() / 2;
-
-  QColor dotColor = selected ? palette().highlightedText().color() : palette().buttonText().color();
-  if (isDim) {
-    dotColor = dimmed(dotColor);
-  }
-  qreal dotR = 1.5;
-  int dotGap = 4;
-  painter.setBrush(dotColor);
-  painter.setPen(Qt::NoPen);
-  painter.drawEllipse(QPointF(menuCX, menuCY - dotGap), dotR, dotR);
-  painter.drawEllipse(QPointF(menuCX, menuCY), dotR, dotR);
-  painter.drawEllipse(QPointF(menuCX, menuCY + dotGap), dotR, dotR);
-
-  int labelWidth = r.right() - menuPad - menuAreaWidth - x;
-  QString name = fm.elidedText(port->name(), Qt::ElideRight, labelWidth);
-  painter.setPen(fg);
-  painter.drawText(QRect(x, r.top(), labelWidth, r.height()),
-                   Qt::AlignVCenter | Qt::AlignLeft, name);
+  painter.setBrush(Qt::NoBrush);
 }
 
 void PipelineStripWidget::paintGroupMemberCard(QPainter& painter,
@@ -1672,6 +1878,11 @@ void PipelineStripWidget::paintInputDots(QPainter& painter,
     if (inputDim) {
       color = dimmed(color);
     }
+    // When this input is the destination of the selected link, recolor the
+    // dot itself to the link's inverted color.
+    if (m_selectedLink && inPort->link() == m_selectedLink) {
+      color = invertColor(portTypeColor(m_selectedLink->from()));
+    }
     QPoint pos = inputDotPos(node, i, item.rect);
     bool invalidLink = inPort->link() && !inPort->link()->isValid();
     if (invalidLink) {
@@ -1765,8 +1976,17 @@ void PipelineStripWidget::paintOutputDots(QPainter& painter,
     if (isPortDimmed(outputs[i])) {
       color = dimmed(color);
     }
+    // When this port is the origin of the selected link, recolor only the
+    // square/circle outline to the link's inverted color; the icon inside
+    // keeps its normal port-type color.
+    bool isLinkSource = m_selectedLink && m_selectedLink->from() == outputs[i];
+    QColor outlineColor =
+      isLinkSource ? invertColor(portTypeColor(outputs[i])) : color;
     bool isSelected = (m_selectedPort == outputs[i]);
-    bool isTip = (m_tipOutputPort == outputs[i]);
+    // Suppress the tip outline while a link is selected: the tip follows the
+    // selected link's source, and its outline would clash with the endpoint
+    // recoloring.
+    bool isTip = (m_tipOutputPort == outputs[i]) && !m_selectedLink;
     QPoint pos = outputDotPos(node, i, item.rect);
 
     if (sinkGroup) {
@@ -1784,20 +2004,23 @@ void PipelineStripWidget::paintOutputDots(QPainter& painter,
         painter.setPen(QPen(Qt::red, 1.5));
         painter.drawEllipse(pos, r + 3, r + 3);
         painter.setBrush(palette().window());
-        painter.setPen(QPen(color, 1.5));
+        painter.setPen(QPen(outlineColor, 1.5));
         painter.drawEllipse(pos, r, r);
       } else {
         painter.setBrush(palette().window());
-        painter.setPen(QPen(color, 1.5));
+        painter.setPen(QPen(outlineColor, 1.5));
         painter.drawEllipse(pos, r, r);
       }
 
-      // Draw "+" inside the circle
-      QColor plusColor = isSelected ? palette().highlightedText().color() : color;
-      painter.setPen(QPen(plusColor, 1.5));
-      int arm = 4;
-      painter.drawLine(pos.x() - arm, pos.y(), pos.x() + arm, pos.y());
-      painter.drawLine(pos.x(), pos.y() - arm, pos.x(), pos.y() + arm);
+      // Draw the join-group icon inside the circle (smaller than the port
+      // square icons so it sits comfortably inside the "+" circle).
+      static QIcon joinIcon(QStringLiteral(":/pipeline/icon_join.svg"));
+      QColor joinColor =
+        isSelected ? palette().highlightedText().color() : color;
+      int joinSize = OutputSquareIconSize;
+      QRect joinRect(pos.x() - joinSize / 2, pos.y() - joinSize / 2, joinSize,
+                     joinSize);
+      paintTintedIcon(painter, joinIcon, joinRect, joinColor);
     } else {
       // Outlined rounded square centered on pos
       QRect sqRect(pos.x() - half, pos.y() - half,
@@ -1819,11 +2042,11 @@ void PipelineStripWidget::paintOutputDots(QPainter& painter,
         painter.drawRoundedRect(tipRect, OutputSquareRadius + 2,
                                 OutputSquareRadius + 2);
         painter.setBrush(palette().window());
-        painter.setPen(QPen(color, 1.5));
+        painter.setPen(QPen(outlineColor, 1.5));
         painter.drawRoundedRect(sqRect, OutputSquareRadius, OutputSquareRadius);
       } else {
         painter.setBrush(palette().window());
-        painter.setPen(QPen(color, 1.5));
+        painter.setPen(QPen(outlineColor, 1.5));
         painter.drawRoundedRect(sqRect, OutputSquareRadius, OutputSquareRadius);
       }
 
@@ -2115,38 +2338,162 @@ QPainterPath PipelineStripWidget::buildLinkPath(OutputPort* fromPort,
   return roundedPolyline(pts, LinkCornerRadius);
 }
 
+void PipelineStripWidget::paintSelectedLinkHalo(QPainter& painter)
+{
+  if (!m_selectedLink) {
+    return;
+  }
+
+  // Union the source port shape, the link body, and the destination port
+  // shape into one region, then stroke a grown outline of it. This yields a
+  // single continuous selection halo hugging the whole from→link→to unit,
+  // rather than three separate outlines.
+  QPainterPath combined;
+
+  // Link body. Stroke it narrower than the drawn link so the grown halo hugs
+  // it as tightly as it hugs the ports — the port squares/dots are drawn with
+  // a 1.5px border that extends them, which would otherwise leave the link's
+  // halo looser than the ports'.
+  for (const auto& lg : m_linkGeometries) {
+    if (lg.link == m_selectedLink) {
+      QPainterPathStroker stroker;
+      stroker.setWidth(1.5);
+      stroker.setCapStyle(Qt::RoundCap);
+      stroker.setJoinStyle(Qt::RoundJoin);
+      combined = combined.united(stroker.createStroke(lg.path));
+      break;
+    }
+  }
+
+  // Source port shape: expanded port card, collapsed square, or group circle.
+  OutputPort* from = m_selectedLink->from();
+  bool addedSource = false;
+  for (const auto& item : m_layout) {
+    if (item.type == LayoutItem::PortCard && item.port == from) {
+      int sqEdge = item.rect.height();
+      QPainterPath sq;
+      sq.addRoundedRect(
+        QRectF(item.rect.left(), item.rect.top(), sqEdge, sqEdge),
+        OutputSquareRadius, OutputSquareRadius);
+      combined = combined.united(sq);
+      addedSource = true;
+      break;
+    }
+  }
+  if (!addedSource) {
+    auto* node = from->node();
+    for (const auto& item : m_layout) {
+      if (item.type == LayoutItem::NodeCard && item.node == node) {
+        int idx = node->outputPorts().indexOf(from);
+        QPoint pos = outputDotPos(node, idx, item.rect);
+        int half = OutputSquareEdge / 2;
+        QPainterPath shape;
+        if (qobject_cast<SinkGroupNode*>(node)) {
+          shape.addEllipse(QPointF(pos), half, half);
+        } else {
+          shape.addRoundedRect(QRectF(pos.x() - half, pos.y() - half,
+                                      OutputSquareEdge, OutputSquareEdge),
+                               OutputSquareRadius, OutputSquareRadius);
+        }
+        combined = combined.united(shape);
+        break;
+      }
+    }
+  }
+
+  // Destination port shape: the input dot.
+  InputPort* to = m_selectedLink->to();
+  for (const auto& item : m_layout) {
+    if (item.type == LayoutItem::NodeCard && item.node == to->node()) {
+      int idx = to->node()->inputPorts().indexOf(to);
+      QPoint pos = inputDotPos(to->node(), idx, item.rect);
+      QPainterPath dot;
+      dot.addEllipse(QPointF(pos), DotRadius, DotRadius);
+      combined = combined.united(dot);
+      break;
+    }
+  }
+
+  if (combined.isEmpty()) {
+    return;
+  }
+
+  // Grow the silhouette outward so the ring sits just outside the content,
+  // leaving a small background gap (matching the selected-port halo).
+  QPainterPathStroker grow;
+  grow.setWidth(6.0); // ~3px outward
+  grow.setJoinStyle(Qt::RoundJoin);
+  grow.setCapStyle(Qt::RoundCap);
+  QPainterPath grown = combined.united(grow.createStroke(combined));
+
+  // Fill the halo region with the background color and stroke its outline,
+  // same style as the selected/tip port halo. Drawn before the links so the
+  // non-selected links (then the selected link) render on top of it.
+  painter.setBrush(palette().window());
+  painter.setPen(QPen(palette().highlight().color(), 1.5));
+  painter.drawPath(grown);
+}
+
 void PipelineStripWidget::paintConnections(QPainter& painter)
 {
   painter.setBrush(Qt::NoBrush);
 
-  for (auto& lg : m_linkGeometries) {
+  // Continuous selection halo behind the links (and the port dots, which are
+  // painted in a later layer). It fills its region, so reset the brush before
+  // stroking the (open) link paths, which must not be filled.
+  paintSelectedLinkHalo(painter);
+  painter.setBrush(Qt::NoBrush);
+
+  auto drawLink = [&](const LinkGeometry& lg) {
     bool hovered = (lg.link == m_hoveredLink);
     bool selected = (lg.link == m_selectedLink);
     bool isDim = isLinkDimmed(lg.link);
     qreal baseWidth = 3.0;
 
-    QColor linkColor = isDim ? dimmed(lg.color) : lg.color;
-
-    // Selected: draw a thin outline around the link using the selection color,
-    // with a 1px gap between the outline and the link segment.
-    // Layers (bottom to top): selection outline, background gap, link line.
+    // Selected links invert their port-type color so they read as clearly
+    // picked; otherwise use the normal color (dimmed when de-emphasized).
+    QColor linkColor = lg.color;
     if (selected) {
-      QColor selColor = palette().highlight().color();
-      // 1) Selection outline (outermost)
-      painter.setPen(QPen(selColor, baseWidth + 6.0, Qt::SolidLine,
-                          Qt::RoundCap, Qt::RoundJoin));
-      painter.drawPath(lg.path);
-      // 2) Background-colored gap to separate outline from link
-      painter.setPen(QPen(palette().window().color(), baseWidth + 4.0,
-                          Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-      painter.drawPath(lg.path);
+      linkColor = invertColor(lg.color);
+    } else if (isDim) {
+      linkColor = dimmed(lg.color);
     }
 
-    // Draw the link line (hovered = +1px width)
-    qreal strokeWidth = hovered ? baseWidth + 2.0 : baseWidth;
-    painter.setPen(QPen(linkColor, strokeWidth, Qt::SolidLine,
-                        Qt::RoundCap, Qt::RoundJoin));
+    // Keep the stroke width the same for hover and selection: the dash
+    // pattern and offset are in pen-width units, so any width difference
+    // would make one state's ants coarser and faster than the other's.
+    qreal strokeWidth = baseWidth;
+
+    // Marching ants: when animating, draw the link as moving dashes in its
+    // display color (regular when hovered, inverted when selected) with
+    // transparent gaps. Otherwise draw a plain solid line.
+    bool animate = (hovered && m_animateLinkOnHover) ||
+                   (selected && m_animateLinkOnSelection);
+    if (animate) {
+      QPen antPen(linkColor, strokeWidth, Qt::CustomDashLine, Qt::FlatCap,
+                  Qt::RoundJoin);
+      antPen.setDashPattern({ kLinkDashOn, kLinkDashOff });
+      antPen.setDashOffset(m_marchPhase);
+      painter.setPen(antPen);
+    } else {
+      painter.setPen(QPen(linkColor, strokeWidth, Qt::SolidLine, Qt::RoundCap,
+                          Qt::RoundJoin));
+    }
     painter.drawPath(lg.path);
+  };
+
+  // Two passes so the hovered/selected link draws on top of the others. When
+  // several links branch off a shared source they overlap near it, and the
+  // emphasized one must be topmost for its dashing to read correctly.
+  for (auto& lg : m_linkGeometries) {
+    if (lg.link != m_hoveredLink && lg.link != m_selectedLink) {
+      drawLink(lg);
+    }
+  }
+  for (auto& lg : m_linkGeometries) {
+    if (lg.link == m_hoveredLink || lg.link == m_selectedLink) {
+      drawLink(lg);
+    }
   }
 }
 
@@ -2438,6 +2785,15 @@ void PipelineStripWidget::mousePressEvent(QMouseEvent* event)
       return;
     }
 
+    // Input ports hold at most one link and have no selection of their own,
+    // so clicking a connected input selects its incoming link.
+    if (auto* inPort = inputPortHitTest(event->pos())) {
+      if (inPort->link()) {
+        selectLink(inPort->link());
+        return;
+      }
+    }
+
     // Check for collapsed group member circle click
     {
       int half = OutputSquareEdge / 2;
@@ -2610,16 +2966,16 @@ void PipelineStripWidget::mousePressEvent(QMouseEvent* event)
       }
     }
 
-    if (idx >= 0) {
+    // Links are drawn on top of cards, so a click on the thin link corridor
+    // selects the link even when it overlaps a node card (e.g. the stub that
+    // crosses an expanded card's left edge). Card action buttons and ports
+    // were handled above and returned, so they keep priority.
+    if (auto* link = linkHitTest(event->pos())) {
+      selectLink(link);
+    } else if (idx >= 0) {
       selectItem(idx);
     } else {
-      // No card hit — check links
-      auto* link = linkHitTest(event->pos());
-      if (link) {
-        selectLink(link);
-      } else {
-        selectItem(-1);
-      }
+      selectItem(-1);
     }
   }
   QWidget::mousePressEvent(event);
@@ -2669,16 +3025,10 @@ void PipelineStripWidget::keyPressEvent(QKeyEvent* event)
 {
   switch (event->key()) {
     case Qt::Key_Up:
-      if (m_selectedIndex > 0) {
-        selectItem(m_selectedIndex - 1);
-      }
+      navigateVertical(-1);
       break;
     case Qt::Key_Down:
-      if (m_selectedIndex < m_layout.size() - 1) {
-        selectItem(m_selectedIndex + 1);
-      } else if (m_selectedIndex < 0 && !m_layout.isEmpty()) {
-        selectItem(0);
-      }
+      navigateVertical(1);
       break;
     case Qt::Key_Escape:
       if (m_draggingLink) {
@@ -2690,12 +3040,16 @@ void PipelineStripWidget::keyPressEvent(QKeyEvent* event)
       break;
     case Qt::Key_Delete:
     case Qt::Key_Backspace:
-      if (!m_interactionLocked && m_selectedIndex >= 0 &&
-          m_selectedIndex < m_layout.size()) {
-        auto& item = m_layout[m_selectedIndex];
-        if (item.type == LayoutItem::NodeCard ||
-            item.type == LayoutItem::GroupMemberCard) {
-          emit deleteNodeRequested(item.node);
+      if (!m_interactionLocked) {
+        if (m_selectedLink) {
+          emit deleteLinkRequested(m_selectedLink);
+        } else if (m_selectedIndex >= 0 &&
+                   m_selectedIndex < m_layout.size()) {
+          auto& item = m_layout[m_selectedIndex];
+          if (item.type == LayoutItem::NodeCard ||
+              item.type == LayoutItem::GroupMemberCard) {
+            emit deleteNodeRequested(item.node);
+          }
         }
       }
       break;
@@ -2842,10 +3196,19 @@ void PipelineStripWidget::mouseMoveEvent(QMouseEvent* event)
     }
   }
 
-  // Track link hover (only when not hovering a card)
+  // Track link hover. An output port under the cursor is a port hover (a
+  // click there selects the port, not the link), so don't animate. A
+  // connected input port animates its single link. Otherwise hit-test the
+  // link path directly — links are drawn on top of cards, so this must run
+  // even when the cursor is over an (expanded) node card.
   Link* hoveredLink = nullptr;
-  if (idx < 0) {
-    hoveredLink = linkHitTest(event->pos());
+  if (!outputPortHitTest(event->pos())) {
+    if (auto* inPort = inputPortHitTest(event->pos())) {
+      hoveredLink = inPort->link();
+    }
+    if (!hoveredLink) {
+      hoveredLink = linkHitTest(event->pos());
+    }
   }
 
   bool needsUpdate = false;
