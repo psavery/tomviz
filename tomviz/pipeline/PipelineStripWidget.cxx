@@ -1137,8 +1137,10 @@ void PipelineStripWidget::navigateVertical(int direction)
   if (navs.isEmpty()) {
     return;
   }
-  std::sort(navs.begin(), navs.end(),
-            [](const Nav& a, const Nav& b) { return a.y < b.y; });
+  // Stable so entries sharing a center y keep a deterministic order and
+  // repeated Up/Down presses cannot oscillate between them.
+  std::stable_sort(navs.begin(), navs.end(),
+                   [](const Nav& a, const Nav& b) { return a.y < b.y; });
 
   // Locate the current selection within the ordered list.
   int cur = -1;

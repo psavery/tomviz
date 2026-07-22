@@ -160,14 +160,18 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   // only stacked vertically or tabbed).
   setDockNestingEnabled(true);
   // Give the dock splitter a visible 1px line (most styles draw it nearly
-  // invisible). The pipeline scroll area rule reasserts its white background:
+  // invisible). The pipeline scroll area rules reassert its white background:
   // setting any stylesheet on the main window otherwise stops the palette-set
-  // background from being honored, turning the area grey.
+  // background from being honored, turning the area grey. Target the scroll
+  // area and its content container by name; a blanket "#pipelineScroll
+  // QWidget" rule would also match the context menus parented to the strip
+  // widget, replacing their native rendering with a flat white one.
   setStyleSheet(styleSheet() +
                 QStringLiteral(
                   "QMainWindow::separator { background: palette(mid);"
                   " width: 1px; height: 1px; }"
-                  "#pipelineScroll, #pipelineScroll QWidget { background: white; }"));
+                  "#pipelineScroll, #pipelineScrollContainer"
+                  " { background: white; }"));
   setAcceptDrops(true);
   // Force full messages to be shown
   m_ui->outputWidget->showFullMessages(true);
@@ -240,6 +244,7 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   // Wrap the strip widget in a container with padding so the scroll area
   // provides insets on the top, right, and bottom.
   auto* scrollContainer = new QWidget();
+  scrollContainer->setObjectName("pipelineScrollContainer");
   scrollContainer->setAutoFillBackground(true);
   scrollContainer->setPalette(scrollPal);
   auto* scrollLayout = new QVBoxLayout(scrollContainer);
