@@ -579,6 +579,13 @@ void LoadDataReaction::sourceNodeAdded(pipeline::SourceNode* source,
   addSourceToPipeline(source);
   completeSourceSetup(source, defaultModules);
 
+  // Each pip->addNode() above auto-selects the node (to advance the tip
+  // output port as nodes are added); opening a file would otherwise leave the
+  // last sink showing in the properties panel. Clear the selection so nothing
+  // is selected — the tip is unchanged (a sink has no output port, so it was
+  // already derived via findTipOutputPort), only the properties panel empties.
+  ActiveObjects::instance().clearActiveSelection();
+
   if (isFirstSource && createCameraOrbit && pip) {
     // Create the camera orbit after the first execution completes so the
     // camera has been reset to frame the data.

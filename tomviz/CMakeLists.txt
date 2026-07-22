@@ -358,6 +358,10 @@ set(SOURCES
   pipeline/PipelineControlsWidget.h
   pipeline/PipelineStripWidget.cxx
   pipeline/PipelineStripWidget.h
+  pipeline/LinkPropertiesWidget.cxx
+  pipeline/LinkPropertiesWidget.h
+  pipeline/SinkGroupPropertiesWidget.cxx
+  pipeline/SinkGroupPropertiesWidget.h
   pipeline/VolumeScalarsModel.cxx
   pipeline/VolumeScalarsModel.h
   pipeline/VolumePropertiesWidget.cxx

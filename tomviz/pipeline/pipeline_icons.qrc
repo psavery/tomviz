@@ -29,5 +29,6 @@
     <file alias="orthoslice.svg">../icons/orthoslice.svg</file>
     <file alias="pqMeasurementCube.png">../icons/pqMeasurementCube.png</file>
     <file alias="icon_leave.svg">../icons/icon_leave.svg</file>
+    <file alias="icon_join.svg">../icons/icon_join.svg</file>
   </qresource>
 </RCC>

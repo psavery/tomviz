@@ -34,6 +34,7 @@ class OutputPort;
 class Pipeline;
 class PipelineControlsWidget;
 class PipelineStripWidget;
+class SinkGroupNode;
 class VolumePropertiesWidget;
 } // namespace pipeline
 
@@ -109,6 +110,12 @@ private:
 
   void initPipeline();
   void clearDynamicPropertiesWidget();
+  /// Install @a content as the dynamic properties panel, wrapped with a
+  /// title header declaring the type of the selected object.
+  void showPropertiesPanel(QWidget* content, const QString& title);
+  /// Relink a group member sink to the group's upstream port (removing it
+  /// from the group).
+  void leaveGroup(pipeline::Node* member, pipeline::SinkGroupNode* group);
   void updateColorMapDisplay();
   /// Coalescing wrapper around updateColorMapDisplay — at most one
   /// refresh per kColorMapUpdateThrottleMs window.

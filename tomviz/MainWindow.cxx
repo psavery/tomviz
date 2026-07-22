@@ -20,6 +20,8 @@
 #include <vtkVector.h>
 
 #include <QCheckBox>
+#include <QFrame>
+#include <QLabel>
 #include <QScrollArea>
 #include <QVBoxLayout>
 
@@ -61,6 +63,10 @@
 #include "pipeline/data/VolumeData.h"
 #include "pipeline/NodeEditDialog.h"
 #include "pipeline/NodePropertiesPanel.h"
+#include "pipeline/LinkPropertiesWidget.h"
+#include "pipeline/SinkGroupPropertiesWidget.h"
+#include "pipeline/SourceNode.h"
+#include "pipeline/SinkNode.h"
 #include "pipeline/VolumePropertiesWidget.h"
 #include "MoleculeProperties.h"
 #include "CentralWidget.h"
@@ -149,6 +155,19 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
 
   // checkOpenGL();
   m_ui->setupUi(this);
+  // Allow docks in the same area to be split in both directions (e.g. the
+  // Pipelines and Properties docks side by side with a horizontal split, not
+  // only stacked vertically or tabbed).
+  setDockNestingEnabled(true);
+  // Give the dock splitter a visible 1px line (most styles draw it nearly
+  // invisible). The pipeline scroll area rule reasserts its white background:
+  // setting any stylesheet on the main window otherwise stops the palette-set
+  // background from being honored, turning the area grey.
+  setStyleSheet(styleSheet() +
+                QStringLiteral(
+                  "QMainWindow::separator { background: palette(mid);"
+                  " width: 1px; height: 1px; }"
+                  "#pipelineScroll, #pipelineScroll QWidget { background: white; }"));
   setAcceptDrops(true);
   // Force full messages to be shown
   m_ui->outputWidget->showFullMessages(true);
@@ -211,6 +230,7 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   m_pipelineStrip = new pipeline::PipelineStripWidget(this);
   m_pipelineStrip->setSortOrder(pipeline::SortOrder::DepthFirst);
   auto* pipelineScroll = new QScrollArea(this);
+  pipelineScroll->setObjectName("pipelineScroll");
   pipelineScroll->setWidgetResizable(true);
   pipelineScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   // pipelineScroll->setFrameShape(QFrame::NoFrame);
@@ -244,6 +264,13 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
             auto* p = pipeline();
             if (p && !p->isExecuting()) {
               p->removeNode(node);
+            }
+          });
+  connect(m_pipelineStrip, &pipeline::PipelineStripWidget::deleteLinkRequested,
+          this, [this](pipeline::Link* link) {
+            auto* p = pipeline();
+            if (p && !p->isExecuting()) {
+              p->removeLink(link);
             }
           });
 
@@ -345,37 +372,7 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
 
   // Leave-group: relink the member to the group's upstream port
   connect(m_pipelineStrip, &pipeline::PipelineStripWidget::leaveGroupRequested,
-          this,
-          [this](pipeline::Node* member, pipeline::SinkGroupNode* group) {
-            auto* p = pipeline();
-            if (!p) {
-              return;
-            }
-            for (auto* inPort : member->inputPorts()) {
-              if (!inPort->link()) {
-                continue;
-              }
-              auto* groupPort = inPort->link()->from();
-              if (groupPort->node() != group) {
-                continue;
-              }
-              // Find the upstream port feeding the group's matching input.
-              int idx = group->outputPorts().indexOf(groupPort);
-              pipeline::OutputPort* upstream = nullptr;
-              if (idx >= 0 && idx < group->inputPorts().size()) {
-                auto* groupInput = group->inputPorts()[idx];
-                if (groupInput->link()) {
-                  upstream = groupInput->link()->from();
-                }
-              }
-              p->removeLink(inPort->link());
-              if (upstream) {
-                p->createLink(upstream, inPort);
-              }
-              break;
-            }
-            p->execute();
-          });
+          this, &MainWindow::leaveGroup);
 
   // Context menu on links: delete action
   m_pipelineStrip->setLinkMenuProvider(
@@ -1723,6 +1720,72 @@ void MainWindow::clearDynamicPropertiesWidget()
 }
 
 
+void MainWindow::showPropertiesPanel(QWidget* content, const QString& title)
+{
+  auto* container = new QWidget(m_ui->propertiesPanelStackedWidget);
+  auto* layout = new QVBoxLayout(container);
+  layout->setContentsMargins(0, 0, 0, 0);
+  layout->setSpacing(0);
+
+  auto* titleLabel = new QLabel(title, container);
+  QFont f = titleLabel->font();
+  f.setBold(true);
+  titleLabel->setFont(f);
+  titleLabel->setContentsMargins(8, 6, 8, 6);
+  layout->addWidget(titleLabel);
+
+  auto* separator = new QFrame(container);
+  separator->setFrameShape(QFrame::HLine);
+  separator->setFrameShadow(QFrame::Sunken);
+  layout->addWidget(separator);
+
+  // A node with no editable properties (e.g. some sources) still gets a
+  // title — just no body.
+  if (content) {
+    content->setParent(container);
+    layout->addWidget(content, 1);
+  } else {
+    layout->addStretch(1);
+  }
+
+  m_dynamicPropertiesWidget = container;
+  m_ui->propertiesPanelStackedWidget->addWidget(container);
+  m_ui->propertiesPanelStackedWidget->setCurrentWidget(container);
+}
+
+void MainWindow::leaveGroup(pipeline::Node* member,
+                            pipeline::SinkGroupNode* group)
+{
+  auto* p = pipeline();
+  if (!p) {
+    return;
+  }
+  for (auto* inPort : member->inputPorts()) {
+    if (!inPort->link()) {
+      continue;
+    }
+    auto* groupPort = inPort->link()->from();
+    if (groupPort->node() != group) {
+      continue;
+    }
+    // Find the upstream port feeding the group's matching input.
+    int idx = group->outputPorts().indexOf(groupPort);
+    pipeline::OutputPort* upstream = nullptr;
+    if (idx >= 0 && idx < group->inputPorts().size()) {
+      auto* groupInput = group->inputPorts()[idx];
+      if (groupInput->link()) {
+        upstream = groupInput->link()->from();
+      }
+    }
+    p->removeLink(inPort->link());
+    if (upstream) {
+      p->createLink(upstream, inPort);
+    }
+    break;
+  }
+  p->execute();
+}
+
 void MainWindow::onActiveNodeChanged(pipeline::Node* node)
 {
   m_pipelineStrip->setSelectedNode(node);
@@ -1763,9 +1826,38 @@ void MainWindow::onActiveNodeChanged(pipeline::Node* node)
       }
     });
 
+  // Title header declaring the type of the selected node.
+  QString title;
+  if (qobject_cast<pipeline::SinkGroupNode*>(node)) {
+    title = tr("Visualizations");
+  } else if (qobject_cast<pipeline::SourceNode*>(node)) {
+    title = tr("Source Node");
+  } else if (qobject_cast<pipeline::TransformNode*>(node)) {
+    title = tr("Transform Node");
+  } else if (qobject_cast<pipeline::SinkNode*>(node)) {
+    title = tr("Sink Node");
+  } else {
+    title = tr("Node");
+  }
+
   QWidget* propsWidget = nullptr;
 
-  if (auto* sink = dynamic_cast<pipeline::LegacyModuleSink*>(node)) {
+  if (auto* group = qobject_cast<pipeline::SinkGroupNode*>(node)) {
+    auto* w = new pipeline::SinkGroupPropertiesWidget(
+      group, pipeline(), m_ui->propertiesPanelStackedWidget);
+    connect(w, &pipeline::SinkGroupPropertiesWidget::leaveGroupRequested, this,
+            [this, group](pipeline::SinkNode* member) {
+              leaveGroup(member, group);
+            });
+    connect(w, &pipeline::SinkGroupPropertiesWidget::deleteRequested, this,
+            [this](pipeline::SinkNode* member) {
+              auto* p = pipeline();
+              if (p && !p->isExecuting()) {
+                p->removeNode(member);
+              }
+            });
+    propsWidget = w;
+  } else if (auto* sink = dynamic_cast<pipeline::LegacyModuleSink*>(node)) {
     if (!node->isEditing()) {
       propsWidget = sink->createSinkPropertiesWidget(
         m_ui->propertiesPanelStackedWidget);
@@ -1785,13 +1877,9 @@ void MainWindow::onActiveNodeChanged(pipeline::Node* node)
       node, pipeline(), m_ui->propertiesPanelStackedWidget);
   }
 
-  if (propsWidget) {
-    m_dynamicPropertiesWidget = propsWidget;
-    m_ui->propertiesPanelStackedWidget->addWidget(propsWidget);
-    m_ui->propertiesPanelStackedWidget->setCurrentWidget(propsWidget);
-  } else {
-    m_ui->propertiesPanelStackedWidget->setCurrentWidget(m_ui->empty);
-  }
+  // Always show the title for a selected node, even when it has no
+  // editable properties (title-only panel).
+  showPropertiesPanel(propsWidget, title);
 
   // Sink with detached colormap: display it; otherwise the tip port
   // drives the colormap via updateColorMapDisplay().
@@ -1829,9 +1917,7 @@ void MainWindow::onActivePortChanged(pipeline::OutputPort* port)
     scrollArea->setFrameShape(QFrame::NoFrame);
     scrollArea->setWidgetResizable(true);
     scrollArea->setWidget(propsWidget);
-    m_dynamicPropertiesWidget = scrollArea;
-    m_ui->propertiesPanelStackedWidget->addWidget(scrollArea);
-    m_ui->propertiesPanelStackedWidget->setCurrentWidget(scrollArea);
+    showPropertiesPanel(scrollArea, tr("Output Port"));
   } else if (port->type() == pipeline::PortType::Molecule && port->hasData()) {
     try {
       auto molecule =
@@ -1839,9 +1925,7 @@ void MainWindow::onActivePortChanged(pipeline::OutputPort* port)
       if (molecule) {
         auto* propsWidget = new MoleculeProperties(
           molecule, m_ui->propertiesPanelStackedWidget);
-        m_dynamicPropertiesWidget = propsWidget;
-        m_ui->propertiesPanelStackedWidget->addWidget(propsWidget);
-        m_ui->propertiesPanelStackedWidget->setCurrentWidget(propsWidget);
+        showPropertiesPanel(propsWidget, tr("Output Port"));
       } else {
         m_ui->propertiesPanelStackedWidget->setCurrentWidget(m_ui->empty);
       }
@@ -1857,11 +1941,31 @@ void MainWindow::onActiveLinkChanged(pipeline::Link* link)
 {
   m_pipelineStrip->setSelectedLink(link);
   if (!link) {
-    return; // Null link — leave current properties panel in place.
+    // A null link also arrives as a side effect of selecting a node/port,
+    // whose own handler repopulates the panel. Only tear the panel down
+    // here if it is actually showing a link's properties (e.g. on a full
+    // clearActiveSelection while a link was the active object). The tracked
+    // widget is the title wrapper, so look for the inner widget.
+    if (m_dynamicPropertiesWidget &&
+        m_dynamicPropertiesWidget->findChild<pipeline::LinkPropertiesWidget*>()) {
+      clearDynamicPropertiesWidget();
+      m_ui->propertiesPanelStackedWidget->setCurrentWidget(m_ui->empty);
+    }
+    return;
   }
   clearDynamicPropertiesWidget();
-  // No link properties panel yet — show empty.
-  m_ui->propertiesPanelStackedWidget->setCurrentWidget(m_ui->empty);
+
+  auto* propsWidget =
+    new pipeline::LinkPropertiesWidget(link, m_ui->propertiesPanelStackedWidget);
+  connect(propsWidget, &pipeline::LinkPropertiesWidget::deleteRequested, this,
+          [this](pipeline::Link* l) {
+            auto* p = pipeline();
+            if (p && !p->isExecuting()) {
+              p->removeLink(l);
+            }
+            ActiveObjects::instance().clearActiveSelection();
+          });
+  showPropertiesPanel(propsWidget, tr("Link"));
 }
 
 bool MainWindow::ensureColorMapForPort(pipeline::Node* node,
