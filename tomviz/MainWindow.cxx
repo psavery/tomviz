@@ -992,27 +992,9 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   dataBrokerSaveReaction->setDataBrokerInstalled(dataBroker->installed());
   dataBroker->deleteLater();
 
-  {
-    bool installed = pyXRFRunner->isInstalled();
-    m_ui->actionPyXRFSource->setEnabled(installed);
-    if (!installed) {
-      QString tooltip = "Failed to import required modules. "
-                        "Error message was:\n\n" +
-                        pyXRFRunner->importError();
-      m_ui->actionPyXRFSource->setToolTip(tooltip);
-    }
-  }
-
-  {
-    bool installed = ptychoRunner->isInstalled();
-    m_ui->actionPtychoSource->setEnabled(installed);
-    if (!installed) {
-      QString tooltip = "Failed to import required modules. "
-                        "Error message was:\n\n" +
-                        ptychoRunner->importError();
-      m_ui->actionPtychoSource->setToolTip(tooltip);
-    }
-  }
+  // The PyXRF and Ptycho python modules are deliberately not imported at
+  // startup. Their runners check their requirements when the actions are
+  // triggered, so broken optional dependencies cannot break launch.
 
   // Snapshot existing dock widgets before loading plugin dock widgets
   auto currentDocks = findChildren<QDockWidget*>();
