@@ -33,6 +33,16 @@ void PythonTransform::setJSONDescription(const QString& json)
     [this](const QString& name, PortType type) {
       return addOutput(name, type);
     });
+
+  // Default freshly created nodes to External execution when the
+  // description demands it (externalOnly) or carries a legacy
+  // tomviz_pipeline_env path.
+  if (!nodeExecutor() &&
+      (m_backend.externalOnly() ||
+       !m_backend.externalPythonEnvPath().isEmpty())) {
+    setNodeExecutor(
+      new ExternalNodeExecutor(m_backend.externalPythonEnvPath()));
+  }
 }
 
 QString PythonTransform::jsonDescription() const
@@ -196,7 +206,7 @@ bool PythonTransform::deserialize(const QJsonObject& json)
   // Node::deserialize didn't already install one.
   if (!nodeExecutor()) {
     auto envPath = m_backend.externalPythonEnvPath();
-    if (!envPath.isEmpty()) {
+    if (!envPath.isEmpty() || m_backend.externalOnly()) {
       setNodeExecutor(new ExternalNodeExecutor(envPath));
     }
   }

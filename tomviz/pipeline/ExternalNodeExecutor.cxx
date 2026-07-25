@@ -318,8 +318,15 @@ bool ExternalNodeExecutor::execute(Node* node)
 
   QString cli = findCliExecutable();
   if (cli.isEmpty()) {
-    qWarning() << "ExternalNodeExecutor: tomviz-pipeline not found in env"
-               << m_envPath;
+    QString msg = m_envPath.isEmpty()
+      ? QStringLiteral("No external Python environment selected. Choose an "
+                       "environment containing tomviz-pipeline in the "
+                       "Execution tab.")
+      : QStringLiteral("tomviz-pipeline was not found in '%1'. Select a "
+                       "Python environment containing tomviz-pipeline in "
+                       "the Execution tab.").arg(m_envPath);
+    qWarning() << "ExternalNodeExecutor:" << msg;
+    node->setProgressMessage(msg);
     node->setExecState(NodeExecState::Failed);
     return false;
   }

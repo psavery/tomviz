@@ -70,15 +70,17 @@ void LegacyPythonTransform::setJSONDescription(const QString& json)
   m_jsonDescription = json;
   parseJSON();
 
-  // If the JSON carries a tomviz_pipeline_env key and no executor is set,
-  // default to External execution with that environment.
+  // If the JSON carries a tomviz_pipeline_env key or declares
+  // externalOnly and no executor is set, default to External execution.
   if (!nodeExecutor() && !json.isEmpty()) {
     QJsonDocument descDoc = QJsonDocument::fromJson(json.toUtf8());
     if (descDoc.isObject()) {
+      auto obj = descDoc.object();
       auto envPath =
-        descDoc.object().value(QStringLiteral("tomviz_pipeline_env"))
-          .toString();
-      if (!envPath.isEmpty()) {
+        obj.value(QStringLiteral("tomviz_pipeline_env")).toString();
+      bool externalOnly =
+        obj.value(QStringLiteral("externalOnly")).toBool(false);
+      if (!envPath.isEmpty() || externalOnly) {
         setNodeExecutor(new ExternalNodeExecutor(envPath));
       }
     }
@@ -301,10 +303,12 @@ bool LegacyPythonTransform::deserialize(const QJsonObject& json)
     QJsonDocument descDoc =
       QJsonDocument::fromJson(m_jsonDescription.toUtf8());
     if (descDoc.isObject()) {
+      auto obj = descDoc.object();
       auto envPath =
-        descDoc.object().value(QStringLiteral("tomviz_pipeline_env"))
-          .toString();
-      if (!envPath.isEmpty()) {
+        obj.value(QStringLiteral("tomviz_pipeline_env")).toString();
+      bool externalOnly =
+        obj.value(QStringLiteral("externalOnly")).toBool(false);
+      if (!envPath.isEmpty() || externalOnly) {
         setNodeExecutor(new ExternalNodeExecutor(envPath));
       }
     }

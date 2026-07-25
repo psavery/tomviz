@@ -96,6 +96,8 @@ private:
   CustomWidgetFactory m_customFactory;
   bool m_customWidgetNeedsData;
   bool m_jsonFormNeedsData = false;
+  // Description declared "externalOnly": Internal executor is disabled.
+  bool m_externalOnly = false;
   QString m_jsonDescription;
   QMap<QString, QVariant> m_currentValues;
 

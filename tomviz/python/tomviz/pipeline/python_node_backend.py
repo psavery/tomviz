@@ -95,6 +95,7 @@ class PythonNodeBackend:
         self.supports_cancel: bool = False
         self.supports_complete: bool = False
         self.external_python_env_path: str = ''
+        self.external_only: bool = False
         # List of (name, port_type) for inputs.
         self._inputs: list[tuple[str, str]] = []
         # List of (name, port_type, persistent) for outputs.
@@ -129,6 +130,7 @@ class PythonNodeBackend:
         self.supports_cancel = False
         self.supports_complete = False
         self.external_python_env_path = ''
+        self.external_only = False
         self._inputs = []
         self._outputs = []
         self.parameters = {}
@@ -153,6 +155,7 @@ class PythonNodeBackend:
         self.supports_cancel = bool(obj.get('supportsCancel', False))
         self.supports_complete = bool(obj.get('supportsComplete', False))
         self.external_python_env_path = obj.get('tomviz_pipeline_env', '')
+        self.external_only = bool(obj.get('externalOnly', False))
 
         for entry in obj.get('inputs', []) or []:
             name = entry.get('name')

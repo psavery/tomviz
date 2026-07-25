@@ -42,6 +42,7 @@
 #include "sources/ReaderSourceNode.h"
 #include "transforms/ThresholdTransform.h"
 #include "transforms/LegacyPythonTransform.h"
+#include "ExternalNodeExecutor.h"
 #include "transforms/PythonTransform.h"
 #include "PipelineStripWidget.h"
 
@@ -1764,6 +1765,56 @@ TEST_F(PipelinePythonTest, PythonTransformV2RejectsSourceShape)
   auto* transform = new PythonTransform();
   transform->setJSONDescription(jsonStr);
   EXPECT_EQ(transform->inputPorts().size(), 0);
+  delete transform;
+}
+
+TEST_F(PipelinePythonTest, PythonTransformV2ExternalOnlyInstallsExecutor)
+{
+  // An externalOnly description defaults freshly created nodes to the
+  // External executor (with an empty env path for the user to fill in).
+  QString jsonStr = R"({
+    "schemaVersion": 2,
+    "name": "NeedsTorch",
+    "externalOnly": true,
+    "inputs":  [{"name": "in",  "type": "ImageData"}],
+    "outputs": [{"name": "out", "type": "ImageData"}]
+  })";
+  auto* transform = new PythonTransform();
+  transform->setJSONDescription(jsonStr);
+  auto* executor =
+    qobject_cast<ExternalNodeExecutor*>(transform->nodeExecutor());
+  ASSERT_NE(executor, nullptr);
+  EXPECT_TRUE(executor->envPath().isEmpty());
+  delete transform;
+
+  // Without the flag (and without tomviz_pipeline_env) no executor is
+  // installed.
+  QString plainJson = R"({
+    "schemaVersion": 2,
+    "name": "Plain",
+    "inputs":  [{"name": "in",  "type": "ImageData"}],
+    "outputs": [{"name": "out", "type": "ImageData"}]
+  })";
+  auto* plain = new PythonTransform();
+  plain->setJSONDescription(plainJson);
+  EXPECT_EQ(plain->nodeExecutor(), nullptr);
+  delete plain;
+}
+
+TEST_F(PipelinePythonTest, LegacyPythonTransformExternalOnlyInstallsExecutor)
+{
+  // Same behavior for schema-v1 descriptions (e.g. SAM2Segment3D.json).
+  QString jsonStr = R"({
+    "name": "NeedsTorchLegacy",
+    "label": "Needs Torch",
+    "externalOnly": true
+  })";
+  auto* transform = new LegacyPythonTransform();
+  transform->setJSONDescription(jsonStr);
+  auto* executor =
+    qobject_cast<ExternalNodeExecutor*>(transform->nodeExecutor());
+  ASSERT_NE(executor, nullptr);
+  EXPECT_TRUE(executor->envPath().isEmpty());
   delete transform;
 }
 

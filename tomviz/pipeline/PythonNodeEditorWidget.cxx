@@ -31,7 +31,9 @@
 #include <QJsonValue>
 #include <QLabel>
 #include <QLineEdit>
+#include <QMessageBox>
 #include <QPushButton>
+#include <QStandardItemModel>
 #include <QTabWidget>
 #include <QTextEdit>
 #include <QVBoxLayout>
@@ -211,6 +213,13 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
 
   // --- Tab 3: Execution ---
   // Picks the per-node executor strategy. Empty string == Internal.
+  if (!jsonDescription.isEmpty()) {
+    QJsonDocument descDoc = QJsonDocument::fromJson(jsonDescription.toUtf8());
+    if (descDoc.isObject()) {
+      m_externalOnly =
+        descDoc.object().value("externalOnly").toBool(false);
+    }
+  }
   auto* execTab = new QWidget(m_tabWidget);
   auto* execLayout = new QVBoxLayout(execTab);
 
@@ -223,6 +232,14 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
   m_executorCombo->addItem(tr("Internal"), QString());
   m_executorCombo->addItem(
     tr("External"), ExternalNodeExecutor::typeString());
+  if (m_externalOnly) {
+    if (auto* model =
+          qobject_cast<QStandardItemModel*>(m_executorCombo->model())) {
+      model->item(0)->setEnabled(false);
+    }
+    m_executorCombo->setToolTip(
+      tr("This operator requires an external Python environment"));
+  }
   executorLabel->setBuddy(m_executorCombo);
   execGrid->addWidget(executorLabel, 0, 0);
   execGrid->addWidget(m_executorCombo, 0, 1);
@@ -246,8 +263,10 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
   m_tabWidget->addTab(execTab, tr("Execution"));
 
   int typeIdx = m_executorCombo->findData(executorType);
-  if (typeIdx < 0) {
-    typeIdx = 0;
+  if (typeIdx < 0 || (m_externalOnly && typeIdx == 0)) {
+    typeIdx = m_externalOnly
+      ? m_executorCombo->findData(ExternalNodeExecutor::typeString())
+      : 0;
   }
   m_executorCombo->setCurrentIndex(typeIdx);
   // Enable/disable rather than show/hide so the grid columns don't
@@ -391,6 +410,14 @@ void PythonNodeEditorWidget::applyChangesToOperator()
   // unchanged but still picks up Script and Execution edits.
   QString type = m_executorCombo->currentData().toString();
   QString envPath = type.isEmpty() ? QString() : m_envPathEdit->text();
+  if (m_externalOnly && envPath.isEmpty()) {
+    QMessageBox::warning(
+      this, tr("External environment required"),
+      tr("This operator only runs in an external Python environment, but "
+         "none is selected. It will fail until you choose an environment "
+         "containing tomviz-pipeline (plus the operator's dependencies) "
+         "in the Execution tab."));
+  }
   emit applied(m_nameEdit->text(), m_scriptEdit->toPlainText(), values, type,
                envPath);
 }

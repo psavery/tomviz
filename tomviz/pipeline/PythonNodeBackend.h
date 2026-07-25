@@ -92,6 +92,11 @@ public:
   /// deserialize time when set and no explicit executor was loaded.
   /// Empty when not declared.
   QString externalPythonEnvPath() const;
+  /// Optional ``externalOnly`` flag (default false). Marks operators
+  /// whose dependencies can never be imported in the application
+  /// environment: shells install an ExternalNodeExecutor on fresh
+  /// nodes, and the editor disables the Internal executor choice.
+  bool externalOnly() const;
 
   // ---- parameters ---------------------------------------------------
   void setParameter(const QString& name, const QVariant& value);
@@ -162,6 +167,7 @@ private:
   bool m_supportsCancel = false;
   bool m_supportsComplete = false;
   QString m_externalPythonEnvPath;
+  bool m_externalOnly = false;
 
   struct PortSpec
   {
