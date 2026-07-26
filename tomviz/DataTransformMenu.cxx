@@ -280,6 +280,11 @@ void DataTransformMenu::buildSegmentation()
   auto segmentParticlesAction = segWorkflows->addAction("Segment Particles");
   auto segmentPoresAction = segWorkflows->addAction("Segment Pores");
 
+  // === Machine Learning submenu ===
+  QMenu* machineLearning = menu->addMenu("Machine Learning");
+  auto sam2SegmentAction =
+    machineLearning->addAction("SAM 2 Segmentation (3D)");
+
   new AddPythonTransformReaction(
     customPythonITKAction, "Custom ITK Transform",
     readInPythonScript("DefaultITKTransform"));
@@ -330,6 +335,11 @@ void DataTransformMenu::buildSegmentation()
   new AddPythonTransformReaction(
     segmentPoresAction, "Segment Pores", readInPythonScript("SegmentPores"),
     readInJSONDescription("SegmentPores"));
+
+  new AddPythonTransformReaction(
+    sam2SegmentAction, "SAM 2 Segmentation (3D)",
+    readInPythonScript("SAM2Segment3D"),
+    readInJSONDescription("SAM2Segment3D"));
 }
 
 void DataTransformMenu::updateActions() {}

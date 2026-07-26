@@ -538,6 +538,7 @@ set(python_files
   BinaryMinMaxCurvatureFlow.py
   ReinterpretSignedToUnsigned.py
   SegmentParticles.py
+  SAM2Segment3D.py
   UnsharpMask.py
   AddConstant.py
   CylindricalCrop.py
@@ -601,6 +602,7 @@ set(json_files
   SwapAxes.json
   BinaryMinMaxCurvatureFlow.json
   SegmentParticles.json
+  SAM2Segment3D.json
   UnsharpMask.json
   AddConstant.json
   CylindricalCrop.json
@@ -649,6 +651,20 @@ foreach(file ${json_files})
     "${tomviz_BINARY_DIR}/share/tomviz/scripts/${file}")
   install(FILES "python/${file}"
     DESTINATION "${tomviz_data_install_dir}/scripts"
+    COMPONENT "Scripts")
+endforeach()
+set(environment_files
+  sam2-tomviz-cpu.yml
+  sam2-tomviz-cuda.yml
+  )
+file(MAKE_DIRECTORY "${tomviz_BINARY_DIR}/share/tomviz/environments")
+foreach(file ${environment_files})
+  list(APPEND SOURCES "python/environments/${file}")
+  execute_process(COMMAND ${CMAKE_COMMAND} -E ${script_cmd}
+    "${tomviz_SOURCE_DIR}/tomviz/python/environments/${file}"
+    "${tomviz_BINARY_DIR}/share/tomviz/environments/${file}")
+  install(FILES "python/environments/${file}"
+    DESTINATION "${tomviz_data_install_dir}/environments"
     COMPONENT "Scripts")
 endforeach()
 foreach(file ${resource_files})

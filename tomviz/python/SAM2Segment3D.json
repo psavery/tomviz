@@ -1,0 +1,94 @@
+{
+  "name" : "SAM2Segment3D",
+  "label" : "SAM 2 Segmentation (3D)",
+  "description" : "Segment a 3D volume with Meta's Segment Anything Model 2 (SAM 2). The Z-axis is treated as the video time axis: a seed prompt on one slice (an automatic Otsu mask by default, or a single point) is propagated through the volume, producing a uint8 label map (0 = background, 1 = foreground). This operator requires an external conda environment providing sam-2 and tomviz-pipeline; select it in the Execution tab. See the Machine Learning Segmentation documentation page for setup instructions, including model checkpoint download.",
+  "externalCompatible" : true,
+  "externalOnly" : true,
+  "parameters" : [
+    {
+      "name" : "seed_x",
+      "label" : "Seed X (voxel index; -1 = center)",
+      "type" : "int",
+      "default" : -1
+    },
+    {
+      "name" : "seed_y",
+      "label" : "Seed Y (voxel index; -1 = center)",
+      "type" : "int",
+      "default" : -1
+    },
+    {
+      "name" : "seed_z",
+      "label" : "Seed Z (voxel index; -1 = middle slice)",
+      "type" : "int",
+      "default" : -1
+    },
+    {
+      "name" : "prompt_mode",
+      "label" : "Prompt Mode",
+      "type" : "enumeration",
+      "default" : 1,
+      "options" : [
+        {"Point (click)" : 0},
+        {"Auto Mask (Otsu)" : 1}
+      ]
+    },
+    {
+      "name" : "invert_contrast",
+      "label" : "Invert Contrast (Auto Mask only)",
+      "type" : "bool",
+      "default" : false
+    },
+    {
+      "name" : "z_axis",
+      "label" : "Z Axis (numpy axis to treat as Z)",
+      "type" : "enumeration",
+      "default" : 0,
+      "options" : [
+        {"0 (first)" : 0},
+        {"1 (middle)" : 1},
+        {"2 (last)" : 2}
+      ]
+    },
+    {
+      "name" : "propagate",
+      "label" : "Propagation Direction",
+      "type" : "enumeration",
+      "default" : 0,
+      "options" : [
+        {"Both" : 0},
+        {"Forward" : 1},
+        {"Backward" : 2}
+      ]
+    },
+    {
+      "name" : "model_size",
+      "label" : "Model Size",
+      "type" : "enumeration",
+      "default" : 2,
+      "options" : [
+        {"Tiny" : 0},
+        {"Small" : 1},
+        {"Base+" : 2},
+        {"Large" : 3}
+      ]
+    },
+    {
+      "name" : "device",
+      "label" : "Device",
+      "type" : "enumeration",
+      "default" : 0,
+      "options" : [
+        {"Auto" : 0},
+        {"GPU" : 1},
+        {"CPU" : 2}
+      ]
+    },
+    {
+      "name" : "checkpoint_dir",
+      "label" : "Checkpoint Directory (blank = ~/.tomviz/sam2/checkpoints)",
+      "type" : "string",
+      "default" : ""
+    }
+  ]
+}
