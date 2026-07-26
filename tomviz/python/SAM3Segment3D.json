@@ -1,0 +1,44 @@
+{
+  "name" : "SAM3Segment3D",
+  "label" : "SAM 3 Segmentation (3D)",
+  "description" : "Segment a 3D volume with Meta's Segment Anything Model 3 (SAM 3) using a text prompt. Each slice along all three axes is segmented independently, the per-axis masks are combined by majority voting, and the result is a 3D instance label map (int32, 0 = background). This operator requires an external conda environment providing sam3 and tomviz-pipeline, and an NVIDIA GPU (CUDA) with at least 8 GB of memory; select the environment in the Execution tab. See the Machine Learning Segmentation documentation page for setup instructions, including model checkpoint download.",
+  "externalCompatible" : true,
+  "externalOnly" : true,
+  "parameters" : [
+    {
+      "name" : "text_prompt",
+      "label" : "Text Prompt (what to segment)",
+      "type" : "string",
+      "default" : "particle"
+    },
+    {
+      "name" : "vote_threshold",
+      "label" : "Vote Threshold (axes that must agree, 1-3)",
+      "type" : "int",
+      "default" : 2,
+      "minimum" : 1,
+      "maximum" : 3
+    },
+    {
+      "name" : "min_component_voxels",
+      "label" : "Minimum Component Size (voxels)",
+      "type" : "int",
+      "default" : 50,
+      "minimum" : 1
+    },
+    {
+      "name" : "confidence_threshold",
+      "label" : "Confidence Threshold",
+      "type" : "double",
+      "default" : 0.3,
+      "minimum" : 0.0,
+      "maximum" : 1.0
+    },
+    {
+      "name" : "checkpoint_path",
+      "label" : "Checkpoint Path (blank = ~/.tomviz/sam3/checkpoints/sam3.pt)",
+      "type" : "string",
+      "default" : ""
+    }
+  ]
+}

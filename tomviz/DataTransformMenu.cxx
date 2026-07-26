@@ -284,6 +284,8 @@ void DataTransformMenu::buildSegmentation()
   QMenu* machineLearning = menu->addMenu("Machine Learning");
   auto sam2SegmentAction =
     machineLearning->addAction("SAM 2 Segmentation (3D)");
+  auto sam3SegmentAction =
+    machineLearning->addAction("SAM 3 Segmentation (3D)");
 
   new AddPythonTransformReaction(
     customPythonITKAction, "Custom ITK Transform",
@@ -340,6 +342,10 @@ void DataTransformMenu::buildSegmentation()
     sam2SegmentAction, "SAM 2 Segmentation (3D)",
     readInPythonScript("SAM2Segment3D"),
     readInJSONDescription("SAM2Segment3D"));
+  new AddPythonTransformReaction(
+    sam3SegmentAction, "SAM 3 Segmentation (3D)",
+    readInPythonScript("SAM3Segment3D"),
+    readInJSONDescription("SAM3Segment3D"));
 }
 
 void DataTransformMenu::updateActions() {}

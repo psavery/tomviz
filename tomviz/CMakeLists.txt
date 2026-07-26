@@ -539,6 +539,7 @@ set(python_files
   ReinterpretSignedToUnsigned.py
   SegmentParticles.py
   SAM2Segment3D.py
+  SAM3Segment3D.py
   UnsharpMask.py
   AddConstant.py
   CylindricalCrop.py
@@ -603,6 +604,7 @@ set(json_files
   BinaryMinMaxCurvatureFlow.json
   SegmentParticles.json
   SAM2Segment3D.json
+  SAM3Segment3D.json
   UnsharpMask.json
   AddConstant.json
   CylindricalCrop.json
@@ -656,6 +658,7 @@ endforeach()
 set(environment_files
   sam2-tomviz-cpu.yml
   sam2-tomviz-cuda.yml
+  sam3-tomviz-cuda.yml
   )
 file(MAKE_DIRECTORY "${tomviz_BINARY_DIR}/share/tomviz/environments")
 foreach(file ${environment_files})
