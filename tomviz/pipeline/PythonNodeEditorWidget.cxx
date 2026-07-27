@@ -15,7 +15,9 @@
 #include "Pipeline.h"
 #include "data/VolumeData.h"
 
+#include <pqApplicationCore.h>
 #include <pqPythonSyntaxHighlighter.h>
+#include <pqSettings.h>
 
 #include <QTextBlock>
 #include <QTimer>
@@ -33,6 +35,7 @@
 #include <QLineEdit>
 #include <QMessageBox>
 #include <QPushButton>
+#include <QSettings>
 #include <QStandardItemModel>
 #include <QTabWidget>
 #include <QTextEdit>
@@ -75,6 +78,23 @@ void applySyntaxFormatting(QTextDocument* dst, const QTextDocument& src)
   }
 
   cursor.endEditBlock();
+}
+
+// Settings store for remembered external-env paths. The app's
+// pqSettings when available; a plain QSettings in test harnesses that
+// run without pqApplicationCore.
+QSettings* executorSettings()
+{
+  if (auto* core = pqApplicationCore::instance()) {
+    return core->settings();
+  }
+  static QSettings settings;
+  return &settings;
+}
+
+QString envPathSettingsKey(const QString& operatorName)
+{
+  return QStringLiteral("externalEnvPaths/") + operatorName;
 }
 
 } // anonymous namespace
@@ -218,6 +238,7 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
     if (descDoc.isObject()) {
       m_externalOnly =
         descDoc.object().value("externalOnly").toBool(false);
+      m_operatorName = descDoc.object().value("name").toString();
     }
   }
   auto* execTab = new QWidget(m_tabWidget);
@@ -229,6 +250,7 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
 
   auto* executorLabel = new QLabel(tr("Executor"), execGridContainer);
   m_executorCombo = new QComboBox(execGridContainer);
+  m_executorCombo->setObjectName("executorTypeCombo");
   m_executorCombo->addItem(tr("Internal"), QString());
   m_executorCombo->addItem(
     tr("External"), ExternalNodeExecutor::typeString());
@@ -248,7 +270,16 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
   m_envPathRow = new QWidget(execGridContainer);
   auto* envLayout = new QHBoxLayout(m_envPathRow);
   envLayout->setContentsMargins(0, 0, 0, 0);
-  m_envPathEdit = new QLineEdit(executorEnvPath, m_envPathRow);
+  // A node with no configured environment starts with the one last
+  // applied for this operator type, so per-operator env paths (e.g.
+  // the SAM 2 / SAM 3 conda envs) only need to be picked once.
+  QString envPath = executorEnvPath;
+  if (envPath.isEmpty() && !m_operatorName.isEmpty()) {
+    envPath =
+      executorSettings()->value(envPathSettingsKey(m_operatorName)).toString();
+  }
+  m_envPathEdit = new QLineEdit(envPath, m_envPathRow);
+  m_envPathEdit->setObjectName("executorEnvPathEdit");
   m_envPathEdit->setPlaceholderText(
     tr("Path to a Python env containing tomviz-pipeline"));
   envLayout->addWidget(m_envPathEdit, 1);
@@ -270,9 +301,12 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
   }
   m_executorCombo->setCurrentIndex(typeIdx);
   // Enable/disable rather than show/hide so the grid columns don't
-  // resize when toggling between Internal and External.
-  m_envPathLabel->setEnabled(!executorType.isEmpty());
-  m_envPathRow->setEnabled(!executorType.isEmpty());
+  // resize when toggling between Internal and External. Derive the
+  // state from the combo, not executorType: an externalOnly node with
+  // no configured executor still shows External selected.
+  QString effectiveType = m_executorCombo->currentData().toString();
+  m_envPathLabel->setEnabled(!effectiveType.isEmpty());
+  m_envPathRow->setEnabled(!effectiveType.isEmpty());
 
   connect(m_executorCombo, &QComboBox::currentIndexChanged, this,
           [this](int) {
@@ -409,6 +443,11 @@ void PythonNodeEditorWidget::applyChangesToOperator()
   // unchanged but still picks up Script and Execution edits.
   QString type = m_executorCombo->currentData().toString();
   QString envPath = type.isEmpty() ? QString() : m_envPathEdit->text();
+  // Remember the applied environment per operator type so future
+  // instances of this operator start with it prefilled.
+  if (!type.isEmpty() && !envPath.isEmpty() && !m_operatorName.isEmpty()) {
+    executorSettings()->setValue(envPathSettingsKey(m_operatorName), envPath);
+  }
   if (m_externalOnly && envPath.isEmpty()) {
     QMessageBox::warning(
       this, tr("External environment required"),
