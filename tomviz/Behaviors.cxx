@@ -8,6 +8,7 @@
 #include "ManualManipulationWidget.h"
 #include "PtychoWidget.h"
 #include "PyXRFWidget.h"
+#include "SAM2SeedWidget.h"
 #include "SelectCylinderWidget.h"
 #include "ShiftRotationCenterWidget.h"
 #include "RotateAlignWidget.h"
@@ -113,6 +114,8 @@ void Behaviors::registerCustomOperatorUIs()
     "ManualManipulationWidget", /*needsData=*/true);
   registerCustomNodeWidget<SelectCylinderWidget>(
     "CylindricalCropWidget", /*needsData=*/true);
+  registerCustomNodeWidget<SAM2SeedWidget>(
+    "SAM2SeedWidget", /*needsData=*/true);
   registerCustomNodeWidget<PyXRFWidget>(
     "PyXRFWidget", /*needsData=*/false);
   registerCustomNodeWidget<PtychoWidget>(

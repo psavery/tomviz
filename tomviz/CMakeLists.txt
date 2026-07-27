@@ -48,6 +48,8 @@ set(SOURCES
   ConvertToFloatReaction.h
   CropReaction.cxx
   CropReaction.h
+  SAM2SeedWidget.cxx
+  SAM2SeedWidget.h
   SelectCylinderWidget.cxx
   SelectCylinderWidget.h
   SelectVolumeWidget.cxx

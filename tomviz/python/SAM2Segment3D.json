@@ -1,10 +1,11 @@
 {
   "name" : "SAM2Segment3D",
   "label" : "SAM 2 Segmentation (3D)",
-  "description" : "Segment a 3D volume with Meta's Segment Anything Model 2 (SAM 2). The Z-axis is treated as the video time axis: a seed prompt on one slice (an automatic Otsu mask by default, or a single point) is propagated through the volume, producing a uint8 label map (0 = background, 1 = foreground). This operator requires an external conda environment providing sam-2 and tomviz-pipeline; select it in the Execution tab. See the Machine Learning Segmentation documentation page for setup instructions, including model checkpoint download.",
+  "description" : "Segment a 3D volume with Meta's Segment Anything Model 2 (SAM 2). The Z-axis is treated as the video time axis: a seed prompt on one slice (a clicked point by default, or an automatic Otsu mask) is propagated through the volume, producing a uint8 label map (0 = background, 1 = foreground). Click the slice image above to set the seed point. This operator requires an external conda environment providing sam-2 and tomviz-pipeline; select it in the Execution tab. See the Machine Learning Segmentation documentation page for setup instructions, including model checkpoint download.",
   "externalCompatible" : true,
   "externalOnly" : true,
   "outputType" : "LabelMap",
+  "widget" : "SAM2SeedWidget",
   "help" : {
     "url" : "ml_segmentation.html#sam-2-segmentation-3d"
   },
@@ -31,7 +32,7 @@
       "name" : "prompt_mode",
       "label" : "Prompt Mode",
       "type" : "enumeration",
-      "default" : 1,
+      "default" : 0,
       "options" : [
         {"Point (click)" : 0},
         {"Auto Mask (Otsu)" : 1}

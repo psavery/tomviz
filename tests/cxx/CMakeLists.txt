@@ -54,6 +54,7 @@ add_cxx_test(Variant)
 add_cxx_test(ScanID)
 add_cxx_test(Utilities)
 add_cxx_test(VolumeBricking)
+add_cxx_test(SAM2SeedWidget)
 # AcquisitionClient needs the `bottle` Python package (acquisition/requirements-dev.txt)
 # to start its test server; not part of the conda build env, so disabled here.
 # if(NOT WIN32)
