@@ -127,9 +127,9 @@ def _stitch_instances(binary_vol, min_voxels):
 class SAM3Segment3D(tomviz.operators.CancelableOperator):
 
     def transform(self, dataset,
-                  text_prompt="bright blob",
-                  vote_threshold=2,
-                  min_component_voxels=50,
+                  text_prompt="bright lines",
+                  vote_threshold=1,
+                  min_component_voxels=200,
                   confidence_threshold=0.3,
                   checkpoint_path=""):
         """Segment a 3D volume with SAM 3 using a text prompt.

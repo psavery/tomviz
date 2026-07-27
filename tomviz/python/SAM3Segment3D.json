@@ -12,13 +12,13 @@
       "name" : "text_prompt",
       "label" : "Text Prompt (what to segment)",
       "type" : "string",
-      "default" : "bright blob"
+      "default" : "bright lines"
     },
     {
       "name" : "vote_threshold",
       "label" : "Vote Threshold (axes that must agree, 1-3)",
       "type" : "int",
-      "default" : 2,
+      "default" : 1,
       "minimum" : 1,
       "maximum" : 3
     },
@@ -26,7 +26,7 @@
       "name" : "min_component_voxels",
       "label" : "Minimum Component Size (voxels)",
       "type" : "int",
-      "default" : 50,
+      "default" : 200,
       "minimum" : 1
     },
     {
