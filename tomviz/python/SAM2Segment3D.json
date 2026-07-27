@@ -4,6 +4,7 @@
   "description" : "Segment a 3D volume with Meta's Segment Anything Model 2 (SAM 2). The Z-axis is treated as the video time axis: a seed prompt on one slice (an automatic Otsu mask by default, or a single point) is propagated through the volume, producing a uint8 label map (0 = background, 1 = foreground). This operator requires an external conda environment providing sam-2 and tomviz-pipeline; select it in the Execution tab. See the Machine Learning Segmentation documentation page for setup instructions, including model checkpoint download.",
   "externalCompatible" : true,
   "externalOnly" : true,
+  "outputType" : "LabelMap",
   "help" : {
     "url" : "ml_segmentation.html#sam-2-segmentation-3d"
   },
