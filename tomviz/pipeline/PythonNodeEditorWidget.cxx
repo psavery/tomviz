@@ -316,18 +316,6 @@ void PythonNodeEditorWidget::installCustomWidget()
 
 void PythonNodeEditorWidget::installJsonFormWidget()
 {
-  QJsonDocument doc = QJsonDocument::fromJson(m_jsonDescription.toUtf8());
-  if (doc.isObject()) {
-    QString desc = doc.object().value("description").toString();
-    if (!desc.isEmpty()) {
-      auto* descLabel = new QLabel(desc, m_paramsTab);
-      descLabel->setWordWrap(true);
-      descLabel->setStyleSheet(
-        "QLabel { color: palette(text); padding: 4px; }");
-      m_paramsLayout->addWidget(descLabel);
-    }
-  }
-
   QList<PortScalars> portScalars;
   for (auto* input : m_node->inputPorts()) {
     if (!input->hasData()) {
