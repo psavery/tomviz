@@ -127,7 +127,7 @@ def _stitch_instances(binary_vol, min_voxels):
 class SAM3Segment3D(tomviz.operators.CancelableOperator):
 
     def transform(self, dataset,
-                  text_prompt="particle",
+                  text_prompt="bright blob",
                   vote_threshold=2,
                   min_component_voxels=50,
                   confidence_threshold=0.3,

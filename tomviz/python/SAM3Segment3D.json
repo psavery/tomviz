@@ -4,12 +4,15 @@
   "description" : "Segment a 3D volume with Meta's Segment Anything Model 3 (SAM 3) using a text prompt. Each slice along all three axes is segmented independently, the per-axis masks are combined by majority voting, and the result is a 3D instance label map (int32, 0 = background). This operator requires an external conda environment providing sam3 and tomviz-pipeline, and an NVIDIA GPU (CUDA) with at least 8 GB of memory; select the environment in the Execution tab. See the Machine Learning Segmentation documentation page for setup instructions, including model checkpoint download.",
   "externalCompatible" : true,
   "externalOnly" : true,
+  "help" : {
+    "url" : "ml_segmentation.html#sam-3-segmentation-3d"
+  },
   "parameters" : [
     {
       "name" : "text_prompt",
       "label" : "Text Prompt (what to segment)",
       "type" : "string",
-      "default" : "particle"
+      "default" : "bright blob"
     },
     {
       "name" : "vote_threshold",
