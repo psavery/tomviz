@@ -13,7 +13,7 @@
 #include <QLineEdit>
 #include <QSettings>
 
-#include <unistd.h>
+#include "TomvizTest.h"
 
 using tomviz::readInJSONDescription;
 using tomviz::pipeline::EditNodeWidget;
@@ -24,22 +24,12 @@ namespace {
 
 const char* SETTINGS_KEY = "externalEnvPaths/SAM2Segment3D";
 
-// argv[0] must be the real executable path: Qt resolves
-// applicationDirPath() from it, which readInJSONDescription() needs to
-// find the operator JSON in the build tree.
 void ensureApp()
 {
+  // Deterministic QSettings location for this test's key round-trip.
   QCoreApplication::setOrganizationName("tomviz-tests");
   QCoreApplication::setApplicationName("tomviz-tests");
-  if (!QApplication::instance()) {
-    qputenv("QT_QPA_PLATFORM", "offscreen");
-    static char arg0[4096];
-    ssize_t n = readlink("/proc/self/exe", arg0, sizeof(arg0) - 1);
-    arg0[n > 0 ? n : 0] = '\0';
-    static int argc = 1;
-    static char* argv[] = { arg0, nullptr };
-    new QApplication(argc, argv);
-  }
+  tomviz_test::ensureQApp();
 }
 
 EditNodeWidget* makeSam2Editor(Pipeline& pipeline)
@@ -102,6 +92,7 @@ TEST(ExternalEnvPersistenceTest, NodeConfiguredPathWinsOverRemembered)
   // Configure the node's own executor, as deserialization would.
   auto* editor = transform->createPropertiesWidget(&pipeline, nullptr);
   auto* envEdit = editor->findChild<QLineEdit*>("executorEnvPathEdit");
+  ASSERT_NE(envEdit, nullptr);
   envEdit->setText("/opt/envs/node-specific");
   editor->applyChangesToOperator();
   delete editor;

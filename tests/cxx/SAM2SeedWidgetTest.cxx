@@ -18,7 +18,7 @@
 #include <QSpinBox>
 #include <QTest>
 
-#include <unistd.h>
+#include "TomvizTest.h"
 
 using tomviz::SAM2SeedWidget;
 using tomviz::pipeline::PortData;
@@ -29,20 +29,9 @@ using tomviz::pipeline::VolumeDataPtr;
 namespace {
 
 // The tests share one process-wide QApplication (gtest_main owns main).
-// argv[0] must be the real executable path: Qt resolves
-// applicationDirPath() from it, which readInJSONDescription() needs to
-// find the operator JSON in the build tree.
 void ensureApp()
 {
-  if (!QApplication::instance()) {
-    qputenv("QT_QPA_PLATFORM", "offscreen");
-    static char arg0[4096];
-    ssize_t n = readlink("/proc/self/exe", arg0, sizeof(arg0) - 1);
-    arg0[n > 0 ? n : 0] = '\0';
-    static int argc = 1;
-    static char* argv[] = { arg0, nullptr };
-    new QApplication(argc, argv);
-  }
+  tomviz_test::ensureQApp();
 }
 
 // Distinct dims per axis so axis mix-ups fail loudly.
@@ -126,6 +115,8 @@ TEST(SAM2SeedWidgetTest, ClickSetsSeedAndGetValues)
 
   auto* seedX = widget.findChild<QSpinBox*>("seed_x");
   auto* seedY = widget.findChild<QSpinBox*>("seed_y");
+  ASSERT_NE(seedX, nullptr);
+  ASSERT_NE(seedY, nullptr);
   EXPECT_EQ(seedX->value(), 4);
   EXPECT_EQ(seedY->value(), 7);
 
