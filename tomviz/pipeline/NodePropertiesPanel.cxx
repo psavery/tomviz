@@ -7,6 +7,8 @@
 #include "Node.h"
 #include "Pipeline.h"
 
+#include "Utilities.h"
+
 #include <QDialogButtonBox>
 #include <QPushButton>
 #include <QScrollArea>
@@ -41,6 +43,14 @@ NodePropertiesPanel::NodePropertiesPanel(Node* node, Pipeline* pipeline,
   m_applyButton = buttonBox->button(QDialogButtonBox::Apply);
   connect(m_applyButton, &QPushButton::clicked,
           this, &NodePropertiesPanel::apply);
+
+  QString helpUrl = m_editWidget->helpUrl();
+  if (!helpUrl.isEmpty()) {
+    auto* helpButton = buttonBox->addButton(QDialogButtonBox::Help);
+    connect(helpButton, &QPushButton::clicked, this,
+            [helpUrl]() { openHelpUrl(helpUrl); });
+  }
+
   layout->addWidget(buttonBox);
 
   connect(m_editWidget, &EditNodeWidget::canApplyChanged,

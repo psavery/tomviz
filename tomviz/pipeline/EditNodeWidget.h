@@ -30,6 +30,11 @@ public:
   /// return false until they have a real editor to commit.
   virtual bool canApply() const { return true; }
 
+  /// Documentation URL for the node being edited, or empty if none.
+  /// Relative paths are resolved against the Tomviz docs base URL by
+  /// openHelpUrl(). Wrappers show a Help button when non-empty.
+  virtual QString helpUrl() const { return QString(); }
+
 signals:
   /// Emitted when the return value of canApply() may have changed.
   /// Wrappers listen to this to refresh their Apply/OK enablement.

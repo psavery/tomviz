@@ -69,6 +69,9 @@ public:
 
   void applyChangesToOperator() override;
 
+  /// Reads "help": {"url": ...} from the JSON description.
+  QString helpUrl() const override;
+
   /// Switch to the "Script" tab (used for "View Code" actions).
   void showScriptTab();
 

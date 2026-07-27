@@ -291,6 +291,17 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
   m_tabWidget->setCurrentIndex(1);
 }
 
+QString PythonNodeEditorWidget::helpUrl() const
+{
+  QJsonDocument doc = QJsonDocument::fromJson(m_jsonDescription.toUtf8());
+  if (!doc.isObject()) {
+    return QString();
+  }
+  return doc.object()
+    .value("help").toObject()
+    .value("url").toString();
+}
+
 bool PythonNodeEditorWidget::inputsInMemory() const
 {
   for (auto* input : m_node->inputPorts()) {

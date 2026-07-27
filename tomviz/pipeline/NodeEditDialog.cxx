@@ -93,6 +93,13 @@ void NodeEditDialog::init()
     layout->addWidget(m_editWidget, 1);
     connect(m_editWidget, &EditNodeWidget::canApplyChanged,
             this, &NodeEditDialog::refreshButtonEnablement);
+
+    QString helpUrl = m_editWidget->helpUrl();
+    if (!helpUrl.isEmpty()) {
+      auto* helpButton = m_buttonBox->addButton(QDialogButtonBox::Help);
+      connect(helpButton, &QPushButton::clicked, this,
+              [helpUrl]() { openHelpUrl(helpUrl); });
+    }
   }
 
   layout->addWidget(m_buttonBox);
