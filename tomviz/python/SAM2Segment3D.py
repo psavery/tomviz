@@ -76,6 +76,35 @@ def _auto_seed_mask(slice_2d, invert=False):
     return lab == keep
 
 
+def _cleanup_mask(mask, volume, seed, trim_fraction, keep_seed_component):
+    """Suppress tracker drift in a propagated mask.
+
+    SAM 2's video predictor can reattach to other bright objects after
+    the seeded object ends, leaving disconnected phantom regions. Trim
+    the mask to voxels above trim_fraction of the volume's bright
+    reference value (99.9th percentile), then keep only the connected
+    component containing the seed (or the largest component if the
+    seed voxel is not in the mask, as with an auto-mask prompt).
+    """
+    import numpy as np
+    from scipy import ndimage as ndi
+
+    cleaned = mask.astype(bool)
+    if trim_fraction > 0:
+        ref = float(np.percentile(volume, 99.9))
+        cleaned &= volume > trim_fraction * ref
+    if keep_seed_component:
+        labels, count = ndi.label(cleaned, structure=np.ones((3, 3, 3)))
+        if count > 0:
+            target = labels[seed]
+            if target == 0:
+                sizes = np.bincount(labels.ravel())
+                sizes[0] = 0
+                target = int(sizes.argmax())
+            cleaned = labels == target
+    return cleaned.astype(np.uint8)
+
+
 def _pick_device(choice):
     """Resolve 'auto' | 'gpu' | 'cpu' to a torch.device.
 
@@ -111,7 +140,9 @@ class SAM2Segment3D(tomviz.operators.CancelableOperator):
                   propagate=0,
                   model_size=2,
                   device=0,
-                  checkpoint_dir=""):
+                  checkpoint_dir="",
+                  trim_fraction=0.1,
+                  keep_seed_component=True):
         """Segment a 3D volume with SAM 2.
 
         The Z-axis is treated as the video time axis; SAM 2's video
@@ -260,6 +291,11 @@ class SAM2Segment3D(tomviz.operators.CancelableOperator):
                     self.progress.message = \
                         "Propagating (reverse=%s): slice %d" \
                         % (reverse, frame_idx)
+
+        if trim_fraction > 0 or keep_seed_component:
+            self.progress.message = "Cleaning up mask"
+            out = _cleanup_mask(out, volume, (seed_x, seed_y, seed_z),
+                                trim_fraction, bool(keep_seed_component))
 
         self.progress.message = "Storing label map"
         # Transpose the output mask back to the dataset's original axis

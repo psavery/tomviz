@@ -16,4 +16,5 @@ dependencies:
   - sam-2=1.0.0.20241215=cpu_py313*
   - numpy
   - scikit-image
+  - scipy
   - pillow

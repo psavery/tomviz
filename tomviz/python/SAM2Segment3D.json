@@ -94,6 +94,20 @@
       "label" : "Checkpoint Directory (blank = ~/.tomviz/sam2/checkpoints)",
       "type" : "string",
       "default" : ""
+    },
+    {
+      "name" : "trim_fraction",
+      "label" : "Trim Mask Below (fraction of bright value; 0 = off)",
+      "type" : "double",
+      "default" : 0.1,
+      "minimum" : 0.0,
+      "maximum" : 1.0
+    },
+    {
+      "name" : "keep_seed_component",
+      "label" : "Keep Only the Seed-Connected Component",
+      "type" : "bool",
+      "default" : true
     }
   ]
 }

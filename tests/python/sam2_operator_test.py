@@ -87,3 +87,38 @@ def test_auto_seed_mask():
     inv = module._auto_seed_mask(img, invert=True)
     assert inv[32, 32]
     assert not inv[10, 10]
+
+
+def test_cleanup_mask():
+    scipy = pytest.importorskip('scipy')  # noqa: F841
+    module = _load_module()
+
+    vol = np.zeros((40, 40, 40), dtype=np.float32)
+    vol[5:15, 5:15, 5:15] = 200.0    # the clicked particle
+    vol[25:35, 25:35, 25:35] = 200.0  # a neighbor the tracker drifted onto
+
+    mask = np.zeros_like(vol, dtype=np.uint8)
+    mask[4:16, 4:16, 4:16] = 1    # particle + a 1-voxel halo
+    mask[25:35, 25:35, 25:35] = 1  # drift region
+    mask[15:25, 10, 10] = 1        # thin dark bridge from drift
+
+    seed = (10, 10, 10)
+    out = module._cleanup_mask(mask, vol, seed,
+                               trim_fraction=0.1, keep_seed_component=True)
+    assert out.dtype == np.uint8
+    # Only the seed-connected bright region survives.
+    assert out[10, 10, 10] == 1
+    assert out[30, 30, 30] == 0
+    assert out[20, 10, 10] == 0   # bridge trimmed (below intensity floor)
+    assert out.sum() == 10 * 10 * 10
+
+    # Seed outside the mask (auto-mask prompts): fall back to the
+    # largest component instead of dropping everything.
+    out2 = module._cleanup_mask(mask, vol, (0, 0, 0),
+                                trim_fraction=0.1, keep_seed_component=True)
+    assert out2.sum() == 10 * 10 * 10
+
+    # Disabled cleanup passes the mask through untouched.
+    out3 = module._cleanup_mask(mask, vol, seed,
+                                trim_fraction=0.0, keep_seed_component=False)
+    assert (out3 == mask).all()
