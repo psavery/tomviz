@@ -100,7 +100,16 @@ QIcon VolumeSink::icon() const
 
 void VolumeSink::setVisibility(bool visible)
 {
-  m_volume->SetVisibility(visible ? 1 : 0);
+  // Only show the prop once the mapper actually has data. A visible volume
+  // whose mapper has no input makes vtkVolume::RenderVolumetricGeometry()
+  // call Update() on it before its own "no input, return silently" check,
+  // which prints a spurious "Input port 0 ... has 0 connections but is not
+  // optional" error on every render. That window is real: deserialize()
+  // restores visibility at state load, before the (threaded) pipeline has
+  // executed. consume() re-applies visibility() once data arrives.
+  auto* mapper = m_volume->GetMapper();
+  bool hasInput = mapper && mapper->GetDataObjectInput();
+  m_volume->SetVisibility(visible && hasInput ? 1 : 0);
   LegacyModuleSink::setVisibility(visible);
 }
 
