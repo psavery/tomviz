@@ -31,6 +31,13 @@
       "minimum" : 1
     },
     {
+      "name" : "split_erosion_radius",
+      "label" : "Split Touching Instances (erosion radius; 0 = off)",
+      "type" : "int",
+      "default" : 0,
+      "minimum" : 0
+    },
+    {
       "name" : "confidence_threshold",
       "label" : "Confidence Threshold",
       "type" : "double",

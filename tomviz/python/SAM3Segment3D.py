@@ -111,11 +111,47 @@ def _vote(per_axis, threshold):
     return (stack.sum(axis=0) >= threshold).astype(np.uint8)
 
 
-def _stitch_instances(binary_vol, min_voxels):
-    """3D connected-component labeling with a minimum-size filter."""
+def _stitch_instances(binary_vol, min_voxels, split_erosion_radius=0):
+    """3D connected-component labeling with a minimum-size filter.
+
+    Plain connected components merge every object that touches - on
+    dense masks (e.g. IC wiring joined at junctions) that collapses the
+    whole network into one instance. With split_erosion_radius > 0, the
+    mask is eroded by that many iterations to break thin junction
+    bridges, the surviving cores are labeled, and every mask voxel is
+    assigned to its nearest core. Components too thin to leave a core
+    keep their plain connected-component identity.
+    """
     import numpy as np
     from scipy import ndimage as ndi
-    lbl, _ = ndi.label(binary_vol, structure=np.ones((3, 3, 3)))
+
+    structure = np.ones((3, 3, 3))
+    binary = binary_vol.astype(bool)
+    lbl, _ = ndi.label(binary, structure=structure)
+
+    if split_erosion_radius > 0:
+        eroded = ndi.binary_erosion(binary,
+                                    iterations=int(split_erosion_radius))
+        cores, _ = ndi.label(eroded, structure=structure)
+        core_sizes = np.bincount(cores.ravel())
+        core_sizes[0] = 0
+        core_keep = core_sizes >= min_voxels
+        core_remap = np.zeros_like(core_sizes)
+        core_remap[core_keep] = np.arange(1, core_keep.sum() + 1)
+        cores = core_remap[cores]
+        num_cores = int(cores.max())
+        if num_cores > 0:
+            indices = ndi.distance_transform_edt(
+                cores == 0, return_distances=False, return_indices=True)
+            split = cores[tuple(indices)]
+            # A component with no core must not adopt a distant core's
+            # label - keep its plain CC identity, offset past the cores.
+            has_core = np.zeros(int(lbl.max()) + 1, dtype=bool)
+            has_core[np.unique(lbl[cores > 0])] = True
+            orphan = binary & ~has_core[lbl]
+            split[orphan] = lbl[orphan] + num_cores
+            lbl = np.where(binary, split, 0)
+
     sizes = np.bincount(lbl.ravel())
     keep = sizes >= min_voxels
     keep[0] = False
@@ -130,6 +166,7 @@ class SAM3Segment3D(tomviz.operators.CancelableOperator):
                   text_prompt="bright lines",
                   vote_threshold=1,
                   min_component_voxels=200,
+                  split_erosion_radius=0,
                   confidence_threshold=0.3,
                   checkpoint_path=""):
         """Segment a 3D volume with SAM 3 using a text prompt.
@@ -215,7 +252,8 @@ class SAM3Segment3D(tomviz.operators.CancelableOperator):
         self.progress.value = 92
 
         self.progress.message = "Labeling connected components"
-        labels = _stitch_instances(binary, int(min_component_voxels))
+        labels = _stitch_instances(binary, int(min_component_voxels),
+                                   int(split_erosion_radius))
         print("SAM3: %d instances after size filter (min %d voxels)"
               % (int(labels.max()), int(min_component_voxels)))
 

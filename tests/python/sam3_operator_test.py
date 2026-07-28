@@ -108,3 +108,33 @@ def test_norm_to_uint8():
     # Constant volumes must not divide by zero.
     flat = module._norm_to_uint8(np.ones((4, 4, 4), dtype=np.float32))
     assert flat.max() == 0
+
+
+def test_stitch_instances_split():
+    scipy = pytest.importorskip('scipy')  # noqa: F841
+    module = _load_module()
+
+    # Two 8x8x8 cubes joined by a thin 1x1 bridge.
+    binary = np.zeros((30, 12, 12), dtype=np.uint8)
+    binary[2:10, 2:10, 2:10] = 1
+    binary[18:26, 2:10, 2:10] = 1
+    binary[10:18, 5, 5] = 1
+    # A thin plate elsewhere: too thin to survive erosion (no core).
+    binary[2:10, 2:10, 11] = 1
+
+    # Radius 0: everything bridged merges; the plate is separate.
+    plain = module._stitch_instances(binary, min_voxels=50,
+                                     split_erosion_radius=0)
+    assert plain.max() == 2
+
+    # Radius 2 breaks the bridge into two cube instances, and the
+    # coreless plate keeps its own identity instead of adopting a
+    # distant core's label.
+    split = module._stitch_instances(binary, min_voxels=50,
+                                     split_erosion_radius=2)
+    assert split.max() == 3
+    assert split[5, 5, 5] != split[22, 5, 5]
+    plate = split[5, 5, 11]
+    assert plate not in (0, split[5, 5, 5], split[22, 5, 5])
+    # Bridge voxels are assigned to one of the cubes, not dropped.
+    assert split[14, 5, 5] in (split[5, 5, 5], split[22, 5, 5])
