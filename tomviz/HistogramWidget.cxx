@@ -208,19 +208,17 @@ void HistogramWidget::setLUTProxy(vtkSMProxy* proxy)
       vtkDiscretizableColorTransferFunction::SafeDownCast(
         proxy->GetClientSideObject());
     setLUT(lut);
-
-    auto view = ActiveObjects::instance().activeView();
-
-    // Update widget to reflect scalar bar visibility.
-    if (m_LUTProxy) {
-      auto sbProxy = getScalarBarRepresentation(view);
-      if (sbProxy) {
-        bool visible =
-          vtkSMPropertyHelper(sbProxy, "Visibility").GetAsInt() == 1;
-        m_colorLegendToolButton->setChecked(visible);
-      }
-    }
+  } else if (!proxy) {
+    // Nothing to edit (selection with no colormap). Keep the chart's
+    // last LUT — the histogram data is cleared separately — but drop
+    // the proxy so the edit buttons disable.
+    m_LUTProxy = nullptr;
   }
+  // Every selection path funnels through here (via
+  // CentralWidget::setActiveVolumeData / setActiveSinkNode), so
+  // refresh the button state even when the proxy is unchanged —
+  // updateUI() is otherwise only triggered by view changes.
+  updateUI();
 }
 
 void HistogramWidget::setVolumeData(pipeline::VolumeDataPtr volumeData)
@@ -922,35 +920,26 @@ void HistogramWidget::applyCurrentPreset()
 
 void HistogramWidget::updateUI()
 {
+  // Enable the colormap editing buttons exactly when there is a valid
+  // LUT to edit in the active view. Do not gate on the active node:
+  // selecting a port (or link) clears the active node, but a port
+  // selection is still a valid colormap-editing context.
   auto view = ActiveObjects::instance().activeView();
+  auto* sbProxy =
+    m_LUTProxy && view ? getScalarBarRepresentation(view) : nullptr;
+  bool enable = sbProxy != nullptr;
 
-  // Update widget to reflect scalar bar visibility.
-  if (m_LUTProxy) {
-    auto sbProxy = getScalarBarRepresentation(view);
-    if (view && sbProxy) {
-      QSignalBlocker blocker1(m_colorLegendToolButton);
-      QSignalBlocker blocker2(m_colorMapSettingsButton);
-      QSignalBlocker blocker3(m_savePresetButton);
-      QSignalBlocker blocker4(m_brightnessAndContrastButton);
-      m_colorLegendToolButton->setEnabled(true);
-      m_colorMapSettingsButton->setEnabled(true);
-      m_colorLegendToolButton->setChecked(
-        vtkSMPropertyHelper(sbProxy, "Visibility").GetAsInt() == 1);
-      m_savePresetButton->setEnabled(true);
-      m_brightnessAndContrastButton->setEnabled(true);
-    }
-  }
-
-  auto* activeNode = ActiveObjects::instance().activeNode();
-  if (!activeNode) {
-    QSignalBlocker blocker1(m_colorLegendToolButton);
-    QSignalBlocker blocker2(m_colorMapSettingsButton);
-    QSignalBlocker blocker3(m_savePresetButton);
-    QSignalBlocker blocker4(m_brightnessAndContrastButton);
-    m_colorLegendToolButton->setEnabled(false);
-    m_colorMapSettingsButton->setEnabled(false);
-    m_savePresetButton->setEnabled(false);
-    m_brightnessAndContrastButton->setEnabled(false);
+  QSignalBlocker blocker1(m_colorLegendToolButton);
+  QSignalBlocker blocker2(m_colorMapSettingsButton);
+  QSignalBlocker blocker3(m_savePresetButton);
+  QSignalBlocker blocker4(m_brightnessAndContrastButton);
+  m_colorLegendToolButton->setEnabled(enable);
+  m_colorMapSettingsButton->setEnabled(enable);
+  m_savePresetButton->setEnabled(enable);
+  m_brightnessAndContrastButton->setEnabled(enable);
+  if (enable) {
+    m_colorLegendToolButton->setChecked(
+      vtkSMPropertyHelper(sbProxy, "Visibility").GetAsInt() == 1);
   }
 }
 

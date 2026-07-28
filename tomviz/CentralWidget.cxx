@@ -291,6 +291,7 @@ void CentralWidget::setActiveSinkNode(pipeline::LegacyModuleSink* sink)
   if (!sink) {
     m_activeVolumeData.reset();
     m_ui->histogramWidget->setVolumeData(nullptr);
+    m_ui->histogramWidget->setLUTProxy(nullptr);
     m_ui->histogramWidget->setInputData(nullptr, "", "");
     m_ui->gradientOpacityWidget->setInputData(nullptr, "", "");
     return;
@@ -301,11 +302,9 @@ void CentralWidget::setActiveSinkNode(pipeline::LegacyModuleSink* sink)
   m_activeVolumeData = vol;
   m_ui->histogramWidget->setVolumeData(vol);
 
-  // Set the color map proxy on the histogram widget
-  auto* cmap = sink->colorMap();
-  if (cmap) {
-    m_ui->histogramWidget->setLUTProxy(cmap);
-  }
+  // Set (or clear) the color map proxy on the histogram widget; this
+  // also refreshes the edit buttons' enabled state.
+  m_ui->histogramWidget->setLUTProxy(sink->colorMap());
   auto* gradOp = sink->gradientOpacity();
   if (gradOp) {
     m_ui->gradientOpacityWidget->setLUT(gradOp);
@@ -339,6 +338,7 @@ void CentralWidget::setActiveVolumeData(pipeline::VolumeDataPtr volumeData)
   m_ui->histogramWidget->setVolumeData(volumeData);
 
   if (!volumeData || !volumeData->isValid()) {
+    m_ui->histogramWidget->setLUTProxy(nullptr);
     m_ui->histogramWidget->setInputData(nullptr, "", "");
     m_ui->gradientOpacityWidget->setInputData(nullptr, "", "");
     return;
@@ -348,11 +348,10 @@ void CentralWidget::setActiveVolumeData(pipeline::VolumeDataPtr volumeData)
   // (e.g., from a sink). Don't lazily create one for a bare output port —
   // the SM proxy created by initColorMap() may not be fully initialized.
   if (volumeData->hasColorMap()) {
-    auto* cmap = volumeData->colorMap();
-    if (cmap) {
-      m_ui->histogramWidget->setLUTProxy(cmap);
-    }
+    m_ui->histogramWidget->setLUTProxy(volumeData->colorMap());
     m_ui->gradientOpacityWidget->setLUT(volumeData->gradientOpacity());
+  } else {
+    m_ui->histogramWidget->setLUTProxy(nullptr);
   }
 
   // Request histogram
