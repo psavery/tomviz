@@ -26,8 +26,13 @@ namespace tomviz {
 QJsonObject buildSegmentationPreset(vtkDataArray* scalars);
 
 /// Apply a tomviz-format preset JSON object (fields "name",
-/// "colorSpace", "colors") to a transfer function proxy.
-void applyPresetToProxy(const QJsonObject& preset, vtkSMProxy* proxy);
+/// "colorSpace", "colors") to a transfer function proxy. With
+/// rescaleToCurrentRange (the default), the preset's node positions are
+/// remapped into the proxy's current range - right for generic presets,
+/// wrong for presets whose positions are already in data coordinates
+/// (e.g. the per-label segmentation preset), which must pass false.
+void applyPresetToProxy(const QJsonObject& preset, vtkSMProxy* proxy,
+                        bool rescaleToCurrentRange = true);
 
 
 /**

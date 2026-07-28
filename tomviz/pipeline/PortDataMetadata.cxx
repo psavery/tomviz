@@ -25,7 +25,11 @@ bool applySegmentationColorMap(VolumeData& vol)
   auto preset = tomviz::buildSegmentationPreset(scalars);
   bool applied = !preset.isEmpty();
   if (applied) {
-    tomviz::applyPresetToProxy(preset, vol.colorMap());
+    // The segmentation preset's node positions are per-label data
+    // coordinates - rescaling them into the (possibly default [0, 1])
+    // current range would clamp every label to one color.
+    tomviz::applyPresetToProxy(preset, vol.colorMap(),
+                               /*rescaleToCurrentRange=*/false);
   }
 
   // Label 0 is background -- make it transparent. All other labels
@@ -40,6 +44,12 @@ bool applySegmentationColorMap(VolumeData& vol)
     opacity->AddPoint(maxVal, 1.0);
     opacity->Modified();
   }
+
+  // Push the client-side edits to the SM proxy. Without this, a later
+  // rescale (per-node post-execution, or the user's "Reset data range")
+  // rescales the proxy's stale default points and wipes the opacity
+  // back to a linear ramp.
+  vol.syncColorMapToProxy();
 
   return applied;
 }
