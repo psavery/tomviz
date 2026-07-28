@@ -11,22 +11,10 @@
   },
   "parameters" : [
     {
-      "name" : "seed_x",
-      "label" : "Seed X (voxel index; -1 = center)",
+      "name" : "seed",
+      "label" : "Seed (voxel; -1 = center / middle slice)",
       "type" : "int",
-      "default" : -1
-    },
-    {
-      "name" : "seed_y",
-      "label" : "Seed Y (voxel index; -1 = center)",
-      "type" : "int",
-      "default" : -1
-    },
-    {
-      "name" : "seed_z",
-      "label" : "Seed Z (voxel index; -1 = middle slice)",
-      "type" : "int",
-      "default" : -1
+      "default" : [-1, -1, -1]
     },
     {
       "name" : "prompt_mode",

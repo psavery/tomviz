@@ -133,7 +133,7 @@ def _pick_device(choice):
 class SAM2Segment3D(tomviz.operators.CancelableOperator):
 
     def transform(self, dataset,
-                  seed_x=0, seed_y=0, seed_z=0,
+                  seed=(-1, -1, -1),
                   prompt_mode=0,
                   invert_contrast=False,
                   z_axis=0,
@@ -146,15 +146,24 @@ class SAM2Segment3D(tomviz.operators.CancelableOperator):
         """Segment a 3D volume with SAM 2.
 
         The Z-axis is treated as the video time axis; SAM 2's video
-        predictor propagates the mask through the volume from a seed slice.
-        The seed prompt on that slice is either a single positive click at
-        (seed_x, seed_y)  [prompt_mode=Point]  or an Otsu-thresholded
-        binary mask of the slice  [prompt_mode=Auto Mask]. Returns the
-        segmentation as a uint8 label map in the active scalars.
+        predictor propagates the mask through the volume from a seed
+        slice. `seed` is (x, y, z) in working-orientation voxel indices:
+        x/y in the slice plane, z the seed slice. The prompt on that
+        slice is either a single positive click at (x, y)
+        [prompt_mode=Point] or an Otsu-thresholded binary mask of the
+        slice [prompt_mode=Auto Mask]. Returns the segmentation as a
+        uint8 label map in the active scalars.
         """
         import os
         import tempfile
         import numpy as np
+
+        try:
+            seed_x, seed_y, seed_z = (int(v) for v in seed)
+        except (TypeError, ValueError):
+            raise ValueError(
+                "seed must be a sequence of three ints (x, y, z); "
+                "got %r" % (seed,))
 
         self.progress.maximum = 100
         self.progress.value = 0

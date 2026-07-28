@@ -74,9 +74,9 @@ TEST(SAM2SeedWidgetTest, EmbedsParameterForm)
   SAM2SeedWidget widget(makeInputs());
   widget.setValues({});
 
-  auto* seedX = widget.findChild<QSpinBox*>("seed_x");
-  auto* seedY = widget.findChild<QSpinBox*>("seed_y");
-  auto* seedZ = widget.findChild<QSpinBox*>("seed_z");
+  auto* seedX = widget.findChild<QSpinBox*>("seed#000");
+  auto* seedY = widget.findChild<QSpinBox*>("seed#001");
+  auto* seedZ = widget.findChild<QSpinBox*>("seed#002");
   auto* zAxis = widget.findChild<QComboBox*>("z_axis");
   ASSERT_NE(seedX, nullptr);
   ASSERT_NE(seedY, nullptr);
@@ -113,8 +113,8 @@ TEST(SAM2SeedWidgetTest, ClickSetsSeedAndGetValues)
   QPoint pos = pixelToWidgetPos(view, DIMS[1], DIMS[2], 4, 7);
   QTest::mouseClick(view, Qt::LeftButton, Qt::KeyboardModifiers(), pos);
 
-  auto* seedX = widget.findChild<QSpinBox*>("seed_x");
-  auto* seedY = widget.findChild<QSpinBox*>("seed_y");
+  auto* seedX = widget.findChild<QSpinBox*>("seed#000");
+  auto* seedY = widget.findChild<QSpinBox*>("seed#001");
   ASSERT_NE(seedX, nullptr);
   ASSERT_NE(seedY, nullptr);
   EXPECT_EQ(seedX->value(), 4);
@@ -122,8 +122,10 @@ TEST(SAM2SeedWidgetTest, ClickSetsSeedAndGetValues)
 
   QMap<QString, QVariant> values;
   widget.getValues(values);
-  EXPECT_EQ(values["seed_x"].toInt(), 4);
-  EXPECT_EQ(values["seed_y"].toInt(), 7);
+  QVariantList seed = values["seed"].toList();
+  ASSERT_EQ(seed.size(), 3);
+  EXPECT_EQ(seed[0].toInt(), 4);
+  EXPECT_EQ(seed[1].toInt(), 7);
   // Untouched parameters still come through the embedded form.
   EXPECT_TRUE(values.contains("model_size"));
   EXPECT_TRUE(values.contains("checkpoint_dir"));
@@ -136,7 +138,7 @@ TEST(SAM2SeedWidgetTest, SliderSyncsWithSeedZ)
   widget.setValues({});
 
   auto* slider = widget.findChild<QSlider*>("sam2SeedSliceSlider");
-  auto* seedZ = widget.findChild<QSpinBox*>("seed_z");
+  auto* seedZ = widget.findChild<QSpinBox*>("seed#002");
   ASSERT_NE(slider, nullptr);
   ASSERT_NE(seedZ, nullptr);
 
@@ -179,15 +181,13 @@ TEST(SAM2SeedWidgetTest, SetValuesAppliesStoredParameters)
   ensureApp();
   SAM2SeedWidget widget(makeInputs());
   QMap<QString, QVariant> stored;
-  stored["seed_x"] = 3;
-  stored["seed_y"] = 12;
-  stored["seed_z"] = 25;
+  stored["seed"] = QVariantList{ 3, 12, 25 };
   stored["z_axis"] = 2;
   widget.setValues(stored);
 
-  EXPECT_EQ(widget.findChild<QSpinBox*>("seed_x")->value(), 3);
-  EXPECT_EQ(widget.findChild<QSpinBox*>("seed_y")->value(), 12);
-  EXPECT_EQ(widget.findChild<QSpinBox*>("seed_z")->value(), 25);
+  EXPECT_EQ(widget.findChild<QSpinBox*>("seed#000")->value(), 3);
+  EXPECT_EQ(widget.findChild<QSpinBox*>("seed#001")->value(), 12);
+  EXPECT_EQ(widget.findChild<QSpinBox*>("seed#002")->value(), 25);
 
   auto* slider = widget.findChild<QSlider*>("sam2SeedSliceSlider");
   EXPECT_EQ(slider->maximum(), DIMS[2] - 1);
@@ -205,8 +205,8 @@ TEST(SAM2SeedWidgetTest, ZoomKeepsClickMappingAnchored)
   QApplication::processEvents();
 
   auto* view = widget.findChild<QWidget*>("sam2SeedSliceView");
-  auto* seedX = widget.findChild<QSpinBox*>("seed_x");
-  auto* seedY = widget.findChild<QSpinBox*>("seed_y");
+  auto* seedX = widget.findChild<QSpinBox*>("seed#000");
+  auto* seedY = widget.findChild<QSpinBox*>("seed#001");
   ASSERT_NE(view, nullptr);
 
   auto clickAt = [&](const QPoint& pos) {

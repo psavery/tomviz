@@ -362,9 +362,11 @@ void SAM2SeedWidget::wireForm()
     }
   }
 
-  m_internal->seedX = form->findChild<QSpinBox*>("seed_x");
-  m_internal->seedY = form->findChild<QSpinBox*>("seed_y");
-  m_internal->seedZ = form->findChild<QSpinBox*>("seed_z");
+  // The vector "seed" parameter builds one spinbox per component,
+  // named seed#000 (x), seed#001 (y), seed#002 (z, the slice).
+  m_internal->seedX = form->findChild<QSpinBox*>("seed#000");
+  m_internal->seedY = form->findChild<QSpinBox*>("seed#001");
+  m_internal->seedZ = form->findChild<QSpinBox*>("seed#002");
   m_internal->zAxisCombo = form->findChild<QComboBox*>("z_axis");
 
   auto resync = [this]() {
