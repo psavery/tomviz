@@ -35,6 +35,7 @@ private:
   void syncSliderAndSlice();
   void refreshSlice();
   void refreshMarker();
+  void onColorMapModified();
   int sliceAxis() const;
   int effectiveSliceIndex() const;
 

@@ -7,6 +7,8 @@
 #include "pipeline/NodePropertiesWidget.h"
 #include "pipeline/data/VolumeData.h"
 
+#include <vtkColorTransferFunction.h>
+#include <vtkCommand.h>
 #include <vtkImageData.h>
 #include <vtkSmartPointer.h>
 
@@ -17,6 +19,7 @@
 #include <QPainter>
 #include <QSlider>
 #include <QSpinBox>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QWheelEvent>
 
@@ -195,8 +198,17 @@ namespace tomviz {
 class SAM2SeedWidget::Internal
 {
 public:
+  pipeline::VolumeDataPtr volume;
   vtkSmartPointer<vtkImageData> image;
   int dims[3] = { 0, 0, 0 };
+
+  // The volume's shared color transfer function (null outside a full
+  // ParaView session); the slice is rendered through it so the dialog
+  // matches the main window's colormap, and a ModifiedEvent observer
+  // keeps it live while the user edits the colormap there.
+  vtkColorTransferFunction* ctf = nullptr;
+  unsigned long ctfObserverId = 0;
+  QTimer* refreshTimer = nullptr;
 
   SliceClickView* view = nullptr;
   QSlider* slider = nullptr;
@@ -232,11 +244,30 @@ SAM2SeedWidget::SAM2SeedWidget(
       it != inputs.constEnd()) {
     if (auto vol = it.value().value<pipeline::VolumeDataPtr>();
         vol && vol->isValid()) {
+      m_internal->volume = vol;
       m_internal->image = vol->imageData();
     }
   }
   if (m_internal->image) {
     m_internal->image->GetDimensions(m_internal->dims);
+  }
+
+  // Render slices through the volume's own color map so the dialog
+  // matches the main window, and follow live edits made there.
+  // colorMap() initializes lazily and safely no-ops without a ParaView
+  // session, in which case refreshSlice() falls back to grayscale.
+  if (m_internal->volume) {
+    m_internal->volume->colorMap();
+    m_internal->ctf = m_internal->volume->colorTransferFunction();
+  }
+  if (m_internal->ctf) {
+    m_internal->refreshTimer = new QTimer(this);
+    m_internal->refreshTimer->setSingleShot(true);
+    m_internal->refreshTimer->setInterval(0);
+    connect(m_internal->refreshTimer, &QTimer::timeout, this,
+            &SAM2SeedWidget::refreshSlice);
+    m_internal->ctfObserverId = m_internal->ctf->AddObserver(
+      vtkCommand::ModifiedEvent, this, &SAM2SeedWidget::onColorMapModified);
   }
 
   m_internal->layout = new QVBoxLayout(this);
@@ -283,7 +314,21 @@ SAM2SeedWidget::SAM2SeedWidget(
   // with the node's current values right after construction.
 }
 
-SAM2SeedWidget::~SAM2SeedWidget() = default;
+SAM2SeedWidget::~SAM2SeedWidget()
+{
+  // The CTF is owned by the volume, which m_internal->volume keeps
+  // alive until after this runs.
+  if (m_internal->ctf && m_internal->ctfObserverId) {
+    m_internal->ctf->RemoveObserver(m_internal->ctfObserverId);
+  }
+}
+
+// Coalesce the bursts of ModifiedEvents fired while the user drags
+// colormap controls into one repaint per event-loop pass.
+void SAM2SeedWidget::onColorMapModified()
+{
+  m_internal->refreshTimer->start();
+}
 
 void SAM2SeedWidget::getValues(QMap<QString, QVariant>& map)
 {
@@ -404,28 +449,46 @@ void SAM2SeedWidget::refreshSlice()
     }
   }
 
-  // Robust 1%/99% contrast stretch so dim features stay visible next
-  // to bright cores.
-  std::vector<double> sorted(values);
-  auto percentile = [&sorted](double frac) {
-    auto nth = sorted.begin() + size_t(frac * (sorted.size() - 1));
-    std::nth_element(sorted.begin(), nth, sorted.end());
-    return *nth;
-  };
-  double vlo = percentile(0.01);
-  double vhi = percentile(0.99);
-  if (vhi <= vlo) {
-    vlo = percentile(0.0);
-    vhi = percentile(1.0);
-  }
-  double scale = vhi > vlo ? 255.0 / (vhi - vlo) : 0.0;
+  QImage img;
+  if (m_internal->ctf) {
+    // Map values through the volume's color transfer function so the
+    // slice matches the main window's colormap, including any
+    // brightness/contrast edits to its control points.
+    img = QImage(w, h, QImage::Format_RGB888);
+    for (int py = 0; py < h; ++py) {
+      uchar* line = img.scanLine(py);
+      for (int px = 0; px < w; ++px) {
+        double rgb[3];
+        m_internal->ctf->GetColor(values[size_t(py) * w + px], rgb);
+        for (int c = 0; c < 3; ++c) {
+          line[3 * px + c] = uchar(std::clamp(rgb[c], 0.0, 1.0) * 255.0);
+        }
+      }
+    }
+  } else {
+    // No colormap (no ParaView session): robust 1%/99% grayscale
+    // stretch so dim features stay visible next to bright cores.
+    std::vector<double> sorted(values);
+    auto percentile = [&sorted](double frac) {
+      auto nth = sorted.begin() + size_t(frac * (sorted.size() - 1));
+      std::nth_element(sorted.begin(), nth, sorted.end());
+      return *nth;
+    };
+    double vlo = percentile(0.01);
+    double vhi = percentile(0.99);
+    if (vhi <= vlo) {
+      vlo = percentile(0.0);
+      vhi = percentile(1.0);
+    }
+    double scale = vhi > vlo ? 255.0 / (vhi - vlo) : 0.0;
 
-  QImage img(w, h, QImage::Format_Grayscale8);
-  for (int py = 0; py < h; ++py) {
-    uchar* line = img.scanLine(py);
-    for (int px = 0; px < w; ++px) {
-      double v = (values[size_t(py) * w + px] - vlo) * scale;
-      line[px] = uchar(std::clamp(v, 0.0, 255.0));
+    img = QImage(w, h, QImage::Format_Grayscale8);
+    for (int py = 0; py < h; ++py) {
+      uchar* line = img.scanLine(py);
+      for (int px = 0; px < w; ++px) {
+        double v = (values[size_t(py) * w + px] - vlo) * scale;
+        line[px] = uchar(std::clamp(v, 0.0, 255.0));
+      }
     }
   }
 
