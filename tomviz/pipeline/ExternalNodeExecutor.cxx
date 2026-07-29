@@ -10,6 +10,7 @@
 #include "OutputPort.h"
 #include "Pipeline.h"
 #include "PortData.h"
+#include "PortDataMetadata.h"
 #include "ProgressReader.h"
 #include "ThreadUtils.h"
 #include "SourceNode.h"
@@ -278,6 +279,14 @@ bool ExternalNodeExecutor::populateOutputs(Node* target, int targetNodeId,
                << outputPath;
     return false;
   }
+  // Must happen before the data reaches the ports: setting port data
+  // drives the sinks, so a label map that arrives without its
+  // segmentation colormap is rendered through the upstream volume's
+  // colormap - miscolored, and with a GPU lookup table VTK has to
+  // clamp. TransformNode::execute does the same for internally-executed
+  // nodes; keep the two paths in step.
+  inheritOutputMetadata(target, target->collectInputs(), outputs);
+
   // Route through Node::applyOutputs so volume payloads reuse the
   // existing VolumeData instance instead of replacing it. That preserves
   // the color map across re-executions — without this, every external
@@ -295,6 +304,9 @@ void ExternalNodeExecutor::handleIntermediate(Node* target, int targetNodeId,
   QMap<QString, PortData> updates =
     decodeTvh5Outputs(target, targetNodeId, tvh5Path);
   if (!updates.isEmpty()) {
+    // Intermediates are rendered as they arrive, so they need the
+    // metadata step first too (see populateOutputs).
+    inheritOutputMetadata(target, target->collectInputs(), updates);
     target->setIntermediateOutputs(updates);
   }
 }
