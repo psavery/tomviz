@@ -253,11 +253,13 @@ SAM2SeedWidget::SAM2SeedWidget(
   }
 
   // Render slices through the volume's own color map so the dialog
-  // matches the main window, and follow live edits made there.
-  // colorMap() initializes lazily and safely no-ops without a ParaView
-  // session, in which case refreshSlice() falls back to grayscale.
-  if (m_internal->volume) {
-    m_internal->volume->colorMap();
+  // matches the main window, and follow live edits made there. Use the
+  // color map only if the volume already has one: creating one here
+  // would leave the input volume carrying an unrescaled default
+  // transfer function it never had before (see the same caution in
+  // CentralWidget::setActiveVolumeData). Without one, refreshSlice()
+  // falls back to grayscale.
+  if (m_internal->volume && m_internal->volume->hasColorMap()) {
     m_internal->ctf = m_internal->volume->colorTransferFunction();
   }
   if (m_internal->ctf) {
