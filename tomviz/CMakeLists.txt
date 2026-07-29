@@ -124,6 +124,8 @@ set(SOURCES
   MoleculeProperties.h
   InteractiveTransformWidget.cxx
   InteractiveTransformWidget.h
+  PortDataWriter.cxx
+  PortDataWriter.h
   PresetDialog.cxx
   PresetDialog.h
   PresetModel.cxx
@@ -164,7 +166,10 @@ set(SOURCES
   ResetReaction.h
   RotateAlignWidget.cxx
   RotateAlignWidget.h
+  SaveDataDialog.cxx
+  SaveDataDialog.h
   SaveDataReaction.cxx
+  SaveDataReaction.h
   SaveLoadStateReaction.cxx
   SaveLoadStateReaction.h
   SaveLoadTemplateReaction.cxx
