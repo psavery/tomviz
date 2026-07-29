@@ -79,6 +79,7 @@
 #include "RecentFilesMenu.h"
 #include "ReconstructionReaction.h"
 #include "ResetReaction.h"
+#include "SaveDataDialog.h"
 #include "SaveDataReaction.h"
 #include "SaveLoadStateReaction.h"
 #include "SaveLoadTemplateReaction.h"
@@ -123,6 +124,32 @@ QString getAutosaveFile()
     dataDir.mkpath(dataPath);
   }
   return dataDir.absoluteFilePath(".tomviz_autosave.tvsm");
+}
+
+/// Append the trailing "Save Data" section shared by the node and port
+/// context menus: a separator, then the action, greyed out when the
+/// dialog would have nothing to offer. @a target is whatever
+/// SaveDataDialog can be restricted to — a Node or an OutputPort.
+template <typename Target>
+void addSaveDataAction(QMenu& menu, Target* target, QWidget* parent,
+                       bool enabled)
+{
+  using tomviz::SaveDataDialog;
+
+  if (!menu.isEmpty()) {
+    menu.addSeparator();
+  }
+
+  auto* action = menu.addAction("Save Data", [target, parent]() {
+    SaveDataDialog dialog(target, parent);
+    if (dialog.exec() == QDialog::Accepted) {
+      SaveDataDialog::writeEntries(dialog.selectedEntries(), parent);
+    }
+  });
+  action->setEnabled(
+    enabled && !SaveDataDialog::candidatePorts(
+                  target, SaveDataDialog::Scope::AllPersisted)
+                  .isEmpty());
 }
 } // namespace
 class Connection;
@@ -500,6 +527,14 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
       if (locked) {
         deleteAction->setEnabled(false);
       }
+
+      // Save this node's own persisted ports. Kept last, in its own
+      // trailing section, so it reads as a separate kind of action from
+      // the graph edits above it.
+      if (qobject_cast<pipeline::SourceNode*>(node) ||
+          qobject_cast<pipeline::TransformNode*>(node)) {
+        addSaveDataAction(menu, node, this, !locked);
+      }
     });
 
   // Context menu on ports: per-port persistence override, grouped
@@ -562,6 +597,8 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
       addModeAction(QStringLiteral(":/pipeline/port_transient.svg"),
                     QStringLiteral("Transient"), false,
                     pipeline::PersistenceMode::InMemory);
+
+      addSaveDataAction(menu, port, this, !(p && p->isExecuting()));
     });
 
   // Sync tip output port from ActiveObjects to the strip widget and colormap

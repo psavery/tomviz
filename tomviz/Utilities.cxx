@@ -1251,6 +1251,15 @@ bool moleculeToFile(vtkMolecule* molecule)
     fileName = QString("%1.xyz").arg(fileName);
   }
 
+  return moleculeToXyzFile(molecule, fileName);
+}
+
+bool moleculeToXyzFile(vtkMolecule* molecule, const QString& fileName)
+{
+  if (molecule == nullptr) {
+    return false;
+  }
+
   QFile file(fileName);
   if (!file.open(QIODevice::WriteOnly)) {
     qCritical() << QString("Error opening file for writing: %1").arg(fileName);

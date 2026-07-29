@@ -250,6 +250,9 @@ bool csvToFile(const QString& csv);
 
 /// Write a vtkMolecule to json file
 bool moleculeToFile(vtkMolecule* molecule);
+
+/// Write a vtkMolecule as XYZ to an explicit path, without prompting.
+bool moleculeToXyzFile(vtkMolecule* molecule, const QString& fileName);
 extern double offWhite[3];
 
 /// Open a url in the user's default browser
