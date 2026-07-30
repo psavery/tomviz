@@ -24,6 +24,11 @@ NodePropertiesPanel::NodePropertiesPanel(Node* node, Pipeline* pipeline,
   // Suppress the auto-execute wiring so this panel controls execution.
   QObject::disconnect(m_node, &Node::parametersApplied, m_pipeline, nullptr);
 
+  // Tells the properties dock not to wrap this panel in a scroll area of
+  // its own: the editor already scrolls below, and Apply is pinned under
+  // it. An outer scroll area would drag that pinned row into a viewport.
+  setProperty("providesOwnScrolling", true);
+
   auto* layout = new QVBoxLayout(this);
   layout->setContentsMargins(0, 0, 0, 0);
 

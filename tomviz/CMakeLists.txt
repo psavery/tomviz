@@ -353,6 +353,14 @@ set(SOURCES
   pipeline/EditNodeWidget.h
   pipeline/NodePropertiesWidget.cxx
   pipeline/NodePropertiesWidget.h
+  pipeline/NodeDefinitionValidator.cxx
+  pipeline/NodeDefinitionValidator.h
+  pipeline/NodeDefinitionEdits.cxx
+  pipeline/NodeDefinitionEdits.h
+  pipeline/NodeDefinitionFormWidget.cxx
+  pipeline/NodeDefinitionFormWidget.h
+  pipeline/NodeDefinitionWidget.cxx
+  pipeline/NodeDefinitionWidget.h
   pipeline/PythonNodeEditorWidget.cxx
   pipeline/PythonNodeEditorWidget.h
   pipeline/NodePropertiesPanel.cxx

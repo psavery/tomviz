@@ -319,7 +319,15 @@ void addEnumerationWidget(QGridLayout* layout, int row,
     QJsonArray optionsArray = optionsNode.toArray();
     for (QJsonObject::size_type i = 0; i < optionsArray.size(); ++i) {
       QJsonObject optionNode = optionsArray[i].toObject();
-      QString optionName = optionNode.keys()[0];
+      // An option is a single {"Label": value} pair. Anything else — a
+      // bare value, or the empty object you get from writing an
+      // undefined value into a QJsonObject — has no keys, and keys()[0]
+      // would read off the end of the list. Descriptions are hand-
+      // editable, so this has to be tolerated rather than trusted.
+      if (optionNode.isEmpty()) {
+        continue;
+      }
+      QString optionName = optionNode.keys().constFirst();
       QJsonValueRef optionValueNode = optionNode[optionName];
       QVariant optionValue;
       if (isType<int>(optionValueNode)) {
@@ -982,14 +990,9 @@ QWidget* ParameterInterfaceBuilder::buildWidget(QWidget* parent) const
   }
   QJsonObject root = m_json.object();
 
-  // Description label
-  QJsonValueRef descriptionValue = root["description"];
-  if (!descriptionValue.isUndefined()) {
-    auto* descLabel = new QLabel(descriptionValue.toString());
-    descLabel->setWordWrap(true);
-    descLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
-    verticalLayout->insertWidget(0, descLabel);
-  }
+  // The node's "description" is deliberately not rendered here: the
+  // caller (PythonNodeEditorWidget) already heads the Parameters tab
+  // with it, and showing it twice is what this class used to do.
 
   // Parameters
   QJsonValueRef parametersNode = root["parameters"];

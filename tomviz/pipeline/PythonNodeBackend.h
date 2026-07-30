@@ -59,6 +59,21 @@ public:
   void setJSONDescription(const QString& json);
   QString jsonDescription() const;
 
+  /// Replace the description on a node that is already live, as the
+  /// user does from the editor's Definition tab.
+  ///
+  /// Unlike setJSONDescription(), which re-seeds every parameter from
+  /// its declared default, this keeps the values the user has already
+  /// set wherever the new description still declares them at the same
+  /// type. Ports are deliberately untouched: the caller is expected to
+  /// have rejected any description whose port declarations moved (see
+  /// validateNodeDefinition), because nothing here can remove a port or
+  /// the links hanging off one.
+  ///
+  /// Returns the names of parameters whose values could not be carried
+  /// over and fell back to the new defaults.
+  QStringList reconfigure(const QString& json);
+
   /// Set the Python script source code.
   void setScript(const QString& script);
   QString scriptSource() const;

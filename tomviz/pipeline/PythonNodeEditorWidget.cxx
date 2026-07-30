@@ -9,10 +9,13 @@
 #include "InputsNotReadyWidget.h"
 #include "Link.h"
 #include "Node.h"
+#include "NodeDefinitionValidator.h"
+#include "NodeDefinitionWidget.h"
 #include "NodePropertiesWidget.h"
 #include "OutputPort.h"
 #include "ParameterInterfaceBuilder.h"
 #include "Pipeline.h"
+#include "SourceNode.h"
 #include "data/VolumeData.h"
 
 #include <pqApplicationCore.h>
@@ -132,7 +135,20 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
   m_tabWidget = new QTabWidget(this);
   mainLayout->addWidget(m_tabWidget, 1);
 
-  // --- Tab 1: Script ---
+  // --- Tab 1: Definition ---
+  // First, because every other tab is derived from it. The node's C++
+  // shell is fixed at construction, so the validator needs to know
+  // which one it is serving; a source shell has no way to grow input
+  // ports whatever its description says. Signals are connected further
+  // down, once the Parameters tab it drives exists.
+  NodeShape shape = qobject_cast<SourceNode*>(m_node) ? NodeShape::Source
+                                                      : NodeShape::Transform;
+  m_definitionWidget = new NodeDefinitionWidget(
+    m_jsonDescription, shape, definitionSchema(m_jsonDescription),
+    m_tabWidget);
+  m_tabWidget->addTab(m_definitionWidget, tr("Definition"));
+
+  // --- Tab 2: Script ---
   auto* scriptTab = new QWidget(m_tabWidget);
   auto* scriptLayout = new QVBoxLayout(scriptTab);
 
@@ -175,9 +191,9 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
   }
 
   scriptLayout->addWidget(m_scriptEdit, 1);
-  m_tabWidget->addTab(scriptTab, tr("Script"));
+  m_scriptTabIndex = m_tabWidget->addTab(scriptTab, tr("Script"));
 
-  // --- Tab 2: Parameters ---
+  // --- Tab 3: Parameters ---
   m_paramsTab = new QWidget(m_tabWidget);
   m_paramsLayout = new QVBoxLayout(m_paramsTab);
 
@@ -219,19 +235,21 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
     installNotReadyWidget();
   }
 
-  if ((m_customFactory && m_customWidgetNeedsData) || m_jsonFormNeedsData) {
-    connect(m_pipeline, &Pipeline::executionStarted, this, [this]() {
-      if (m_notReadyWidget) {
-        m_notReadyWidget->setRunEnabled(false);
-      }
-    });
-    connect(m_pipeline, &Pipeline::executionFinished,
-            this, &PythonNodeEditorWidget::onExecutionFinished);
-  }
+  // Connected unconditionally: editing the description can introduce a
+  // "select_scalars" parameter, so a form that didn't need input data
+  // when the editor opened may need it a keystroke later. Both handlers
+  // no-op while the not-ready widget isn't installed.
+  connect(m_pipeline, &Pipeline::executionStarted, this, [this]() {
+    if (m_notReadyWidget) {
+      m_notReadyWidget->setRunEnabled(false);
+    }
+  });
+  connect(m_pipeline, &Pipeline::executionFinished,
+          this, &PythonNodeEditorWidget::onExecutionFinished);
 
-  m_tabWidget->addTab(m_paramsTab, tr("Parameters"));
+  m_paramsTabIndex = m_tabWidget->addTab(m_paramsTab, tr("Parameters"));
 
-  // --- Tab 3: Execution ---
+  // --- Tab 4: Execution ---
   // Picks the per-node executor strategy. Empty string == Internal.
   if (!jsonDescription.isEmpty()) {
     QJsonDocument descDoc = QJsonDocument::fromJson(jsonDescription.toUtf8());
@@ -322,7 +340,17 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
     }
   });
 
-  m_tabWidget->setCurrentIndex(1);
+  connect(m_definitionWidget, &NodeDefinitionWidget::validityChanged, this,
+          [this](bool) { emit canApplyChanged(); });
+  connect(m_definitionWidget, &NodeDefinitionWidget::parameterSchemaChanged,
+          this, &PythonNodeEditorWidget::rebuildParametersTab);
+
+  m_tabWidget->setCurrentIndex(m_paramsTabIndex);
+}
+
+bool PythonNodeEditorWidget::canApply() const
+{
+  return !m_definitionWidget || m_definitionWidget->isValid();
 }
 
 QString PythonNodeEditorWidget::helpUrl() const
@@ -355,6 +383,11 @@ void PythonNodeEditorWidget::installCustomWidget()
   if (!m_customParamsWidget) {
     return;
   }
+  // The factory (built by the node shell) seeds the script from the
+  // node; hand it the description from here instead, so a widget that
+  // renders any of its UI from it sees the copy being edited rather
+  // than the one the node is still running.
+  m_customParamsWidget->setJSONDescription(m_jsonDescription);
   m_customParamsWidget->setValues(m_currentValues);
   m_paramsLayout->addWidget(m_customParamsWidget, 1);
 }
@@ -382,6 +415,71 @@ void PythonNodeEditorWidget::installJsonFormWidget()
     m_jsonDescription, m_currentValues, portScalars, m_paramsTab);
   m_paramsLayout->addWidget(m_paramsWidget, 1);
   m_paramsLayout->addStretch();
+}
+
+void PythonNodeEditorWidget::rebuildParametersTab(const QString& json)
+{
+  // A custom widget owns the whole tab, and the "widget" key is frozen,
+  // so the tab itself never has to be rebuilt. Push the new description
+  // at it instead: widgets that render part of their UI from the
+  // description (via NodePropertiesWidget or ParameterInterfaceBuilder)
+  // override setJSONDescription and re-render, and the rest ignore it.
+  if (m_customFactory) {
+    m_jsonDescription = json;
+    if (m_customParamsWidget) {
+      m_customParamsWidget->setJSONDescription(json);
+    }
+    return;
+  }
+
+  // Keep what the user has typed into the form, but only where the new
+  // description still declares the parameter at the same type — a
+  // retyped or dropped parameter has to go back to its default, exactly
+  // as PythonNodeBackend::reconfigure will decide at apply time.
+  QMap<QString, QVariant> live;
+  if (m_paramsWidget) {
+    live = m_paramsWidget->values();
+  }
+  for (auto it = live.constBegin(); it != live.constEnd(); ++it) {
+    m_currentValues[it.key()] = it.value();
+  }
+  auto previousTypes = parameterDeclaredTypes(m_jsonDescription);
+  auto newTypes = parameterDeclaredTypes(json);
+  const auto names = m_currentValues.keys();
+  for (const auto& name : names) {
+    if (!newTypes.contains(name) ||
+        newTypes.value(name) != previousTypes.value(name)) {
+      m_currentValues.remove(name);
+    }
+  }
+
+  m_jsonDescription = json;
+
+  m_jsonFormNeedsData = false;
+  QJsonDocument doc = QJsonDocument::fromJson(json.toUtf8());
+  for (const auto& p : doc.object().value("parameters").toArray()) {
+    if (p.toObject().value("type").toString() == "select_scalars") {
+      m_jsonFormNeedsData = true;
+      break;
+    }
+  }
+
+  while (QLayoutItem* item = m_paramsLayout->takeAt(0)) {
+    if (auto* widget = item->widget()) {
+      widget->hide();
+      widget->setParent(nullptr);
+      widget->deleteLater();
+    }
+    delete item;
+  }
+  m_paramsWidget = nullptr;
+  m_notReadyWidget = nullptr;
+
+  if (!m_jsonFormNeedsData || inputsInMemory()) {
+    installJsonFormWidget();
+  } else {
+    installNotReadyWidget();
+  }
 }
 
 void PythonNodeEditorWidget::installNotReadyWidget()
@@ -431,24 +529,60 @@ void PythonNodeEditorWidget::onExecutionFinished()
 
 void PythonNodeEditorWidget::applyChangesToOperator()
 {
-  QMap<QString, QVariant> values;
+  // Validate whatever is on screen right now: Apply may well have been
+  // clicked before the Definition tab's debounce fired, in which case
+  // canApply() still reflects the previous keystroke. Flushing can also
+  // rebuild the Parameters tab, so it has to happen before the values
+  // below are harvested from it.
+  if (m_definitionWidget) {
+    m_definitionWidget->flushPendingValidation();
+  }
+  if (!canApply()) {
+    QMessageBox::warning(
+      this, tr("Invalid node definition"),
+      tr("The description in the Definition tab can't be applied to this "
+         "node. Fix the problems listed there, or cancel to discard the "
+         "edit."));
+    return;
+  }
+
+  PythonNodeEdits edits;
   if (m_customParamsWidget) {
-    m_customParamsWidget->getValues(values);
+    m_customParamsWidget->getValues(edits.values);
     m_customParamsWidget->writeSettings();
   } else if (m_paramsWidget) {
-    values = m_paramsWidget->values();
+    edits.values = m_paramsWidget->values();
   }
   // If neither is set (Parameters tab is the not-ready warning), emit
   // an empty values map — the Python node leaves existing parameters
   // unchanged but still picks up Script and Execution edits.
-  QString type = m_executorCombo->currentData().toString();
-  QString envPath = type.isEmpty() ? QString() : m_envPathEdit->text();
+  edits.label = m_nameEdit->text();
+  edits.script = m_scriptEdit->toPlainText();
+  edits.jsonDescription =
+    m_definitionWidget ? m_definitionWidget->definitionText()
+                       : m_jsonDescription;
+  edits.executorType = m_executorCombo->currentData().toString();
+  edits.executorEnvPath =
+    edits.executorType.isEmpty() ? QString() : m_envPathEdit->text();
+
+  // The Definition tab can rewrite both "externalOnly" and "name", so
+  // re-read them from what is being committed rather than from what the
+  // editor opened on — otherwise a renamed operator would file its
+  // remembered environment under the old name.
+  QJsonObject descObj =
+    QJsonDocument::fromJson(edits.jsonDescription.toUtf8()).object();
+  m_externalOnly = descObj.value("externalOnly").toBool(false);
+  m_operatorName = descObj.value("name").toString();
+
   // Remember the applied environment per operator type so future
   // instances of this operator start with it prefilled.
-  if (!type.isEmpty() && !envPath.isEmpty() && !m_operatorName.isEmpty()) {
-    executorSettings()->setValue(envPathSettingsKey(m_operatorName), envPath);
+  if (!edits.executorType.isEmpty() && !edits.executorEnvPath.isEmpty() &&
+      !m_operatorName.isEmpty()) {
+    executorSettings()->setValue(envPathSettingsKey(m_operatorName),
+                                 edits.executorEnvPath);
   }
-  if (m_externalOnly && envPath.isEmpty()) {
+
+  if (m_externalOnly && edits.executorEnvPath.isEmpty()) {
     QMessageBox::warning(
       this, tr("External environment required"),
       tr("This operator only runs in an external Python environment, but "
@@ -456,13 +590,20 @@ void PythonNodeEditorWidget::applyChangesToOperator()
          "containing tomviz-pipeline (plus the operator's dependencies) "
          "in the Execution tab."));
   }
-  emit applied(m_nameEdit->text(), m_scriptEdit->toPlainText(), values, type,
-               envPath);
+
+  emit applied(edits);
+
+  // The node has adopted this description, so it becomes the baseline
+  // the Definition tab validates later edits against.
+  if (m_definitionWidget) {
+    m_jsonDescription = edits.jsonDescription;
+    m_definitionWidget->markApplied(edits.jsonDescription);
+  }
 }
 
 void PythonNodeEditorWidget::showScriptTab()
 {
-  m_tabWidget->setCurrentIndex(0);
+  m_tabWidget->setCurrentIndex(m_scriptTabIndex);
 }
 
 } // namespace pipeline

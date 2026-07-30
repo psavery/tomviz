@@ -33,6 +33,14 @@ public:
   void setJSONDescription(const QString& json);
   QString jsonDescription() const;
 
+  /// Replace the description on a node that already exists, as the
+  /// user does from the editor's Definition tab. Unlike
+  /// setJSONDescription() this creates no ports and does not touch the
+  /// label or the executor — the editor's own Name field and Execution
+  /// tab own those, and are applied alongside this. Returns the names
+  /// of parameters whose values could not be carried over.
+  QStringList reconfigureDescription(const QString& json);
+
   void setScript(const QString& script);
   QString scriptSource() const;
 

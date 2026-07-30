@@ -190,14 +190,17 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   // invisible). The pipeline scroll area rules reassert its white background:
   // setting any stylesheet on the main window otherwise stops the palette-set
   // background from being honored, turning the area grey. Target the scroll
-  // area and its content container by name; a blanket "#pipelineScroll
-  // QWidget" rule would also match the context menus parented to the strip
-  // widget, replacing their native rendering with a flat white one.
+  // area, its content container and the strip by name; a blanket
+  // "#pipelineScroll QWidget" rule would also match the context menus
+  // parented to the strip widget, replacing their native rendering with a
+  // flat white one. The strip has to be listed explicitly because it is
+  // custom-painted and never fills its own background — leave it out and it
+  // alone goes grey.
   setStyleSheet(styleSheet() +
                 QStringLiteral(
                   "QMainWindow::separator { background: palette(mid);"
                   " width: 1px; height: 1px; }"
-                  "#pipelineScroll, #pipelineScrollContainer"
+                  "#pipelineScroll, #pipelineScrollContainer, #pipelineStrip"
                   " { background: white; }"));
   setAcceptDrops(true);
   // Force full messages to be shown
@@ -259,6 +262,7 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   m_pipelineControls = new pipeline::PipelineControlsWidget(this);
   m_ui->pipelineContainerLayout->addWidget(m_pipelineControls);
   m_pipelineStrip = new pipeline::PipelineStripWidget(this);
+  m_pipelineStrip->setObjectName("pipelineStrip");
   m_pipelineStrip->setSortOrder(pipeline::SortOrder::DepthFirst);
   auto* pipelineScroll = new QScrollArea(this);
   pipelineScroll->setObjectName("pipelineScroll");
@@ -1766,8 +1770,31 @@ void MainWindow::showPropertiesPanel(QWidget* content, const QString& title)
   // A node with no editable properties (e.g. some sources) still gets a
   // title — just no body.
   if (content) {
-    content->setParent(container);
-    layout->addWidget(content, 1);
+    // Wrap in a scroll area so the dock can be dragged down small, the
+    // way the pipeline dock can. Added directly, the content widget's
+    // minimum height becomes the stacked widget's, which becomes the
+    // dock's floor — properties widgets are tall, so the splitter stops
+    // well before the pipeline's does.
+    //
+    // Content that already scrolls itself is added as-is. Wrapping it
+    // again would pull its pinned rows into a scrolling viewport —
+    // NodePropertiesPanel deliberately keeps Apply below its inner
+    // scroll area, and that has to stay put as the body scrolls.
+    bool scrollsItself =
+      qobject_cast<QScrollArea*>(content) != nullptr ||
+      content->property("providesOwnScrolling").toBool();
+    if (scrollsItself) {
+      content->setParent(container);
+      layout->addWidget(content, 1);
+    } else {
+      auto* scroll = new QScrollArea(container);
+      scroll->setObjectName("propertiesScroll");
+      scroll->setWidgetResizable(true);
+      scroll->setFrameShape(QFrame::NoFrame);
+      content->setParent(scroll);
+      scroll->setWidget(content);
+      layout->addWidget(scroll, 1);
+    }
   } else {
     layout->addStretch(1);
   }

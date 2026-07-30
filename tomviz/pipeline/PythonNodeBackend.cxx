@@ -5,6 +5,7 @@
 
 #include "InputPort.h"
 #include "Node.h"
+#include "NodeDefinitionValidator.h"
 #include "OutputPort.h"
 #include "PythonNodeUtils.h"
 #include "PythonNodeWrapper.h"
@@ -96,6 +97,20 @@ void PythonNodeBackend::setJSONDescription(const QString& json)
 QString PythonNodeBackend::jsonDescription() const
 {
   return m_jsonDescription;
+}
+
+QStringList PythonNodeBackend::reconfigure(const QString& json)
+{
+  auto previousValues = m_parameters;
+  auto previousTypes = m_parameterTypes;
+
+  setJSONDescription(json);
+
+  QStringList reset;
+  m_parameters =
+    mergeParameterValues(previousValues, previousTypes, m_parameters,
+                         m_parameterTypes, m_enumOptions, &reset);
+  return reset;
 }
 
 void PythonNodeBackend::setScript(const QString& script)
