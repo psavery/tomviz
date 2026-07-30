@@ -82,7 +82,7 @@
     }
   ],
   "help": {
-    "url": "operators_catalog/#manual-manipulation"
+    "url": "operators/utilities.html#ManualManipulation"
   },
   "inputType": "ImageData",
   "outputType": "ImageData"

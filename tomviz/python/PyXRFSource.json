@@ -4,6 +4,9 @@
   "label": "PyXRF Source",
   "widget": "PyXRFWidget",
   "description": "Download XRF scan data, process projections via pyxrf-utils, and extract all fitted elements into a tilt series.",
+  "help": {
+    "url": "sources_pyxrf.html#pyxrf-source"
+  },
   "outputs": [
     {"name": "elements", "type": "TiltSeries", "persistent": true}
   ],

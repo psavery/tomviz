@@ -3,6 +3,9 @@
   "name": "STEM_probe",
   "label": "Electron Beam Shape",
   "description": "Generate a convergent electron beam in 3D. This represents the 3D probe used for atomic resolution imaging in a scanning transmission electron microscope.",
+  "help": {
+    "url": "data.html#data-generators"
+  },
   "outputs": [
     {"name": "volume", "type": "ImageData", "persistent": true}
   ],

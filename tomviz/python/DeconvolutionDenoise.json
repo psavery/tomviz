@@ -2,6 +2,9 @@
   "name": "DeconvolutionDenoise",
   "label": "Deconvolution Denoise",
   "description": "Deconvolution-based denoising of volumetric data using a probe and a selected regularization method.",
+  "help": {
+    "url": "operators_catalog.html#deconvolution-denoise"
+  },
   "apply_to_each_array": false,
   "parameters": [
     {

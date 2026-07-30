@@ -2,6 +2,9 @@
   "name": "PoreSizeDistribution",
   "label": "Continuous Pore Size Distribution",
   "description": "Continuous Pore Size Distribution calculation",
+  "help": {
+    "url": "operators_catalog.html#pore-size-distribution"
+  },
   "parameters": [
     {
       "name": "threshold",

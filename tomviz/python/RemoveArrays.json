@@ -2,6 +2,9 @@
   "name": "RemoveArrays",
   "label": "Remove Arrays",
   "description": "Select which scalar arrays to keep. All unselected arrays will be removed from the dataset.",
+  "help": {
+    "url": "analysis.html#remove-scalar-arrays"
+  },
   "apply_to_each_array": false,
   "parameters": [
     {

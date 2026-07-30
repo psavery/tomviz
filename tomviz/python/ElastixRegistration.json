@@ -114,7 +114,7 @@
     }
   ],
   "help": {
-    "url": "operators_catalog/#registration"
+    "url": "operators/utilities.html#ElastixRegistration"
   },
   "inputType": "ImageData",
   "outputType": "ImageData"

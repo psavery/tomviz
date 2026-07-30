@@ -70,7 +70,7 @@
     }
   ],
   "help": {
-    "url": "reconstruction/#tomopy"
+    "url": "reconstruction.html#tomopy"
   },
   "inputType": "TiltSeries",
   "outputType": "Volume"
