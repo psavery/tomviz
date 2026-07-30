@@ -6,9 +6,12 @@
 #include "InputPort.h"
 #include "NodeDefinitionEdits.h"
 #include "NodeDefinitionValidator.h"
+#include "NodeDefinitionWidget.h"
 #include "OutputPort.h"
 #include "Pipeline.h"
+#include "PythonNodeEditorWidget.h"
 #include "SourceNode.h"
+#include "Utilities.h"
 #include "transforms/LegacyPythonTransform.h"
 #include "transforms/PythonTransform.h"
 
@@ -17,6 +20,10 @@
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QTemporaryDir>
+#include <QTextEdit>
+
+#include "TomvizTest.h"
 
 using namespace tomviz::pipeline;
 
@@ -624,4 +631,84 @@ TEST(NodeDefinitionTest, SchemaV2ReconfigureKeepsInferredOutputType)
   EXPECT_EQ(out->type(), PortType::Volume);
   EXPECT_EQ(transform->outputPorts().size(), 1) << "ports were duplicated";
   EXPECT_EQ(transform->inputPorts().size(), 1) << "ports were duplicated";
+}
+
+// --- Save Script --------------------------------------------------------
+
+TEST(NodeDefinitionTest, SaveScriptWritesTheEditedScriptAndDescription)
+{
+  tomviz_test::ensureQApp();
+
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+
+  const QString original = tomviz::readInJSONDescription("GaussianFilter");
+  ASSERT_FALSE(original.isEmpty());
+
+  Pipeline pipeline;
+  auto* node = new LegacyPythonTransform();
+  node->setJSONDescription(original);
+  node->setScript("def transform(dataset):\n    pass\n");
+  pipeline.addNode(node);
+
+  auto* editor = node->createPropertiesWidget(&pipeline, nullptr);
+  ASSERT_NE(editor, nullptr);
+  auto* python = qobject_cast<PythonNodeEditorWidget*>(editor);
+  ASSERT_NE(python, nullptr);
+
+  // Edit both tabs without applying: what lands on disk must be these
+  // edits, not the descriptions the node is still running.
+  auto* scriptEdit = editor->findChild<QTextEdit*>();
+  ASSERT_NE(scriptEdit, nullptr);
+  const QString editedScript =
+    // Split so the "d" isn't swallowed into the \xA9 escape. Non-ASCII on
+    // purpose: the old 2.x saveScript() wrote Latin-1 and mangled this.
+    QString::fromUtf8("def transform(dataset):\n    # \xC3\xA9" "dited\n");
+  scriptEdit->setPlainText(editedScript);
+
+  auto* definition = editor->findChild<NodeDefinitionWidget*>();
+  ASSERT_NE(definition, nullptr);
+  auto* rawEditor = definition->findChild<QTextEdit*>();
+  ASSERT_NE(rawEditor, nullptr);
+  QJsonObject edited = QJsonDocument::fromJson(original.toUtf8()).object();
+  edited["label"] = "Edited Label";
+  const QString editedJson =
+    QString::fromUtf8(QJsonDocument(edited).toJson());
+  rawEditor->setPlainText(editedJson);
+  definition->flushPendingValidation();
+  ASSERT_TRUE(definition->isValid());
+
+  const QString scriptPath = dir.filePath("my.operator.py");
+  ASSERT_TRUE(python->saveScriptTo(scriptPath));
+
+  // The description lands beside it, keeping the full stem.
+  const QString jsonPath = dir.filePath("my.operator.json");
+  EXPECT_EQ(PythonNodeEditorWidget::descriptionPathFor(scriptPath), jsonPath);
+  ASSERT_TRUE(QFile::exists(scriptPath));
+  ASSERT_TRUE(QFile::exists(jsonPath));
+
+  QFile written(scriptPath);
+  ASSERT_TRUE(written.open(QIODevice::ReadOnly));
+  EXPECT_EQ(QString::fromUtf8(written.readAll()), editedScript)
+    << "saved the node's script instead of the edited one";
+
+  QFile writtenJson(jsonPath);
+  ASSERT_TRUE(writtenJson.open(QIODevice::ReadOnly));
+  const QJsonObject reloaded =
+    QJsonDocument::fromJson(writtenJson.readAll()).object();
+  EXPECT_EQ(reloaded.value("label").toString(), QString("Edited Label"))
+    << "saved the node's description instead of the edited one";
+  // The rest of the descriptor has to survive the round trip intact.
+  EXPECT_EQ(reloaded.value("name").toString(),
+            QJsonDocument::fromJson(original.toUtf8())
+              .object()
+              .value("name")
+              .toString());
+
+  // withDescription=false leaves any existing .json alone.
+  ASSERT_TRUE(QFile::remove(jsonPath));
+  ASSERT_TRUE(python->saveScriptTo(scriptPath, false));
+  EXPECT_FALSE(QFile::exists(jsonPath));
+
+  delete editor;
 }

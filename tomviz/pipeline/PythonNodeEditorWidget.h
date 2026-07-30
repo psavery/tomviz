@@ -103,6 +103,18 @@ public:
   /// Switch to the "Script" tab (used for "View Code" actions).
   void showScriptTab();
 
+  /// Path of the JSON description that belongs beside @a scriptPath: same
+  /// directory and stem, ".json" instead of ".py".
+  static QString descriptionPathFor(const QString& scriptPath);
+
+  /// Non-interactive save. Writes the script exactly as it stands in the
+  /// editor to @a scriptPath, and (when @a withDescription) the description
+  /// exactly as it stands in the Definition tab to descriptionPathFor().
+  /// Overwrites without asking; saveScript() is the interactive wrapper
+  /// that prompts and validates first. Returns false if the script could
+  /// not be written.
+  bool saveScriptTo(const QString& scriptPath, bool withDescription = true);
+
 signals:
   /// Emitted by applyChangesToOperator() carrying everything the node
   /// should adopt.
@@ -115,6 +127,10 @@ private:
   void installJsonFormWidget();
   void installNotReadyWidget();
   void rebuildParametersTab(const QString& json);
+  /// Write the script text to a user-chosen .py file, with the current
+  /// JSON description saved beside it as <name>.json. Both come from the
+  /// editor's widgets, so unapplied edits are included.
+  void saveScript();
   bool inputsInMemory() const;
 
   Node* m_node;
