@@ -56,6 +56,7 @@
 #include <QMessageBox>
 #include <QSettings>
 #include <QSignalBlocker>
+#include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
 
@@ -207,19 +208,17 @@ void HistogramWidget::setLUTProxy(vtkSMProxy* proxy)
       vtkDiscretizableColorTransferFunction::SafeDownCast(
         proxy->GetClientSideObject());
     setLUT(lut);
-
-    auto view = ActiveObjects::instance().activeView();
-
-    // Update widget to reflect scalar bar visibility.
-    if (m_LUTProxy) {
-      auto sbProxy = getScalarBarRepresentation(view);
-      if (sbProxy) {
-        bool visible =
-          vtkSMPropertyHelper(sbProxy, "Visibility").GetAsInt() == 1;
-        m_colorLegendToolButton->setChecked(visible);
-      }
-    }
+  } else if (!proxy) {
+    // Nothing to edit (selection with no colormap). Keep the chart's
+    // last LUT — the histogram data is cleared separately — but drop
+    // the proxy so the edit buttons disable.
+    m_LUTProxy = nullptr;
   }
+  // Every selection path funnels through here (via
+  // CentralWidget::setActiveVolumeData / setActiveSinkNode), so
+  // refresh the button state even when the proxy is unchanged —
+  // updateUI() is otherwise only triggered by view changes.
+  updateUI();
 }
 
 void HistogramWidget::setVolumeData(pipeline::VolumeDataPtr volumeData)
@@ -315,16 +314,33 @@ void HistogramWidget::onColorFunctionChanged()
     // Avoid infinite recursion
     return;
   }
-  m_updatingColorFunction = true;
 
-  updateLUTProxy();
-  if (m_LUT) {
-    m_LUT->Build();
-    renderViews();
-    emit colorMapUpdated();
+  // This slot is wired to the color transfer function's ModifiedEvent, which
+  // can fire reentrantly from deep inside another mutation of the *same*
+  // function -- e.g. VolumeData::rescaleColorMap() ->
+  // vtkSMProxy::UpdateVTKObjects() -> vtkColorTransferFunction::UpdateRange().
+  // Rebuilding the LUT here (Build() -> SetAnnotations()) while that outer
+  // mutation is still on the stack corrupts the function's internal arrays and
+  // crashes in ~vtkVariant. Defer the rebuild to the next event-loop turn so
+  // it runs after the mutation unwinds; the pending flag coalesces the
+  // multi-Hz churn from live operator updates.
+  if (m_colorFunctionUpdatePending) {
+    return;
   }
+  m_colorFunctionUpdatePending = true;
+  QTimer::singleShot(0, this, [this]() {
+    m_colorFunctionUpdatePending = false;
+    m_updatingColorFunction = true;
 
-  m_updatingColorFunction = false;
+    updateLUTProxy();
+    if (m_LUT) {
+      m_LUT->Build();
+      renderViews();
+      emit colorMapUpdated();
+    }
+
+    m_updatingColorFunction = false;
+  });
 }
 
 void HistogramWidget::onScalarOpacityFunctionChanged()
@@ -734,7 +750,9 @@ void HistogramWidget::onPresetClicked()
 
 void HistogramWidget::resetAutoContrastState()
 {
-  m_currentAutoContrastThreshold = m_defaultAutoContrastThreshold;
+  // 0 mimics ImageJ, which zeroes autoThreshold on reset so the next
+  // auto-contrast starts over at the default threshold.
+  m_currentAutoContrastThreshold = 0;
 }
 
 void HistogramWidget::onBrightnessAndContrastClicked()
@@ -824,7 +842,7 @@ void HistogramWidget::autoAdjustContrast(vtkDataArray* histogram,
   }
   int hmin = i;
 
-  for (i = 255; i >= 0; --i) {
+  for (i = static_cast<int>(numBins) - 1; i >= 0; --i) {
     double count = histogram->GetTuple1(i);
     count = count > limit ? 0 : count;
     if (count > threshold) {
@@ -838,8 +856,11 @@ void HistogramWidget::autoAdjustContrast(vtkDataArray* histogram,
     return;
   }
 
-  double min = histMin + hmin * binSize;
-  double max = histMin + hmax * binSize;
+  // The extents column holds bin centers; ImageJ maps indices to bin left
+  // edges, so shift down half a bin to match.
+  double binStart = histMin - binSize / 2;
+  double min = binStart + hmin * binSize;
+  double max = binStart + hmax * binSize;
   if (min == max) {
     min = range[0];
     max = range[1];
@@ -899,35 +920,26 @@ void HistogramWidget::applyCurrentPreset()
 
 void HistogramWidget::updateUI()
 {
+  // Enable the colormap editing buttons exactly when there is a valid
+  // LUT to edit in the active view. Do not gate on the active node:
+  // selecting a port (or link) clears the active node, but a port
+  // selection is still a valid colormap-editing context.
   auto view = ActiveObjects::instance().activeView();
+  auto* sbProxy =
+    m_LUTProxy && view ? getScalarBarRepresentation(view) : nullptr;
+  bool enable = sbProxy != nullptr;
 
-  // Update widget to reflect scalar bar visibility.
-  if (m_LUTProxy) {
-    auto sbProxy = getScalarBarRepresentation(view);
-    if (view && sbProxy) {
-      QSignalBlocker blocker1(m_colorLegendToolButton);
-      QSignalBlocker blocker2(m_colorMapSettingsButton);
-      QSignalBlocker blocker3(m_savePresetButton);
-      QSignalBlocker blocker4(m_brightnessAndContrastButton);
-      m_colorLegendToolButton->setEnabled(true);
-      m_colorMapSettingsButton->setEnabled(true);
-      m_colorLegendToolButton->setChecked(
-        vtkSMPropertyHelper(sbProxy, "Visibility").GetAsInt() == 1);
-      m_savePresetButton->setEnabled(true);
-      m_brightnessAndContrastButton->setEnabled(true);
-    }
-  }
-
-  auto* activeNode = ActiveObjects::instance().activeNode();
-  if (!activeNode) {
-    QSignalBlocker blocker1(m_colorLegendToolButton);
-    QSignalBlocker blocker2(m_colorMapSettingsButton);
-    QSignalBlocker blocker3(m_savePresetButton);
-    QSignalBlocker blocker4(m_brightnessAndContrastButton);
-    m_colorLegendToolButton->setEnabled(false);
-    m_colorMapSettingsButton->setEnabled(false);
-    m_savePresetButton->setEnabled(false);
-    m_brightnessAndContrastButton->setEnabled(false);
+  QSignalBlocker blocker1(m_colorLegendToolButton);
+  QSignalBlocker blocker2(m_colorMapSettingsButton);
+  QSignalBlocker blocker3(m_savePresetButton);
+  QSignalBlocker blocker4(m_brightnessAndContrastButton);
+  m_colorLegendToolButton->setEnabled(enable);
+  m_colorMapSettingsButton->setEnabled(enable);
+  m_savePresetButton->setEnabled(enable);
+  m_brightnessAndContrastButton->setEnabled(enable);
+  if (enable) {
+    m_colorLegendToolButton->setChecked(
+      vtkSMPropertyHelper(sbProxy, "Visibility").GetAsInt() == 1);
   }
 }
 
@@ -947,6 +959,14 @@ void HistogramWidget::rescaleTransferFunction(vtkSMProxy* lutProxy, double min,
     vtkSMPropertyHelper(m_LUTProxy, "ScalarOpacityFunction").GetAsProxy();
 
   removePlaceholderNodes();
+  // RescaleTransferFunction operates on the proxy's control points property,
+  // not the client-side object we just stripped the placeholder nodes from.
+  // Sync the client state into the property first; otherwise the placeholder
+  // nodes still in the property span the full data range, which makes the
+  // rescale a no-op (or compresses the real window instead of setting it).
+  // The opacity property needs no sync: onScalarOpacityFunctionChanged
+  // already mirrors every client-side opacity change into it.
+  updateLUTProxy();
   vtkSMTransferFunctionProxy::RescaleTransferFunction(lutProxy, min, max);
   vtkSMTransferFunctionProxy::RescaleTransferFunction(opacityMap, min, max);
   addPlaceholderNodes();

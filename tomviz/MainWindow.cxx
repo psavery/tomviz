@@ -20,6 +20,8 @@
 #include <vtkVector.h>
 
 #include <QCheckBox>
+#include <QFrame>
+#include <QLabel>
 #include <QScrollArea>
 #include <QVBoxLayout>
 
@@ -42,8 +44,6 @@
 #include "LoadPaletteReaction.h"
 #include "LoadStackReaction.h"
 #include "LoadTimeSeriesReaction.h"
-#include "legacy/modules/ModuleManager.h"
-#include "legacy/modules/ModuleMenu.h"
 #include "PipelineModuleMenu.h"
 #include "pipeline/Pipeline.h"
 #include "pipeline/PipelineExecutor.h"
@@ -53,6 +53,7 @@
 #include "pipeline/Node.h"
 #include "pipeline/TransformNode.h"
 #include "pipeline/OutputPort.h"
+#include "pipeline/PassthroughOutputPort.h"
 #include "pipeline/InputPort.h"
 #include "pipeline/Link.h"
 #include "pipeline/PortData.h"
@@ -62,14 +63,14 @@
 #include "pipeline/data/VolumeData.h"
 #include "pipeline/NodeEditDialog.h"
 #include "pipeline/NodePropertiesPanel.h"
+#include "pipeline/LinkPropertiesWidget.h"
+#include "pipeline/SinkGroupPropertiesWidget.h"
+#include "pipeline/SourceNode.h"
+#include "pipeline/SinkNode.h"
 #include "pipeline/VolumePropertiesWidget.h"
 #include "MoleculeProperties.h"
 #include "CentralWidget.h"
 #include "OperatorSearchDialog.h"
-#include "PassiveAcquisitionWidget.h"
-#include "legacy/Pipeline.h"
-#include "legacy/PipelineManager.h"
-#include "legacy/PipelineProxy.h"
 #include "ProgressDialogManager.h"
 #include "PtychoRunner.h"
 #include "PyXRFRunner.h"
@@ -77,8 +78,8 @@
 #include "PythonUtilities.h"
 #include "RecentFilesMenu.h"
 #include "ReconstructionReaction.h"
-#include "RegexGroupSubstitution.h"
 #include "ResetReaction.h"
+#include "SaveDataDialog.h"
 #include "SaveDataReaction.h"
 #include "SaveLoadStateReaction.h"
 #include "SaveLoadTemplateReaction.h"
@@ -88,11 +89,8 @@
 #include "SetTiltAnglesReaction.h"
 #include "Utilities.h"
 #include "ViewMenuManager.h"
-#include "legacy/modules/VolumeManager.h"
 #include "WelcomeDialog.h"
 #include "tomvizConfig.h"
-
-#include "legacy/PipelineModel.h"
 
 #include <QAction>
 #include <QCloseEvent>
@@ -127,6 +125,32 @@ QString getAutosaveFile()
   }
   return dataDir.absoluteFilePath(".tomviz_autosave.tvsm");
 }
+
+/// Append the trailing "Save Data" section shared by the node and port
+/// context menus: a separator, then the action, greyed out when the
+/// dialog would have nothing to offer. @a target is whatever
+/// SaveDataDialog can be restricted to — a Node or an OutputPort.
+template <typename Target>
+void addSaveDataAction(QMenu& menu, Target* target, QWidget* parent,
+                       bool enabled)
+{
+  using tomviz::SaveDataDialog;
+
+  if (!menu.isEmpty()) {
+    menu.addSeparator();
+  }
+
+  auto* action = menu.addAction("Save Data", [target, parent]() {
+    SaveDataDialog dialog(target, parent);
+    if (dialog.exec() == QDialog::Accepted) {
+      SaveDataDialog::writeEntries(dialog.selectedEntries(), parent);
+    }
+  });
+  action->setEnabled(
+    enabled && !SaveDataDialog::candidatePorts(
+                  target, SaveDataDialog::Scope::AllPersisted)
+                  .isEmpty());
+}
 } // namespace
 class Connection;
 
@@ -145,16 +169,6 @@ MainWindow* MainWindow::instance()
 MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   : QMainWindow(parent, flags), m_ui(new Ui::MainWindow)
 {
-  VolumeManager::instance();
-  connect(&ModuleManager::instance(), &ModuleManager::enablePythonConsole, this,
-          &MainWindow::setEnabledPythonConsole);
-
-  connect(&ModuleManager::instance(), &ModuleManager::mouseOverVoxel, this,
-          &MainWindow::onMouseOverVoxel);
-
-  connect(&ModuleManager::instance(),
-          &ModuleManager::mostRecentStateFileChanged, this,
-          &MainWindow::updateSaveStateEnableState);
 
   // Update back light azimuth default on view.
   connect(pqApplicationCore::instance()->getServerManagerModel(),
@@ -168,6 +182,26 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
 
   // checkOpenGL();
   m_ui->setupUi(this);
+  // Allow docks in the same area to be split in both directions (e.g. the
+  // Pipelines and Properties docks side by side with a horizontal split, not
+  // only stacked vertically or tabbed).
+  setDockNestingEnabled(true);
+  // Give the dock splitter a visible 1px line (most styles draw it nearly
+  // invisible). The pipeline scroll area rules reassert its white background:
+  // setting any stylesheet on the main window otherwise stops the palette-set
+  // background from being honored, turning the area grey. Target the scroll
+  // area, its content container and the strip by name; a blanket
+  // "#pipelineScroll QWidget" rule would also match the context menus
+  // parented to the strip widget, replacing their native rendering with a
+  // flat white one. The strip has to be listed explicitly because it is
+  // custom-painted and never fills its own background — leave it out and it
+  // alone goes grey.
+  setStyleSheet(styleSheet() +
+                QStringLiteral(
+                  "QMainWindow::separator { background: palette(mid);"
+                  " width: 1px; height: 1px; }"
+                  "#pipelineScroll, #pipelineScrollContainer, #pipelineStrip"
+                  " { background: white; }"));
   setAcceptDrops(true);
   // Force full messages to be shown
   m_ui->outputWidget->showFullMessages(true);
@@ -193,13 +227,6 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   // don't think tomviz should import ParaView modules by default in Python
   // shell.
   pqPythonShell::setPreamble(QStringList());
-
-  connect(m_ui->pythonConsole, &pqPythonShell::executing,
-          [this](bool executing) {
-            if (!executing) {
-              this->syncPythonToApp();
-            }
-          });
 
   // Hide these dock widgets when tomviz is first opened. If they are later
   // opened and remain open while tomviz is shut down, their visibility and
@@ -235,8 +262,10 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   m_pipelineControls = new pipeline::PipelineControlsWidget(this);
   m_ui->pipelineContainerLayout->addWidget(m_pipelineControls);
   m_pipelineStrip = new pipeline::PipelineStripWidget(this);
+  m_pipelineStrip->setObjectName("pipelineStrip");
   m_pipelineStrip->setSortOrder(pipeline::SortOrder::DepthFirst);
   auto* pipelineScroll = new QScrollArea(this);
+  pipelineScroll->setObjectName("pipelineScroll");
   pipelineScroll->setWidgetResizable(true);
   pipelineScroll->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
   // pipelineScroll->setFrameShape(QFrame::NoFrame);
@@ -246,6 +275,7 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   // Wrap the strip widget in a container with padding so the scroll area
   // provides insets on the top, right, and bottom.
   auto* scrollContainer = new QWidget();
+  scrollContainer->setObjectName("pipelineScrollContainer");
   scrollContainer->setAutoFillBackground(true);
   scrollContainer->setPalette(scrollPal);
   auto* scrollLayout = new QVBoxLayout(scrollContainer);
@@ -270,6 +300,13 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
             auto* p = pipeline();
             if (p && !p->isExecuting()) {
               p->removeNode(node);
+            }
+          });
+  connect(m_pipelineStrip, &pipeline::PipelineStripWidget::deleteLinkRequested,
+          this, [this](pipeline::Link* link) {
+            auto* p = pipeline();
+            if (p && !p->isExecuting()) {
+              p->removeLink(link);
             }
           });
 
@@ -371,37 +408,7 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
 
   // Leave-group: relink the member to the group's upstream port
   connect(m_pipelineStrip, &pipeline::PipelineStripWidget::leaveGroupRequested,
-          this,
-          [this](pipeline::Node* member, pipeline::SinkGroupNode* group) {
-            auto* p = pipeline();
-            if (!p) {
-              return;
-            }
-            for (auto* inPort : member->inputPorts()) {
-              if (!inPort->link()) {
-                continue;
-              }
-              auto* groupPort = inPort->link()->from();
-              if (groupPort->node() != group) {
-                continue;
-              }
-              // Find the upstream port feeding the group's matching input.
-              int idx = group->outputPorts().indexOf(groupPort);
-              pipeline::OutputPort* upstream = nullptr;
-              if (idx >= 0 && idx < group->inputPorts().size()) {
-                auto* groupInput = group->inputPorts()[idx];
-                if (groupInput->link()) {
-                  upstream = groupInput->link()->from();
-                }
-              }
-              p->removeLink(inPort->link());
-              if (upstream) {
-                p->createLink(upstream, inPort);
-              }
-              break;
-            }
-            p->execute();
-          });
+          this, &MainWindow::leaveGroup);
 
   // Context menu on links: delete action
   m_pipelineStrip->setLinkMenuProvider(
@@ -524,6 +531,14 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
       if (locked) {
         deleteAction->setEnabled(false);
       }
+
+      // Save this node's own persisted ports. Kept last, in its own
+      // trailing section, so it reads as a separate kind of action from
+      // the graph edits above it.
+      if (qobject_cast<pipeline::SourceNode*>(node) ||
+          qobject_cast<pipeline::TransformNode*>(node)) {
+        addSaveDataAction(menu, node, this, !locked);
+      }
     });
 
   // Context menu on ports: per-port persistence override, grouped
@@ -532,6 +547,12 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   m_pipelineStrip->setPortMenuProvider(
     [this](pipeline::OutputPort* port, QMenu& menu) {
       if (!port) {
+        return;
+      }
+      // Passthrough ports (sink-group outputs) forward upstream data
+      // and pin isPersistent() to false; a persistence choice here
+      // would silently do nothing, so don't offer one.
+      if (qobject_cast<pipeline::PassthroughOutputPort*>(port)) {
         return;
       }
       auto* p = pipeline();
@@ -580,6 +601,8 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
       addModeAction(QStringLiteral(":/pipeline/port_transient.svg"),
                     QStringLiteral("Transient"), false,
                     pipeline::PersistenceMode::InMemory);
+
+      addSaveDataAction(menu, port, this, !(p && p->isExecuting()));
     });
 
   // Sync tip output port from ActiveObjects to the strip widget and colormap
@@ -658,9 +681,6 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
                             m_pipelineTemplates);
   // Populate the menu with templates
   findPipelineTemplates();
-
-  // Register our factories for Python wrapping.
-  PipelineProxyFactory::registerWithFactory();
 
   // Build Tomography menu
   // ################################################################
@@ -748,9 +768,10 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
 
   // Set up reactions for Tomography Menu
   //#################################################################
-  new SetDataTypeReaction(setVolumeDataTypeAction, this, DataSource::Volume);
-  new SetDataTypeReaction(setTiltDataTypeAction, this, DataSource::TiltSeries);
-  // new SetDataTypeReaction(setFibDataTypeAction, this, DataSource::FIB);
+  new SetDataTypeReaction(setVolumeDataTypeAction, this,
+                          pipeline::PortType::Volume);
+  new SetDataTypeReaction(setTiltDataTypeAction, this,
+                          pipeline::PortType::TiltSeries);
   new SetTiltAnglesReaction(setTiltAnglesAction, this);
 
   new AddPythonTransformReaction(
@@ -984,17 +1005,12 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
 
   // Add the acquisition client experimentally.
   m_ui->actionAcquisition->setEnabled(false);
-  m_ui->actionPassiveAcquisition->setEnabled(false);
 
   connect(m_ui->actionAcquisition, &QAction::triggered, this,
           [this]() { openDialog<AcquisitionWidget>(&m_acquisitionWidget); });
 
   connect(m_ui->actionAnimationHelper, &QAction::triggered, this, [this]() {
     openDialog<AnimationHelperDialog>(&m_animationHelperDialog);
-  });
-
-  connect(m_ui->actionPassiveAcquisition, &QAction::triggered, this, [this]() {
-    openDialog<PassiveAcquisitionWidget>(&m_passiveAcquisitionDialog);
   });
 
   // Prepopulate the previously seen python readers/writers
@@ -1007,7 +1023,6 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   auto operators = initPython();
 
   m_ui->actionAcquisition->setEnabled(true);
-  m_ui->actionPassiveAcquisition->setEnabled(true);
   registerCustomOperators(operators);
 
   auto dataBroker = new DataBroker(this);
@@ -1018,27 +1033,9 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
   dataBrokerSaveReaction->setDataBrokerInstalled(dataBroker->installed());
   dataBroker->deleteLater();
 
-  {
-    bool installed = pyXRFRunner->isInstalled();
-    m_ui->actionPyXRFSource->setEnabled(installed);
-    if (!installed) {
-      QString tooltip = "Failed to import required modules. "
-                        "Error message was:\n\n" +
-                        pyXRFRunner->importError();
-      m_ui->actionPyXRFSource->setToolTip(tooltip);
-    }
-  }
-
-  {
-    bool installed = ptychoRunner->isInstalled();
-    m_ui->actionPtychoSource->setEnabled(installed);
-    if (!installed) {
-      QString tooltip = "Failed to import required modules. "
-                        "Error message was:\n\n" +
-                        ptychoRunner->importError();
-      m_ui->actionPtychoSource->setToolTip(tooltip);
-    }
-  }
+  // The PyXRF and Ptycho python modules are deliberately not imported at
+  // startup. Their runners check their requirements when the actions are
+  // triggered, so broken optional dependencies cannot break launch.
 
   // Snapshot existing dock widgets before loading plugin dock widgets
   auto currentDocks = findChildren<QDockWidget*>();
@@ -1065,7 +1062,6 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
 
 MainWindow::~MainWindow()
 {
-  ModuleManager::instance().reset();
   QString autosaveFile = getAutosaveFile();
   if (QFile::exists(autosaveFile) && !QFile::remove(autosaveFile)) {
     std::cerr << "Failed to remove autosave file." << std::endl;
@@ -1076,7 +1072,6 @@ std::vector<OperatorDescription> MainWindow::initPython()
 {
   Python::initialize();
   Connection::registerType();
-  RegexGroupSubstitution::registerType();
   auto operators = findCustomOperators();
   FileFormatManager::instance().registerPythonReaders();
   FileFormatManager::instance().registerPythonWriters();
@@ -1216,7 +1211,8 @@ void MainWindow::dropEvent(QDropEvent* e)
 
 void MainWindow::closeEvent(QCloseEvent* e)
 {
-  if (ModuleManager::instance().hasRunningOperators()) {
+  auto* activePipeline = ActiveObjects::instance().pipeline();
+  if (activePipeline && activePipeline->isExecuting()) {
     QMessageBox::StandardButton response =
       QMessageBox::question(this, "Close tomviz?",
                             "You have transforms that are not completed "
@@ -1227,7 +1223,7 @@ void MainWindow::closeEvent(QCloseEvent* e)
       e->ignore();
       return;
     }
-  } else if (ModuleManager::instance().hasDataSources()) {
+  } else if (activePipeline && !activePipeline->nodes().isEmpty()) {
     QMessageBox::StandardButton response =
       QMessageBox::question(this, "Close?", "Are you sure you want to exit?");
     if (response == QMessageBox::No) {
@@ -1238,10 +1234,9 @@ void MainWindow::closeEvent(QCloseEvent* e)
   // This is a little hackish, but we must ensure all PV proxy unregister calls
   // happen early enough in application destruction that the ParaView proxy
   // management code can still run without segfaulting.
-  PipelineManager::instance().removeAllPipelines();
-  ModuleManager::instance().removeAllModules();
-  ModuleManager::instance().removeAllDataSources();
-  ModuleManager::instance().removeAllMoleculeSources();
+  if (activePipeline) {
+    activePipeline->clear();
+  }
   e->accept();
 }
 
@@ -1302,7 +1297,16 @@ void MainWindow::autosave()
 
 QString MainWindow::mostRecentStateFile() const
 {
-  return ModuleManager::instance().mostRecentStateFile();
+  return m_mostRecentStateFile;
+}
+
+void MainWindow::setMostRecentStateFile(const QString& fileName)
+{
+  if (m_mostRecentStateFile == fileName) {
+    return;
+  }
+  m_mostRecentStateFile = fileName;
+  updateSaveStateEnableState();
 }
 
 void MainWindow::updateSaveStateEnableState()
@@ -1537,26 +1541,6 @@ void MainWindow::onMouseOverVoxel(const vtkVector3i& ijk, double v)
     5000);
 }
 
-void MainWindow::syncPythonToApp()
-{
-  Python python;
-  auto tomvizState = python.import("tomviz.state");
-  if (!tomvizState.isValid()) {
-    qCritical() << "Failed to import tomviz.state";
-    return;
-  }
-
-  auto sync = tomvizState.findFunction("sync");
-  if (!sync.isValid()) {
-    qCritical() << "Unable to locate sync.";
-    return;
-  }
-
-  Python::Tuple args(0);
-  Python::Dict kwargs;
-  sync.call(args, kwargs);
-}
-
 void MainWindow::findPipelineTemplates() {
   m_pipelineTemplates->clear();
 
@@ -1653,9 +1637,13 @@ void MainWindow::initPipeline()
   connect(p, &pipeline::Pipeline::nodeAdded, this,
           &MainWindow::onNodeSelected);
 
-  // Per-node rescale of existing color maps. Uses cached VTK objects
-  // (not SM proxy creation), so safe while the worker thread is still
-  // running subsequent nodes.
+  // Per-node rescale of existing color maps. rescaleColorMap() pushes
+  // SM proxy state through the ParaView session, which is not
+  // thread-safe against the worker thread's node execution. The
+  // ThreadedExecutor parks its worker at a per-node barrier until this
+  // handler returns (see ExecutionWorker::run), so no operator runs
+  // concurrently with the rescale below — this previously crashed with
+  // a SIGBUS inside vtkSMProxy::UpdateVTKObjects.
   connect(p->executor(), &pipeline::PipelineExecutor::nodeExecutionFinished,
           this, [](pipeline::Node* node, bool success) {
     if (!success) {
@@ -1760,6 +1748,99 @@ void MainWindow::clearDynamicPropertiesWidget()
 }
 
 
+void MainWindow::showPropertiesPanel(QWidget* content, const QString& title)
+{
+  auto* container = new QWidget(m_ui->propertiesPanelStackedWidget);
+  auto* layout = new QVBoxLayout(container);
+  layout->setContentsMargins(0, 0, 0, 0);
+  layout->setSpacing(0);
+
+  auto* titleLabel = new QLabel(title, container);
+  QFont f = titleLabel->font();
+  f.setBold(true);
+  titleLabel->setFont(f);
+  titleLabel->setContentsMargins(8, 6, 8, 6);
+  layout->addWidget(titleLabel);
+
+  auto* separator = new QFrame(container);
+  separator->setFrameShape(QFrame::HLine);
+  separator->setFrameShadow(QFrame::Sunken);
+  layout->addWidget(separator);
+
+  // A node with no editable properties (e.g. some sources) still gets a
+  // title — just no body.
+  if (content) {
+    // Wrap in a scroll area so the dock can be dragged down small, the
+    // way the pipeline dock can. Added directly, the content widget's
+    // minimum height becomes the stacked widget's, which becomes the
+    // dock's floor — properties widgets are tall, so the splitter stops
+    // well before the pipeline's does.
+    //
+    // Content that already scrolls itself is added as-is. Wrapping it
+    // again would pull its pinned rows into a scrolling viewport —
+    // NodePropertiesPanel deliberately keeps Apply below its inner
+    // scroll area, and that has to stay put as the body scrolls.
+    bool scrollsItself =
+      qobject_cast<QScrollArea*>(content) != nullptr ||
+      content->property("providesOwnScrolling").toBool();
+    if (scrollsItself) {
+      content->setParent(container);
+      layout->addWidget(content, 1);
+    } else {
+      auto* scroll = new QScrollArea(container);
+      scroll->setObjectName("propertiesScroll");
+      scroll->setWidgetResizable(true);
+      scroll->setFrameShape(QFrame::NoFrame);
+      content->setParent(scroll);
+      scroll->setWidget(content);
+      // setWidget() turns autoFillBackground on, which would make these
+      // panels paint their own palette background where they used to
+      // inherit one. Has to follow setWidget() rather than precede it.
+      content->setAutoFillBackground(false);
+      layout->addWidget(scroll, 1);
+    }
+  } else {
+    layout->addStretch(1);
+  }
+
+  m_dynamicPropertiesWidget = container;
+  m_ui->propertiesPanelStackedWidget->addWidget(container);
+  m_ui->propertiesPanelStackedWidget->setCurrentWidget(container);
+}
+
+void MainWindow::leaveGroup(pipeline::Node* member,
+                            pipeline::SinkGroupNode* group)
+{
+  auto* p = pipeline();
+  if (!p) {
+    return;
+  }
+  for (auto* inPort : member->inputPorts()) {
+    if (!inPort->link()) {
+      continue;
+    }
+    auto* groupPort = inPort->link()->from();
+    if (groupPort->node() != group) {
+      continue;
+    }
+    // Find the upstream port feeding the group's matching input.
+    int idx = group->outputPorts().indexOf(groupPort);
+    pipeline::OutputPort* upstream = nullptr;
+    if (idx >= 0 && idx < group->inputPorts().size()) {
+      auto* groupInput = group->inputPorts()[idx];
+      if (groupInput->link()) {
+        upstream = groupInput->link()->from();
+      }
+    }
+    p->removeLink(inPort->link());
+    if (upstream) {
+      p->createLink(upstream, inPort);
+    }
+    break;
+  }
+  p->execute();
+}
+
 void MainWindow::onActiveNodeChanged(pipeline::Node* node)
 {
   m_pipelineStrip->setSelectedNode(node);
@@ -1800,9 +1881,38 @@ void MainWindow::onActiveNodeChanged(pipeline::Node* node)
       }
     });
 
+  // Title header declaring the type of the selected node.
+  QString title;
+  if (qobject_cast<pipeline::SinkGroupNode*>(node)) {
+    title = tr("Visualizations");
+  } else if (qobject_cast<pipeline::SourceNode*>(node)) {
+    title = tr("Source Node");
+  } else if (qobject_cast<pipeline::TransformNode*>(node)) {
+    title = tr("Transform Node");
+  } else if (qobject_cast<pipeline::SinkNode*>(node)) {
+    title = tr("Sink Node");
+  } else {
+    title = tr("Node");
+  }
+
   QWidget* propsWidget = nullptr;
 
-  if (auto* sink = dynamic_cast<pipeline::LegacyModuleSink*>(node)) {
+  if (auto* group = qobject_cast<pipeline::SinkGroupNode*>(node)) {
+    auto* w = new pipeline::SinkGroupPropertiesWidget(
+      group, pipeline(), m_ui->propertiesPanelStackedWidget);
+    connect(w, &pipeline::SinkGroupPropertiesWidget::leaveGroupRequested, this,
+            [this, group](pipeline::SinkNode* member) {
+              leaveGroup(member, group);
+            });
+    connect(w, &pipeline::SinkGroupPropertiesWidget::deleteRequested, this,
+            [this](pipeline::SinkNode* member) {
+              auto* p = pipeline();
+              if (p && !p->isExecuting()) {
+                p->removeNode(member);
+              }
+            });
+    propsWidget = w;
+  } else if (auto* sink = dynamic_cast<pipeline::LegacyModuleSink*>(node)) {
     if (!node->isEditing()) {
       propsWidget = sink->createSinkPropertiesWidget(
         m_ui->propertiesPanelStackedWidget);
@@ -1822,13 +1932,9 @@ void MainWindow::onActiveNodeChanged(pipeline::Node* node)
       node, pipeline(), m_ui->propertiesPanelStackedWidget);
   }
 
-  if (propsWidget) {
-    m_dynamicPropertiesWidget = propsWidget;
-    m_ui->propertiesPanelStackedWidget->addWidget(propsWidget);
-    m_ui->propertiesPanelStackedWidget->setCurrentWidget(propsWidget);
-  } else {
-    m_ui->propertiesPanelStackedWidget->setCurrentWidget(m_ui->empty);
-  }
+  // Always show the title for a selected node, even when it has no
+  // editable properties (title-only panel).
+  showPropertiesPanel(propsWidget, title);
 
   // Sink with detached colormap: display it; otherwise the tip port
   // drives the colormap via updateColorMapDisplay().
@@ -1866,9 +1972,7 @@ void MainWindow::onActivePortChanged(pipeline::OutputPort* port)
     scrollArea->setFrameShape(QFrame::NoFrame);
     scrollArea->setWidgetResizable(true);
     scrollArea->setWidget(propsWidget);
-    m_dynamicPropertiesWidget = scrollArea;
-    m_ui->propertiesPanelStackedWidget->addWidget(scrollArea);
-    m_ui->propertiesPanelStackedWidget->setCurrentWidget(scrollArea);
+    showPropertiesPanel(scrollArea, tr("Output Port"));
   } else if (port->type() == pipeline::PortType::Molecule && port->hasData()) {
     try {
       auto molecule =
@@ -1876,9 +1980,7 @@ void MainWindow::onActivePortChanged(pipeline::OutputPort* port)
       if (molecule) {
         auto* propsWidget = new MoleculeProperties(
           molecule, m_ui->propertiesPanelStackedWidget);
-        m_dynamicPropertiesWidget = propsWidget;
-        m_ui->propertiesPanelStackedWidget->addWidget(propsWidget);
-        m_ui->propertiesPanelStackedWidget->setCurrentWidget(propsWidget);
+        showPropertiesPanel(propsWidget, tr("Output Port"));
       } else {
         m_ui->propertiesPanelStackedWidget->setCurrentWidget(m_ui->empty);
       }
@@ -1894,11 +1996,31 @@ void MainWindow::onActiveLinkChanged(pipeline::Link* link)
 {
   m_pipelineStrip->setSelectedLink(link);
   if (!link) {
-    return; // Null link — leave current properties panel in place.
+    // A null link also arrives as a side effect of selecting a node/port,
+    // whose own handler repopulates the panel. Only tear the panel down
+    // here if it is actually showing a link's properties (e.g. on a full
+    // clearActiveSelection while a link was the active object). The tracked
+    // widget is the title wrapper, so look for the inner widget.
+    if (m_dynamicPropertiesWidget &&
+        m_dynamicPropertiesWidget->findChild<pipeline::LinkPropertiesWidget*>()) {
+      clearDynamicPropertiesWidget();
+      m_ui->propertiesPanelStackedWidget->setCurrentWidget(m_ui->empty);
+    }
+    return;
   }
   clearDynamicPropertiesWidget();
-  // No link properties panel yet — show empty.
-  m_ui->propertiesPanelStackedWidget->setCurrentWidget(m_ui->empty);
+
+  auto* propsWidget =
+    new pipeline::LinkPropertiesWidget(link, m_ui->propertiesPanelStackedWidget);
+  connect(propsWidget, &pipeline::LinkPropertiesWidget::deleteRequested, this,
+          [this](pipeline::Link* l) {
+            auto* p = pipeline();
+            if (p && !p->isExecuting()) {
+              p->removeLink(l);
+            }
+            ActiveObjects::instance().clearActiveSelection();
+          });
+  showPropertiesPanel(propsWidget, tr("Link"));
 }
 
 bool MainWindow::ensureColorMapForPort(pipeline::Node* node,

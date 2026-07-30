@@ -100,6 +100,14 @@ public:
 
   void start()
   {
+    if (!isInstalled()) {
+      QMessageBox::critical(parentWidget, "Ptycho is unavailable",
+                            "Failed to import required modules. "
+                            "Error message was:\n\n" +
+                              importError());
+      return;
+    }
+
     auto* mainWindow = MainWindow::instance();
     auto* pip = mainWindow ? mainWindow->pipeline() : nullptr;
     if (!pip) {

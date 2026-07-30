@@ -639,9 +639,8 @@ public:
                 title = "PyXRF failed to start";
                 msg = QString("The program \"%1\" failed to start.\n\n")
                         .arg(process->program()) +
-                      "Try setting the environment variable "
-                      "\"TOMVIZ_PYXRF_EXECUTABLE\" to the full path, "
-                      "and restart tomviz.";
+                      "Set the \"PyXRF GUI Command\" field to the full path "
+                      "of the PyXRF executable and try again.";
               } else {
                 title = "PyXRF exited with an error";
                 msg = process->readAllStandardError();

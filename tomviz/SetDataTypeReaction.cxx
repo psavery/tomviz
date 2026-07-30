@@ -16,7 +16,7 @@
 namespace tomviz {
 
 SetDataTypeReaction::SetDataTypeReaction(QAction* action, QMainWindow* mw,
-                                         DataSource::DataSourceType t)
+                                         pipeline::PortType t)
   : pqReaction(action), m_mainWindow(mw), m_type(t)
 {
   connect(&ActiveObjects::instance(), &ActiveObjects::activeNodeChanged, this,
@@ -29,21 +29,16 @@ SetDataTypeReaction::SetDataTypeReaction(QAction* action, QMainWindow* mw,
 }
 
 void SetDataTypeReaction::setDataType(QMainWindow* mw, DataSource*,
-                                      DataSource::DataSourceType t)
+                                      pipeline::PortType t)
 {
   Q_UNUSED(mw);
-  if (t == DataSource::TiltSeries) {
+  if (t == pipeline::PortType::TiltSeries) {
     auto* transform = new pipeline::SetTiltAnglesTransform();
     insertTransformIntoPipeline(transform);
   } else {
     auto* transform = new pipeline::ConvertToVolumeTransform();
-    if (t == DataSource::Volume) {
-      transform->setOutputType(pipeline::PortType::Volume);
-      transform->setOutputLabel("Mark as Volume");
-    } else if (t == DataSource::FIB) {
-      transform->setOutputType(pipeline::PortType::Volume);
-      transform->setOutputLabel("Mark as FIB");
-    }
+    transform->setOutputType(pipeline::PortType::Volume);
+    transform->setOutputLabel("Mark as Volume");
     insertTransformIntoPipeline(transform);
   }
 }
@@ -59,14 +54,12 @@ void SetDataTypeReaction::updateEnableState()
   parentAction()->setEnabled(ao.activeTipOutputPort() != nullptr);
 }
 
-void SetDataTypeReaction::setWidgetText(DataSource::DataSourceType t)
+void SetDataTypeReaction::setWidgetText(pipeline::PortType t)
 {
-  if (t == DataSource::Volume) {
+  if (t == pipeline::PortType::Volume) {
     parentAction()->setText("Mark Data As Volume");
-  } else if (t == DataSource::TiltSeries) {
+  } else if (t == pipeline::PortType::TiltSeries) {
     parentAction()->setText("Mark Data As Tilt Series");
-  } else if (t == DataSource::FIB) {
-    parentAction()->setText("Mark Data As Focused Ion Beam (FIB)");
   } else {
     assert("Unknown data source type" && false);
   }

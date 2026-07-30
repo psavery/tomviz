@@ -4,7 +4,6 @@
 #include "SaveWebReaction.h"
 
 #include "ActiveObjects.h"
-#include "legacy/modules/ModuleManager.h"
 
 #include "pqActiveObjects.h"
 #include "pqCoreUtilities.h"
@@ -65,7 +64,7 @@ void SaveWebReaction::onTriggered()
     QStringList filters;
     filters << "HTML (*.html)";
 
-    QFileDialog fileDialog(nullptr, "Save Web Export:");
+    QFileDialog fileDialog(tomviz::mainWidget(), "Save Web Export:");
     fileDialog.setFileMode(QFileDialog::AnyFile);
     fileDialog.setNameFilters(filters);
     fileDialog.setAcceptMode(QFileDialog::AcceptSave);

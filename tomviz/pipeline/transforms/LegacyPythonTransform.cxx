@@ -6,6 +6,7 @@
 #include "CustomPythonNodeWidget.h"
 #include "ExternalNodeExecutor.h"
 #include "InputPort.h"
+#include "NodeDefinitionValidator.h"
 #include "OutputPort.h"
 #include "ParameterBindingUtils.h"
 #include "PythonNodeUtils.h"
@@ -70,15 +71,17 @@ void LegacyPythonTransform::setJSONDescription(const QString& json)
   m_jsonDescription = json;
   parseJSON();
 
-  // If the JSON carries a tomviz_pipeline_env key and no executor is set,
-  // default to External execution with that environment.
+  // If the JSON carries a tomviz_pipeline_env key or declares
+  // externalOnly and no executor is set, default to External execution.
   if (!nodeExecutor() && !json.isEmpty()) {
     QJsonDocument descDoc = QJsonDocument::fromJson(json.toUtf8());
     if (descDoc.isObject()) {
+      auto obj = descDoc.object();
       auto envPath =
-        descDoc.object().value(QStringLiteral("tomviz_pipeline_env"))
-          .toString();
-      if (!envPath.isEmpty()) {
+        obj.value(QStringLiteral("tomviz_pipeline_env")).toString();
+      bool externalOnly =
+        obj.value(QStringLiteral("externalOnly")).toBool(false);
+      if (!envPath.isEmpty() || externalOnly) {
         setNodeExecutor(new ExternalNodeExecutor(envPath));
       }
     }
@@ -88,6 +91,24 @@ void LegacyPythonTransform::setJSONDescription(const QString& json)
 QString LegacyPythonTransform::jsonDescription() const
 {
   return m_jsonDescription;
+}
+
+QStringList LegacyPythonTransform::reconfigureDescription(const QString& json)
+{
+  auto previousValues = m_parameters;
+  auto previousTypes = m_parameterTypes;
+
+  m_jsonDescription = json;
+  // parseJSON only ever writes over m_parameters, so clear it first or
+  // parameters the new description drops would linger forever.
+  m_parameters.clear();
+  parseJSON(/*createPorts=*/false, /*applyLabel=*/false);
+
+  QStringList reset;
+  m_parameters =
+    mergeParameterValues(previousValues, previousTypes, m_parameters,
+                         m_parameterTypes, m_enumOptions, &reset);
+  return reset;
 }
 
 void LegacyPythonTransform::setScript(const QString& script)
@@ -179,28 +200,31 @@ EditNodeWidget* LegacyPythonTransform::createPropertiesWidget(
     currentType, currentEnvPath, factory, customNeedsData, parent);
 
   connect(widget, &PythonNodeEditorWidget::applied, this,
-          [this](const QString& newLabel,
-                 const QString& newScript,
-                 const QMap<QString, QVariant>& values,
-                 const QString& executorType,
-                 const QString& executorEnvPath) {
+          [this](const PythonNodeEdits& edits) {
             bool changed = false;
 
-            if (label() != newLabel) {
-              setLabel(newLabel);
+            // Description first: it decides which parameters exist, so
+            // the values below have to land on the new declarations.
+            if (m_jsonDescription != edits.jsonDescription) {
+              reconfigureDescription(edits.jsonDescription);
               changed = true;
             }
 
-            if (m_script != newScript) {
-              m_script = newScript;
+            if (label() != edits.label) {
+              setLabel(edits.label);
+              changed = true;
+            }
+
+            if (m_script != edits.script) {
+              setScript(edits.script);
               changed = true;
             }
 
             // Parameter values are already finalized by the editor —
             // pulled from the custom widget if present, else from the
             // auto-form, else empty (Parameters tab is the warning).
-            for (auto it = values.constBegin();
-                 it != values.constEnd(); ++it) {
+            for (auto it = edits.values.constBegin();
+                 it != edits.values.constEnd(); ++it) {
               if (m_parameters.value(it.key()) != it.value()) {
                 changed = true;
               }
@@ -214,20 +238,21 @@ EditNodeWidget* LegacyPythonTransform::createPropertiesWidget(
             // when the effective type/env actually moved.
             auto* currentExternal =
               qobject_cast<ExternalNodeExecutor*>(nodeExecutor());
-            if (executorType.isEmpty()) {
+            if (edits.executorType.isEmpty()) {
               if (nodeExecutor() != nullptr) {
                 setNodeExecutor(nullptr);
                 changed = true;
               }
-            } else if (executorType ==
+            } else if (edits.executorType ==
                        ExternalNodeExecutor::typeString()) {
               if (currentExternal) {
-                if (currentExternal->envPath() != executorEnvPath) {
-                  currentExternal->setEnvPath(executorEnvPath);
+                if (currentExternal->envPath() != edits.executorEnvPath) {
+                  currentExternal->setEnvPath(edits.executorEnvPath);
                   changed = true;
                 }
               } else {
-                setNodeExecutor(new ExternalNodeExecutor(executorEnvPath));
+                setNodeExecutor(
+                  new ExternalNodeExecutor(edits.executorEnvPath));
                 changed = true;
               }
             }
@@ -301,10 +326,12 @@ bool LegacyPythonTransform::deserialize(const QJsonObject& json)
     QJsonDocument descDoc =
       QJsonDocument::fromJson(m_jsonDescription.toUtf8());
     if (descDoc.isObject()) {
+      auto obj = descDoc.object();
       auto envPath =
-        descDoc.object().value(QStringLiteral("tomviz_pipeline_env"))
-          .toString();
-      if (!envPath.isEmpty()) {
+        obj.value(QStringLiteral("tomviz_pipeline_env")).toString();
+      bool externalOnly =
+        obj.value(QStringLiteral("externalOnly")).toBool(false);
+      if (!envPath.isEmpty() || externalOnly) {
         setNodeExecutor(new ExternalNodeExecutor(envPath));
       }
     }
@@ -312,7 +339,7 @@ bool LegacyPythonTransform::deserialize(const QJsonObject& json)
   return true;
 }
 
-void LegacyPythonTransform::parseJSON()
+void LegacyPythonTransform::parseJSON(bool createPorts, bool applyLabel)
 {
   QJsonDocument doc = QJsonDocument::fromJson(m_jsonDescription.toUtf8());
   if (!doc.isObject()) {
@@ -323,7 +350,7 @@ void LegacyPythonTransform::parseJSON()
 
   m_operatorName = obj.value("name").toString();
 
-  if (obj.contains("label")) {
+  if (applyLabel && obj.contains("label")) {
     setLabel(obj.value("label").toString());
   }
 
@@ -347,7 +374,9 @@ void LegacyPythonTransform::parseJSON()
 
       // Dataset parameters become additional input ports, not parameters.
       if (type == "dataset") {
-        addInput(name, PortType::ImageData);
+        if (createPorts) {
+          addInput(name, PortType::ImageData);
+        }
         m_datasetInputNames.append(name);
         continue;
       }
@@ -412,7 +441,7 @@ void LegacyPythonTransform::parseJSON()
         portType = PortType::Molecule;
       }
 
-      if (portType != PortType::None) {
+      if (portType != PortType::None && createPorts) {
         addOutput(name, portType);
       }
     }
@@ -445,8 +474,15 @@ void LegacyPythonTransform::parseJSON()
   }
   if (obj.contains("outputType")) {
     PortType pt = portTypeFromString(obj.value("outputType").toString());
-    if (pt != PortType::None) {
-      outputPort(m_primaryOutputName)->setDeclaredType(pt);
+    auto* out = outputPort(m_primaryOutputName);
+    // Only when the declared type actually moves. setDeclaredType() also
+    // resets the effective type, so re-applying an unchanged description
+    // (what the Definition tab does on every Apply) would otherwise throw
+    // away a type inferred from the upstream connection — an ImageData
+    // output fed by a Volume drops back to plain ImageData. Node's own
+    // deserialize guards this the same way.
+    if (pt != PortType::None && out && out->declaredType() != pt) {
+      out->setDeclaredType(pt);
     }
   }
 }

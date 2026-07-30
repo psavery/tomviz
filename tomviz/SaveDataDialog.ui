@@ -1,0 +1,228 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>SaveDataDialog</class>
+ <widget class="QDialog" name="SaveDataDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>720</width>
+    <height>560</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Save Data</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <layout class="QHBoxLayout" name="destinationLayout">
+     <item>
+      <widget class="QLabel" name="destinationLabel">
+       <property name="text">
+        <string>Destination:</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLineEdit" name="directoryEdit">
+       <property name="placeholderText">
+        <string>Choose a directory to write the files into</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="browseButton">
+       <property name="text">
+        <string>Browse</string>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="optionsLayout">
+     <item>
+      <widget class="QGroupBox" name="formatsGroup">
+       <property name="title">
+        <string>File formats</string>
+       </property>
+       <layout class="QFormLayout" name="formatsLayout">
+        <item row="0" column="0">
+         <widget class="QLabel" name="imageDataLabel">
+          <property name="text">
+           <string>Image data:</string>
+          </property>
+         </widget>
+        </item>
+        <item row="0" column="1">
+         <widget class="QComboBox" name="imageDataCombo"/>
+        </item>
+        <item row="1" column="0">
+         <widget class="QLabel" name="tableLabel">
+          <property name="text">
+           <string>Table:</string>
+          </property>
+         </widget>
+        </item>
+        <item row="1" column="1">
+         <widget class="QComboBox" name="tableCombo"/>
+        </item>
+        <item row="2" column="0">
+         <widget class="QLabel" name="moleculeLabel">
+          <property name="text">
+           <string>Molecule:</string>
+          </property>
+         </widget>
+        </item>
+        <item row="2" column="1">
+         <widget class="QComboBox" name="moleculeCombo"/>
+        </item>
+       </layout>
+      </widget>
+     </item>
+     <item>
+      <widget class="QGroupBox" name="scopeGroup">
+       <property name="title">
+        <string>Ports to save</string>
+       </property>
+       <layout class="QVBoxLayout" name="scopeLayout">
+        <item>
+         <widget class="QRadioButton" name="leafOnlyRadio">
+          <property name="text">
+           <string>Leaf nodes only</string>
+          </property>
+          <property name="toolTip">
+           <string>Nodes whose output does not feed another operator. Nodes that only feed visualizations still count as leaves.</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QRadioButton" name="allPersistedRadio">
+          <property name="text">
+           <string>All persisted ports</string>
+          </property>
+          <property name="toolTip">
+           <string>Every pinned output port currently holding data, in memory or on disk.</string>
+          </property>
+          <property name="checked">
+           <bool>true</bool>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="scopeSpacer">
+          <property name="orientation">
+           <enum>Qt::Vertical</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>20</width>
+            <height>0</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QTreeWidget" name="fileTree">
+     <property name="rootIsDecorated">
+      <bool>false</bool>
+     </property>
+     <property name="uniformRowHeights">
+      <bool>true</bool>
+     </property>
+     <property name="alternatingRowColors">
+      <bool>true</bool>
+     </property>
+     <column>
+      <property name="text">
+       <string>Node</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Port</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>Type</string>
+      </property>
+     </column>
+     <column>
+      <property name="text">
+       <string>File</string>
+      </property>
+     </column>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="selectionLayout">
+     <item>
+      <widget class="QPushButton" name="selectAllButton">
+       <property name="text">
+        <string>Select All</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="deselectAllButton">
+       <property name="text">
+        <string>Deselect All</string>
+       </property>
+      </widget>
+     </item>
+     <item>
+      <spacer name="selectionSpacer">
+       <property name="orientation">
+        <enum>Qt::Horizontal</enum>
+       </property>
+       <property name="sizeHint" stdset="0">
+        <size>
+         <width>40</width>
+         <height>20</height>
+        </size>
+       </property>
+      </spacer>
+     </item>
+     <item>
+      <widget class="QLabel" name="summaryLabel">
+       <property name="text">
+        <string/>
+       </property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QDialogButtonBox" name="buttonBox">
+     <property name="orientation">
+      <enum>Qt::Horizontal</enum>
+     </property>
+     <property name="standardButtons">
+      <set>QDialogButtonBox::Cancel|QDialogButtonBox::Save</set>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections>
+  <connection>
+   <sender>buttonBox</sender>
+   <signal>accepted()</signal>
+   <receiver>SaveDataDialog</receiver>
+   <slot>accept()</slot>
+  </connection>
+  <connection>
+   <sender>buttonBox</sender>
+   <signal>rejected()</signal>
+   <receiver>SaveDataDialog</receiver>
+   <slot>reject()</slot>
+  </connection>
+ </connections>
+</ui>

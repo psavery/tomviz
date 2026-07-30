@@ -651,6 +651,13 @@ bool Node::deserialize(const QJsonObject& json)
       if (entry.contains(QStringLiteral("persistent"))) {
         port->setPersistent(
           entry.value(QStringLiteral("persistent")).toBool());
+        // The medium key is omitted when it is the default (InMemory),
+        // so reset it explicitly: the port may still carry the
+        // application-wide default (e.g. OnDisk) from construction.
+        if (port->isPersistent() &&
+            !entry.contains(QStringLiteral("persistenceMode"))) {
+          port->setPersistenceMode(PersistenceMode::InMemory);
+        }
       }
       if (entry.contains(QStringLiteral("persistenceMode"))) {
         port->setPersistenceMode(persistenceModeFromString(

@@ -171,6 +171,7 @@ public:
   /// in its field data (array named "tilt_angles").
   static bool hasTiltAngles(vtkImageData* image);
   static QVector<double> getTiltAngles(vtkImageData* image);
+  static void setTiltAngles(vtkImageData* image, const QVector<double>& angles);
 
   // -- Scan ID accessors --
 
@@ -180,6 +181,31 @@ public:
 
   static bool hasScanIds(vtkImageData* image);
   static QVector<int> getScanIds(vtkImageData* image);
+  static void setScanIds(vtkImageData* image, const QVector<int>& ids);
+  static void clearScanIds(vtkImageData* image);
+
+  // -- Subsample metadata (stored in field data) --
+
+  static bool wasSubsampled(vtkImageData* image);
+  static void setWasSubsampled(vtkImageData* image, bool b);
+  static void subsampleStrides(vtkImageData* image, int strides[3]);
+  static void setSubsampleStrides(vtkImageData* image, int strides[3]);
+  static void subsampleVolumeBounds(vtkImageData* image, int bounds[6]);
+  static void setSubsampleVolumeBounds(vtkImageData* image, int bounds[6]);
+
+  // -- Data type metadata (persisted in EMD field data) --
+
+  /// On-disk tomviz data-source type, stored as an int8 in the image's
+  /// field data ("tomviz_data_source_type"). Distinct from the runtime
+  /// PortType; this is the value EMD files carry for compatibility.
+  enum class DataType : int
+  {
+    Volume = 0,
+    TiltSeries = 1,
+    Fib = 2
+  };
+
+  static void setType(vtkImageData* image, DataType type);
 
   // -- Time series support --
 

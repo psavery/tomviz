@@ -2,6 +2,9 @@
   "name": "AutoTiltAxisShiftAlignment",
   "label": "Auto Tilt Axis Shift Align",
   "description": "Automatically center images along the tilt axis",
+  "help": {
+    "url": "alignment.html#auto-tilt-axis-shift-alignment"
+  },
   "apply_to_each_array": false,
   "parameters": [
     {

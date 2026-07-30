@@ -208,21 +208,20 @@ void AddPythonTransformReaction::updateEnableState()
     pipeline::isPortTypeCompatible(tipPort->type(), m_acceptedInputTypes));
 }
 
-OperatorPython* AddPythonTransformReaction::addExpression(DataSource*)
+void AddPythonTransformReaction::addExpression(DataSource*)
 {
   auto* mainWindow = MainWindow::instance();
   auto* pip = mainWindow ? mainWindow->pipeline() : nullptr;
   if (!pip) {
-    return nullptr;
+    return;
   }
 
   auto* transform =
     makePythonTransform(scriptLabel, scriptSource, jsonSource, {});
   if (!transform) {
-    return nullptr;
+    return;
   }
   insertTransformIntoPipeline(transform);
-  return nullptr;
 }
 
 void AddPythonTransformReaction::addExpressionFromNonModalDialog()

@@ -43,11 +43,23 @@ protected:
   /// Default no-op.
   virtual void onInputDisconnected(InputPort* /*port*/) {}
 
+  /// Opt-in for sinks that own GL / render-window / SM-proxy state:
+  /// return true to run the whole prepareConsume()/consume()/
+  /// postConsume() trio on the GUI thread, instead of marshaling each
+  /// individual access from the worker thread (see ThreadUtils.h).
+  /// Default false — the trio runs inline on the pipeline worker thread.
+  virtual bool consumeOnGuiThread() const { return false; }
+
 private slots:
   void onIntermediateData();
 
 private:
   void connectUpstreamIntermediate(InputPort* port);
+
+  /// Run the prepareConsume()/consume()/postConsume() trio, marshaling
+  /// it to the GUI thread (blocking the worker until it completes) when
+  /// consumeOnGuiThread() is true. Returns consume()'s success.
+  bool runConsume(const QMap<QString, PortData>& inputs);
 
   /// Retained handles to the input payloads seen during the last
   /// successful consume(). Two effects: the shared_ptr keeps the

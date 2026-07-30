@@ -50,19 +50,19 @@ set(_pythonpath "${_pythonpath}${_separator}${ITK_DIR}/Wrapping/Generators/Pytho
 set(_pythonpath "${_pythonpath}${_separator}$ENV{PYTHONPATH}")
 
 # Add the test cases
-# OperatorPython, ModulePlot, PipelineExecution, DockerUtilities test legacy
-# infrastructure (legacy::OperatorPython / legacy modules / legacy Pipeline)
-# that's being removed and are no longer kept in sync.
 add_cxx_test(Variant)
 add_cxx_test(ScanID)
 add_cxx_test(Utilities)
 add_cxx_test(VolumeBricking)
-add_cxx_qtest(InterfaceBuilder)
+add_cxx_test(SAM2SeedWidget)
+add_cxx_test(ExternalEnvPersistence)
+add_cxx_test(NodeDefinition)
 # AcquisitionClient needs the `bottle` Python package (acquisition/requirements-dev.txt)
 # to start its test server; not part of the conda build env, so disabled here.
 # if(NOT WIN32)
 #   add_cxx_qtest(AcquisitionClient PYTHONPATH "${CMAKE_SOURCE_DIR}/acquisition")
 # endif()
+add_cxx_qtest(SegmentationColorMap)
 add_cxx_qtest(PtychoWorkflow PYTHONPATH ${_pythonpath})
 set_tests_properties(PtychoWorkflow PROPERTIES TIMEOUT 1800)
 add_cxx_qtest(PyXRFWorkflow PYTHONPATH ${_pythonpath})
@@ -72,6 +72,11 @@ set_tests_properties(PyXRFWorkflow PROPERTIES TIMEOUT 1800)
 create_test_executable(tomvizTests)
 
 target_link_libraries(tomvizTests Qt6::Test)
+
+# NodeDefinitionTest round-trips every shipped operator descriptor
+# through the definition-form mutators.
+target_compile_definitions(tomvizTests PRIVATE
+  "TOMVIZ_PYTHON_DIR=\"${PROJECT_SOURCE_DIR}/tomviz/python\"")
 
 # Pipeline library tests
 set(_pipeline_pythonpath

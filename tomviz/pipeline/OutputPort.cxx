@@ -52,6 +52,7 @@ OutputPort::~OutputPort()
 
 void OutputPort::reconcilePersistence()
 {
+  const DataLocation before = dataLocation();
   // Hold any ref we're about to drop in a local that destructs *after*
   // we release the mutex — the universal deleter takes the same mutex
   // (via swapToDisk) and would otherwise deadlock.
@@ -92,9 +93,17 @@ void OutputPort::reconcilePersistence()
       m_strong.reset();
     }
   }
-  // `dropped` and `droppedFile` destruct here — outside the mutex —
-  // so the deleter (which acquires m_diskMutex inside swapToDisk) can
-  // run without deadlocking.
+  // Release outside the mutex (the deleter acquires m_diskMutex inside
+  // swapToDisk) and before the `after` snapshot, so any eviction the
+  // release triggers is reflected in it. Reconciling can move the
+  // payload (evict, reload, drop) without a setData(); surface that to
+  // keep the dataLocationChanged contract.
+  dropped.reset();
+  droppedFile.reset();
+  const DataLocation after = dataLocation();
+  if (after != before) {
+    emit dataLocationChanged(after);
+  }
 }
 
 PortType OutputPort::type() const
@@ -133,6 +142,7 @@ void OutputPort::setPersistent(bool persistent)
   }
   m_persistent = persistent;
   reconcilePersistence();
+  emit persistenceChanged();
 }
 
 PersistenceMode OutputPort::persistenceMode() const
@@ -147,6 +157,7 @@ void OutputPort::setPersistenceMode(PersistenceMode mode)
   }
   m_mode = mode;
   reconcilePersistence();
+  emit persistenceChanged();
 }
 
 PortData OutputPort::data() const
@@ -221,6 +232,11 @@ void OutputPort::clearData()
 {
   {
     std::lock_guard<std::mutex> lock(m_diskMutex);
+    // Invalidate any in-flight deleter: this payload is discarded
+    // outright, so a deleter firing on the reset below must not evict
+    // it to disk (resurrecting cleared data) nor take m_diskMutex via
+    // swapToDisk while we hold it.
+    m_generation.fetch_add(1);
     m_strong.reset();
     m_weak.reset();
     m_onDisk = false;
@@ -300,22 +316,29 @@ std::shared_ptr<PortData> OutputPort::wrapPortData(PortData* raw)
   int gen = m_generation.load();
   return std::shared_ptr<PortData>(raw, [guard, gen](PortData* p) {
     OutputPort* port = guard.data();
-    if (port && !port->m_destroying.load() &&
-        port->m_generation.load() == gen) {
-      if (port->m_persistent &&
-          port->m_mode == PersistenceMode::OnDisk) {
-        // Best-effort: if the swap fails (unsupported payload type,
-        // disk full, ...) swapToDisk has already logged a warning.
-        // The data is lost; the planner will see hasData()==false
-        // and re-run the producer when something downstream needs
-        // it.
-        port->swapToDisk(p);
-      }
-      // InMemory persistent: m_strong was the sole holder and is being
-      //   dropped (mode switch or port destruction); just delete.
-      // Transient: same — no special action.
+    bool tracked = port && !port->m_destroying.load() &&
+                   port->m_generation.load() == gen;
+    bool swapped = false;
+    if (tracked && port->m_persistent &&
+        port->m_mode == PersistenceMode::OnDisk) {
+      // Best-effort: if the swap fails (unsupported payload type,
+      // disk full, ...) swapToDisk has already logged a warning.
+      // The data is lost; the planner will see hasData()==false
+      // and re-run the producer when something downstream needs
+      // it.
+      swapped = port->swapToDisk(p);
     }
+    // InMemory persistent: m_strong was the sole holder and is being
+    //   dropped (mode switch or port destruction); just delete.
+    // Transient: same, no special action.
     delete p;
+    if (tracked && !swapped) {
+      // The payload is gone for good (transient/unpinned drop, or a
+      // failed swap). Surface it, or UI residency cues keep showing
+      // in-memory data that no longer exists. The successful-swap
+      // transition is emitted by swapToDisk itself.
+      emit port->dataLocationChanged(DataLocation::None);
+    }
   });
 }
 

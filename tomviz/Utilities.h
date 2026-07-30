@@ -53,8 +53,6 @@ struct Attributes
   static const char* FILENAME;
 };
 
-class DataSource;
-
 //===========================================================================
 // Functions for converting from pqProxy to vtkSMProxy and vice-versa.
 //===========================================================================
@@ -163,7 +161,7 @@ vtkPVArrayInformation* scalarArrayInformation(vtkSMSourceProxy* proxy);
 /// Rescales the colorMap (and associated opacityMap) using the transformed data
 /// range from the data source. This will respect the "LockScalarRange" property
 /// on the colorMap i.e. if user locked the scalar range, it won't be rescaled.
-bool rescaleColorMap(vtkSMProxy* colorMap, DataSource* dataSource);
+bool rescaleColorMap(vtkSMProxy* colorMap, vtkSMSourceProxy* dataProxy);
 
 // Given the root of a file and an extension, reades the file fileName +
 // extension and returns the content in a QString.
@@ -226,6 +224,15 @@ QString findPrefix(const QStringList& fileNames);
 /// Convenience function to get the main widget (useful for dialog parenting).
 QWidget* mainWidget();
 
+/// Promote a top-level widget to a Qt::Tool window so it reliably floats above
+/// the main window. On macOS a parented modeless QDialog is only hinted (not
+/// guaranteed) to stack above its parent and can slip behind the main window
+/// when the user clicks it; a Qt::Tool window floats above the application's
+/// windows while leaving them interactive. Call this before the widget is
+/// first shown. Any existing window hint flags (frameless, title-only, etc.)
+/// are preserved.
+void floatAboveMainWindow(QWidget* widget);
+
 QJsonValue toJson(vtkVariant variant);
 QJsonValue toJson(vtkSMProperty* prop);
 bool setProperties(const QJsonObject& props, vtkSMProxy* proxy);
@@ -243,6 +250,9 @@ bool csvToFile(const QString& csv);
 
 /// Write a vtkMolecule to json file
 bool moleculeToFile(vtkMolecule* molecule);
+
+/// Write a vtkMolecule as XYZ to an explicit path, without prompting.
+bool moleculeToXyzFile(vtkMolecule* molecule, const QString& fileName);
 extern double offWhite[3];
 
 /// Open a url in the user's default browser
@@ -290,11 +300,9 @@ QString getSizeNearestThousand(T num, bool labelAsBytes = false)
 }
 
 void addPlaceholderNodes(vtkColorTransferFunction* lut, const double range[2]);
-void addPlaceholderNodes(vtkColorTransferFunction* lut, DataSource* ds);
 void removePlaceholderNodes(vtkColorTransferFunction* lut);
 
 void addPlaceholderNodes(vtkPiecewiseFunction* opacity, const double range[2]);
-void addPlaceholderNodes(vtkPiecewiseFunction* opacity, DataSource* ds);
 void removePlaceholderNodes(vtkPiecewiseFunction* opacity);
 
 double rescale(double val, double oldMin, double oldMax, double newMin,
@@ -303,10 +311,8 @@ void rescaleNodes(vtkColorTransferFunction* lut, double newMin, double newMax);
 void rescaleNodes(vtkPiecewiseFunction* opacity, double newMin, double newMax);
 void removePointsOutOfRange(vtkColorTransferFunction* lut,
                             const double range[2]);
-void removePointsOutOfRange(vtkColorTransferFunction* lut, DataSource* ds);
 void removePointsOutOfRange(vtkPiecewiseFunction* opacity,
                             const double range[2]);
-void removePointsOutOfRange(vtkPiecewiseFunction* opacity, DataSource* ds);
 
 // Load a plugin by path
 bool loadPlugin(QString path);

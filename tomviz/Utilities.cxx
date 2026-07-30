@@ -4,7 +4,6 @@
 #include "Utilities.h"
 
 #include "ActiveObjects.h"
-#include "legacy/DataSource.h"
 #include "tomvizConfig.h"
 
 #include <pqAnimationCue.h>
@@ -62,6 +61,9 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonValue>
 #include <QLayout>
 #include <QMessageBox>
 #include <QStandardPaths>
@@ -584,14 +586,13 @@ vtkPVArrayInformation* scalarArrayInformation(vtkSMSourceProxy* proxy)
                : nullptr;
 }
 
-bool rescaleColorMap(vtkSMProxy* colorMap, DataSource* dataSource)
+bool rescaleColorMap(vtkSMProxy* colorMap, vtkSMSourceProxy* dataProxy)
 {
   // rescale the color/opacity maps for the data source.
   vtkSMProxy* cmap = colorMap;
   vtkSMProxy* omap =
     vtkSMPropertyHelper(cmap, "ScalarOpacityFunction").GetAsProxy();
-  vtkPVArrayInformation* ainfo =
-    tomviz::scalarArrayInformation(dataSource->proxy());
+  vtkPVArrayInformation* ainfo = tomviz::scalarArrayInformation(dataProxy);
   if (ainfo != nullptr &&
       vtkSMPropertyHelper(cmap, "AutomaticRescaleRangeMode").GetAsInt() !=
         vtkSMTransferFunctionManager::NEVER) {
@@ -987,6 +988,20 @@ QWidget* mainWidget()
   return pqCoreUtilities::mainWidget();
 }
 
+void floatAboveMainWindow(QWidget* widget)
+{
+  if (!widget) {
+    return;
+  }
+  // Replace the window type (e.g. Qt::Dialog) with Qt::Tool while preserving
+  // the hint flags, so the window floats above the main window on macOS rather
+  // than slipping behind it.
+  auto flags = widget->windowFlags();
+  flags &= ~Qt::WindowType_Mask;
+  flags |= Qt::Tool;
+  widget->setWindowFlags(flags);
+}
+
 QJsonValue toJson(vtkVariant variant)
 {
   auto type = variant.GetType();
@@ -1234,6 +1249,15 @@ bool moleculeToFile(vtkMolecule* molecule)
   }
   if (!fileName.endsWith(".xyz")) {
     fileName = QString("%1.xyz").arg(fileName);
+  }
+
+  return moleculeToXyzFile(molecule, fileName);
+}
+
+bool moleculeToXyzFile(vtkMolecule* molecule, const QString& fileName)
+{
+  if (molecule == nullptr) {
+    return false;
   }
 
   QFile file(fileName);
@@ -1490,13 +1514,6 @@ void addPlaceholderNodes(vtkColorTransferFunction* lut, const double range[2])
   }
 }
 
-void addPlaceholderNodes(vtkColorTransferFunction* lut, DataSource* ds)
-{
-  double range[2];
-  ds->getRange(range);
-  addPlaceholderNodes(lut, range);
-}
-
 void removePlaceholderNodes(vtkColorTransferFunction* lut)
 {
   // Remove all nodes on the ends that match their neighboring nodes
@@ -1558,13 +1575,6 @@ void addPlaceholderNodes(vtkPiecewiseFunction* opacity, const double range[2])
   for (const auto& point : addPoints) {
     opacity->AddPoint(point[0], point[1]);
   }
-}
-
-void addPlaceholderNodes(vtkPiecewiseFunction* opacity, DataSource* ds)
-{
-  double range[2];
-  ds->getRange(range);
-  addPlaceholderNodes(opacity, range);
 }
 
 void removePlaceholderNodes(vtkPiecewiseFunction* opacity)
@@ -1699,13 +1709,6 @@ void removePointsOutOfRange(vtkColorTransferFunction* lut,
   lut->AddRGBPoint(range[1], endColor[0], endColor[1], endColor[2]);
 }
 
-void removePointsOutOfRange(vtkColorTransferFunction* lut, DataSource* ds)
-{
-  double range[2];
-  ds->getRange(range);
-  removePointsOutOfRange(lut, range);
-}
-
 void removePointsOutOfRange(vtkPiecewiseFunction* opacity,
                             const double range[2])
 {
@@ -1732,13 +1735,6 @@ void removePointsOutOfRange(vtkPiecewiseFunction* opacity,
 
   opacity->AddPoint(range[0], startY);
   opacity->AddPoint(range[1], endY);
-}
-
-void removePointsOutOfRange(vtkPiecewiseFunction* opacity, DataSource* ds)
-{
-  double range[2];
-  ds->getRange(range);
-  removePointsOutOfRange(opacity, range);
 }
 
 bool loadPlugin(QString path)

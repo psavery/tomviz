@@ -84,6 +84,11 @@ public:
   bool isExpanded(Node* node) const;
   void setExpanded(Node* node, bool expanded);
 
+  /// Animate a "marching ants" flow along links. The flow can be enabled
+  /// independently for the hovered link and the selected link.
+  void setLinkAnimationOnHover(bool enabled);
+  void setLinkAnimationOnSelection(bool enabled);
+
   /// Context menu providers. The callback populates a QMenu for the given
   /// element. If the callback leaves the menu empty, no context menu is shown.
   /// Passing a null (empty) std::function disables the context menu for that
@@ -134,11 +139,13 @@ signals:
   void linkRequested(OutputPort* from, InputPort* to);
   void leaveGroupRequested(Node* member, SinkGroupNode* group);
   void deleteNodeRequested(Node* node);
+  void deleteLinkRequested(Link* link);
 
 public slots:
   void rebuildLayout();
 
 protected:
+  bool event(QEvent* event) override; // hover tooltips
   void paintEvent(QPaintEvent* event) override;
   void mousePressEvent(QMouseEvent* event) override;
   void mouseReleaseEvent(QMouseEvent* event) override;
@@ -154,8 +161,16 @@ private:
   void disconnectPipeline();
   void selectItem(int index);
   void selectLink(Link* link);
+  // Move selection up/down through a vertically-ordered list of layout
+  // items and links (direction: -1 up, +1 down).
+  void navigateVertical(int direction);
+  // Start/stop the marching-ants timer based on the current hover/selection
+  // state and the per-mode animation flags.
+  void updateLinkAnimationTimer();
   int hitTest(const QPoint& pos) const;
   Link* linkHitTest(const QPoint& pos) const;
+  // Tooltip text for whatever element is under @a pos (empty if none).
+  QString tooltipAt(const QPoint& pos) const;
   int selectedIndex() const;
   void showContextMenu(const QPoint& globalPos);
 
@@ -164,9 +179,14 @@ private:
                      bool selected, bool hovered);
   void paintPortCard(QPainter& painter, const LayoutItem& item,
                      bool selected, bool hovered);
+  // The port card's icon square + persistence badges, painted on top of the
+  // links (like collapsed output dots) so links/halo don't cover them.
+  void paintPortCardIcon(QPainter& painter, const LayoutItem& item,
+                         bool selected);
   void paintGroupMemberCard(QPainter& painter, const LayoutItem& item,
                             bool selected, bool hovered);
   void paintConnections(QPainter& painter);
+  void paintSelectedLinkHalo(QPainter& painter);
   void computeLinkGeometries();
   void paintPendingLink(QPainter& painter);
   OutputPort* outputPortHitTest(const QPoint& pos) const;
@@ -211,6 +231,12 @@ private:
   QTimer m_spinnerTimer;
   int m_spinnerAngle = 0;
 
+  // Marching-ants link animation.
+  QTimer m_marchTimer;
+  qreal m_marchPhase = 0.0;
+  bool m_animateLinkOnHover = true;
+  bool m_animateLinkOnSelection = true;
+
   NodeMenuProvider m_nodeMenuProvider;
   PortMenuProvider m_portMenuProvider;
   LinkMenuProvider m_linkMenuProvider;
@@ -239,9 +265,13 @@ private:
   static constexpr int GutterWidth = 24;
   static constexpr int NodeCardHeight = 32;
   static constexpr int CardSpacing = 4;
-  static constexpr int DirectConnectionSpacing = 3; // per-side spacing for straight lines
+  static constexpr int DirectConnectionSpacing = 4; // per-side spacing for straight lines
   static constexpr int OutputSquareOverlap = 4; // pixels of output square inside node
   static constexpr int PortIndent = 16;
+  // Left/right/bottom padding around an expanded node card's content
+  // (the port / member sub-cards). Distinct from PortIndent, which also
+  // positions the input/output dots and shouldn't move with it.
+  static constexpr int PortContentPad = PortIndent / 2;
   static constexpr int CardRadius = 4;
   static constexpr int BadgeSize = 16;
   static constexpr int DotRadius = 5;
@@ -249,7 +279,7 @@ private:
   static constexpr int DotMargin = 6;      // left margin for dots on node cards
   static constexpr int OutputSquareEdge = 20;
   static constexpr int OutputSquareRadius = 4;
-  static constexpr int OutputSquareSpacing = 27; // center-to-center
+  static constexpr int OutputSquareSpacing = 29; // center-to-center
   static constexpr int OutputSquareIconSize = 16;
   static constexpr int PortCardHeight = OutputSquareEdge; // match collapsed port square
   static constexpr int PortCardSpacing = CardSpacing + 2; // vertical gap between port cards
@@ -259,7 +289,9 @@ private:
   static constexpr int HeaderButtonGap = 8; // gap between button groups (with separator)
   static constexpr int HeaderButtonSpacing = 2; // gap between adjacent buttons
   static constexpr int LaneSpacing = 6;              // spacing between parallel lines
-  static constexpr int PortClearance = 5;
+  // How far a link runs straight out of a port before its first 90° turn.
+  // Feeds DotClearance (input side) and SquareClearance (output side).
+  static constexpr int PortClearance = 7;
   static constexpr int DotClearance = DotRadius + PortClearance;
   static constexpr int SquareClearance = OutputSquareEdge / 2 + PortClearance;
   static constexpr int LinkCornerRadius = 4;

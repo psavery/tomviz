@@ -84,6 +84,13 @@ protected:
   void updateColorMap() override;
   void updatePanel();
 
+  // consume() runs an embedded Python segmentation script
+  // (runSegmentation), which must stay on the pipeline worker thread —
+  // running it on the GUI thread would block the UI and take the GIL on
+  // the main thread. So opt out of the LegacyModuleSink GUI-thread
+  // default and keep this sink's consume() on the worker.
+  bool consumeOnGuiThread() const override { return false; }
+
 private:
   bool runSegmentation(vtkImageData* input);
 

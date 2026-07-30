@@ -4,12 +4,12 @@
 #include "LoadStackReaction.h"
 
 #include "ActiveObjects.h"
-#include "legacy/DataSource.h"
 #include "ImageStackDialog.h"
 #include "LoadDataReaction.h"
 #include "Utilities.h"
 
 #include "pipeline/Pipeline.h"
+#include "pipeline/PortType.h"
 #include "pipeline/PortUtils.h"
 #include "pipeline/SourceNode.h"
 #include "pipeline/data/VolumeData.h"
@@ -70,9 +70,9 @@ pipeline::SourceNode* LoadStackReaction::execStackDialog(
       return nullptr;
     }
 
-    DataSource::DataSourceType stackType = dialog.getStackType();
+    pipeline::PortType stackType = dialog.getStackType();
     bool imageViewerMode = dialog.getImageViewerMode();
-    if (stackType == DataSource::DataSourceType::TiltSeries) {
+    if (stackType == pipeline::PortType::TiltSeries) {
       // Build tilt angles from the stack summary
       QMap<size_t, double> angles;
       int j = 0;

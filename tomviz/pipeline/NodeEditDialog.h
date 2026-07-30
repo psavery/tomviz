@@ -7,6 +7,7 @@
 #include "DeferredLinkInfo.h"
 
 #include <QDialog>
+#include <QPointer>
 
 class QDialogButtonBox;
 class QShowEvent;
@@ -77,7 +78,7 @@ private:
 
   void completeInsertion();
 
-  Node* m_node;
+  QPointer<Node> m_node;
   Pipeline* m_pipeline;
   EditNodeWidget* m_editWidget = nullptr;
   QDialogButtonBox* m_buttonBox = nullptr;

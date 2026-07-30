@@ -20,8 +20,6 @@ set(SOURCES
   AddPythonTransformReaction.cxx
   AddRenderViewContextMenuBehavior.cxx
   AddRenderViewContextMenuBehavior.h
-  AddResampleReaction.cxx
-  AddResampleReaction.h
   AlignWidget.cxx
   AlignWidget.h
   AnimationHelperDialog.cxx
@@ -46,14 +44,12 @@ set(SOURCES
   ColorMapSettingsWidget.h
   ComboTextEditor.cxx
   ComboTextEditor.h
-  ConformVolumeDialog.cxx
-  ConformVolumeDialog.h
-  ConformVolumeReaction.cxx
-  ConformVolumeReaction.h
   ConvertToFloatReaction.cxx
   ConvertToFloatReaction.h
   CropReaction.cxx
   CropReaction.h
+  SAM2SeedWidget.cxx
+  SAM2SeedWidget.h
   SelectCylinderWidget.cxx
   SelectCylinderWidget.h
   SelectVolumeWidget.cxx
@@ -72,28 +68,16 @@ set(SOURCES
   DataExchangeFormat.h
   DataPropertiesModel.cxx
   DataPropertiesModel.h
-  legacy/DataSource.cxx
-  legacy/DataSource.h
   DataTransformMenu.cxx
   DataTransformMenu.h
   DeleteDataReaction.cxx
   DeleteDataReaction.h
-  legacy/DockerExecutor.cxx
-  legacy/DockerExecutor.h
-  legacy/DockerUtilities.cxx
-  legacy/DockerUtilities.h
   DoubleSliderWidget.cxx
   DoubleSliderWidget.h
   DoubleSpinBox.cxx
   DoubleSpinBox.h
-  DuplicateModuleReaction.h
-  DuplicateModuleReaction.cxx
   EmdFormat.cxx
   EmdFormat.h
-  ExportDataReaction.cxx
-  ExportDataReaction.h
-  legacy/ExternalPythonExecutor.cxx
-  legacy/ExternalPythonExecutor.h
   FileFormatManager.cxx
   FileFormatManager.h
   FxiFormat.cxx
@@ -116,8 +100,6 @@ set(SOURCES
   ImageStackDialog.cxx
   ImageStackModel.h
   ImageStackModel.cxx
-  InterfaceBuilder.h
-  InterfaceBuilder.cxx
   InternalPythonHelper.h
   InternalPythonHelper.cxx
   IntSliderWidget.cxx
@@ -136,32 +118,14 @@ set(SOURCES
   Logger.h
   ManualManipulationWidget.cxx
   ManualManipulationWidget.h
-  MergeImagesDialog.cxx
-  MergeImagesDialog.h
-  MergeImagesReaction.cxx
-  MergeImagesReaction.h
-  MoleculeSource.cxx
-  MoleculeSource.h
   OperatorSearchDialog.cxx
   OperatorSearchDialog.h
   MoleculeProperties.cxx
   MoleculeProperties.h
-  MoleculePropertiesPanel.cxx
-  MoleculePropertiesPanel.h
   InteractiveTransformWidget.cxx
   InteractiveTransformWidget.h
-  legacy/Pipeline.cxx
-  legacy/Pipeline.h
-  legacy/PipelineExecutor.cxx
-  legacy/PipelineExecutor.h
-  legacy/PipelineManager.cxx
-  legacy/PipelineManager.h
-  legacy/PipelineModel.cxx
-  legacy/PipelineModel.h
-  legacy/PipelineProxy.cxx
-  legacy/PipelineProxy.h
-  legacy/PipelineWorker.cxx
-  legacy/PipelineWorker.h
+  PortDataWriter.cxx
+  PortDataWriter.h
   PresetDialog.cxx
   PresetDialog.h
   PresetModel.cxx
@@ -174,8 +138,6 @@ set(SOURCES
   PtychoWidget.h
   PtychoRunner.cxx
   PtychoRunner.h
-  legacy/PythonGeneratedDatasetReaction.cxx
-  legacy/PythonGeneratedDatasetReaction.h
   PythonReader.cxx
   PythonReader.h
   PythonUtilities.cxx
@@ -204,7 +166,10 @@ set(SOURCES
   ResetReaction.h
   RotateAlignWidget.cxx
   RotateAlignWidget.h
+  SaveDataDialog.cxx
+  SaveDataDialog.h
   SaveDataReaction.cxx
+  SaveDataReaction.h
   SaveLoadStateReaction.cxx
   SaveLoadStateReaction.h
   SaveLoadTemplateReaction.cxx
@@ -222,12 +187,8 @@ set(SOURCES
   SetDataTypeReaction.cxx
   SetTiltAnglesReaction.cxx
   SetTiltAnglesReaction.h
-  SliceViewDialog.cxx
-  SliceViewDialog.h
   SpinBox.cxx
   SpinBox.h
-  legacy/ThreadedExecutor.cxx
-  legacy/ThreadedExecutor.h
   TimeSeriesLabel.h
   TimeSeriesLabel.cxx
   TimeSeriesStep.h
@@ -392,6 +353,14 @@ set(SOURCES
   pipeline/EditNodeWidget.h
   pipeline/NodePropertiesWidget.cxx
   pipeline/NodePropertiesWidget.h
+  pipeline/NodeDefinitionValidator.cxx
+  pipeline/NodeDefinitionValidator.h
+  pipeline/NodeDefinitionEdits.cxx
+  pipeline/NodeDefinitionEdits.h
+  pipeline/NodeDefinitionFormWidget.cxx
+  pipeline/NodeDefinitionFormWidget.h
+  pipeline/NodeDefinitionWidget.cxx
+  pipeline/NodeDefinitionWidget.h
   pipeline/PythonNodeEditorWidget.cxx
   pipeline/PythonNodeEditorWidget.h
   pipeline/NodePropertiesPanel.cxx
@@ -404,6 +373,10 @@ set(SOURCES
   pipeline/PipelineControlsWidget.h
   pipeline/PipelineStripWidget.cxx
   pipeline/PipelineStripWidget.h
+  pipeline/LinkPropertiesWidget.cxx
+  pipeline/LinkPropertiesWidget.h
+  pipeline/SinkGroupPropertiesWidget.cxx
+  pipeline/SinkGroupPropertiesWidget.h
   pipeline/VolumeScalarsModel.cxx
   pipeline/VolumeScalarsModel.h
   pipeline/VolumePropertiesWidget.cxx
@@ -462,109 +435,27 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang"
     COMPILE_OPTIONS "-Wno-c++20-extensions;-Wno-format-truncation")
 endif()
 
-list(APPEND SOURCES
-  legacy/modules/Module.cxx
-  legacy/modules/Module.h
-  legacy/modules/ModuleClip.cxx
-  legacy/modules/ModuleClip.h
-  legacy/modules/ModuleContour.cxx
-  legacy/modules/ModuleContour.h
-  legacy/modules/ModuleContourWidget.cxx
-  legacy/modules/ModuleContourWidget.h
-  legacy/modules/ModuleFactory.cxx
-  legacy/modules/ModuleFactory.h
-  legacy/modules/ModuleManager.cxx
-  legacy/modules/ModuleManager.h
-  legacy/modules/ModuleScaleCube.cxx
-  legacy/modules/ModuleScaleCube.h
-  legacy/modules/ModuleScaleCubeWidget.cxx
-  legacy/modules/ModuleScaleCubeWidget.h
-  legacy/modules/ModuleMenu.cxx
-  legacy/modules/ModuleMenu.h
-  legacy/modules/ModuleMolecule.cxx
-  legacy/modules/ModuleMolecule.h
-  legacy/modules/ModuleOutline.cxx
-  legacy/modules/ModuleOutline.h
-  legacy/modules/ModulePlot.cxx
-  legacy/modules/ModulePlot.h
-  legacy/modules/ModuleRuler.cxx
-  legacy/modules/ModuleRuler.h
-  legacy/modules/ModuleSegment.cxx
-  legacy/modules/ModuleSegment.h
-  legacy/modules/ModuleSlice.cxx
-  legacy/modules/ModuleSlice.h
-  legacy/modules/ModuleThreshold.cxx
-  legacy/modules/ModuleThreshold.h
-  legacy/modules/ModuleVolume.cxx
-  legacy/modules/ModuleVolume.h
-  legacy/modules/ModuleVolumeWidget.cxx
-  legacy/modules/ModuleVolumeWidget.h
-  legacy/modules/ScalarsComboBox.cxx
-  legacy/modules/ScalarsComboBox.h
-  legacy/modules/VolumeManager.cxx
-  legacy/modules/VolumeManager.h
-)
-# legacy/ subdirectories are NOT on the include path — use explicit
-# prefixed includes (e.g. "legacy/DataSource.h", "legacy/modules/Module.h").
-
 # acquisition/
 list(APPEND SOURCES
   acquisition/AcquisitionWidget.cxx
   acquisition/AcquisitionWidget.h
   acquisition/AcquisitionClient.cxx
   acquisition/AcquisitionClient.h
-  acquisition/AdvancedFormatWidget.cxx
-  acquisition/AdvancedFormatWidget.h
-  acquisition/BasicFormatWidget.cxx
-  acquisition/BasicFormatWidget.h
   acquisition/Connection.cxx
   acquisition/Connection.h
   acquisition/ConnectionsWidget.cxx
   acquisition/ConnectionsWidget.h
   acquisition/ConnectionDialog.cxx
   acquisition/ConnectionDialog.h
-  acquisition/CustomFormatWidget.cxx
-  acquisition/CustomFormatWidget.h
   acquisition/JsonRpcClient.cxx
   acquisition/JsonRpcClient.h
-  acquisition/PassiveAcquisitionWidget.cxx
-  acquisition/PassiveAcquisitionWidget.h
-  acquisition/RegexGroupDialog.cxx
-  acquisition/RegexGroupDialog.h
-  acquisition/RegexGroupsWidget.cxx
-  acquisition/RegexGroupsWidget.h
-  acquisition/RegexGroupSubstitution.cxx
-  acquisition/RegexGroupSubstitution.h
-  acquisition/RegexGroupSubstitutionDialog.cxx
-  acquisition/RegexGroupSubstitutionDialog.h
-  acquisition/RegexGroupsSubstitutionsWidget.cxx
-  acquisition/RegexGroupsSubstitutionsWidget.h
-  acquisition/StartServerDialog.cxx
-  acquisition/StartServerDialog.h
 )
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/acquisition)
 
 list(APPEND SOURCES
-  legacy/operators/CustomPythonOperatorWidget.cxx
-  legacy/operators/CustomPythonOperatorWidget.h
-  legacy/operators/EditOperatorWidget.cxx
-  legacy/operators/EditOperatorWidget.h
-  legacy/operators/Operator.cxx
-  legacy/operators/Operator.h
-  legacy/operators/OperatorDialog.cxx
-  legacy/operators/OperatorDialog.h
-  legacy/operators/OperatorFactory.cxx
-  legacy/operators/OperatorFactory.h
-  legacy/operators/OperatorProxy.cxx
-  legacy/operators/OperatorProxy.h
-  legacy/operators/OperatorPython.cxx
-  legacy/operators/OperatorPython.h
-  legacy/operators/OperatorResult.cxx
-  legacy/operators/OperatorResult.h
   PipelineModuleMenu.cxx
   PipelineModuleMenu.h
 )
-# legacy/operators/ is NOT on the include path — use "legacy/operators/Operator.h" etc.
 
 # animations/
 list(APPEND SOURCES
@@ -662,6 +553,8 @@ set(python_files
   BinaryMinMaxCurvatureFlow.py
   ReinterpretSignedToUnsigned.py
   SegmentParticles.py
+  SAM2Segment3D.py
+  SAM3Segment3D.py
   UnsharpMask.py
   AddConstant.py
   CylindricalCrop.py
@@ -725,6 +618,8 @@ set(json_files
   SwapAxes.json
   BinaryMinMaxCurvatureFlow.json
   SegmentParticles.json
+  SAM2Segment3D.json
+  SAM3Segment3D.json
   UnsharpMask.json
   AddConstant.json
   CylindricalCrop.json
@@ -773,6 +668,21 @@ foreach(file ${json_files})
     "${tomviz_BINARY_DIR}/share/tomviz/scripts/${file}")
   install(FILES "python/${file}"
     DESTINATION "${tomviz_data_install_dir}/scripts"
+    COMPONENT "Scripts")
+endforeach()
+set(environment_files
+  sam2-tomviz-cpu.yml
+  sam2-tomviz-cuda.yml
+  sam3-tomviz-cuda.yml
+  )
+file(MAKE_DIRECTORY "${tomviz_BINARY_DIR}/share/tomviz/environments")
+foreach(file ${environment_files})
+  list(APPEND SOURCES "python/environments/${file}")
+  execute_process(COMMAND ${CMAKE_COMMAND} -E ${script_cmd}
+    "${tomviz_SOURCE_DIR}/tomviz/python/environments/${file}"
+    "${tomviz_BINARY_DIR}/share/tomviz/environments/${file}")
+  install(FILES "python/environments/${file}"
+    DESTINATION "${tomviz_data_install_dir}/environments"
     COMPONENT "Scripts")
 endforeach()
 foreach(file ${resource_files})
@@ -942,7 +852,7 @@ if(NOT WIN32)
   set_target_properties(tomvizlib PROPERTIES OUTPUT_NAME tomviz)
 endif()
 set_target_properties(tomvizlib PROPERTIES AUTOUIC_SEARCH_PATHS
-    "${CMAKE_CURRENT_SOURCE_DIR}/legacy;${CMAKE_CURRENT_SOURCE_DIR}/legacy/modules;${CMAKE_CURRENT_SOURCE_DIR}/legacy/operators;${CMAKE_CURRENT_SOURCE_DIR}/pipeline;${CMAKE_CURRENT_SOURCE_DIR}/pipeline/sinks")
+    "${CMAKE_CURRENT_SOURCE_DIR}/pipeline;${CMAKE_CURRENT_SOURCE_DIR}/pipeline/sinks")
 
 # Need to set this property so that in stack traces, tomviz symbols
 # can be resolved.

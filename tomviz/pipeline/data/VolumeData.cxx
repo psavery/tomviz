@@ -11,6 +11,7 @@
 #include <vtkDoubleArray.h>
 #include <vtkFieldData.h>
 #include <vtkTypeInt32Array.h>
+#include <vtkTypeInt8Array.h>
 #include <vtkImageData.h>
 #include <vtkPointData.h>
 #include <vtkStringArray.h>
@@ -23,7 +24,10 @@
 #include <vtkSMTransferFunctionManager.h>
 #include <vtkSMTransferFunctionProxy.h>
 
+#include <QCoreApplication>
 #include <QJsonArray>
+#include <QMetaObject>
+#include <QThread>
 
 #include <array>
 
@@ -69,9 +73,31 @@ VolumeData::~VolumeData()
   // unique, counter-based name. The proxy manager holds its own reference,
   // so dropping our vtkSmartPointer isn't enough — without this unregister
   // the proxy lives until app exit and every load/reset cycle adds another.
-  if (m_colorMap) {
+  if (!m_colorMap) {
+    return;
+  }
+
+  // UnRegisterProxy mutates the ParaView session proxy manager, which is
+  // not thread-safe and must run on the GUI thread. A VolumeData is a port
+  // payload whose lifetime is governed by shared_ptr refcounting, and the
+  // pipeline executor can drop the last ref on the worker thread (inflight
+  // eviction, clearHandle, the OnDisk deleter) — destroying us there.
+  // Touching the proxy manager off the GUI thread races
+  // pqServerManagerObserver / pqServerManagerModel and crashes in
+  // onProxyRegistered. Marshal the unregister to the GUI thread; the proxy
+  // manager's own reference keeps the captured proxy alive until the queued
+  // call runs.
+  vtkSmartPointer<vtkSMProxy> proxy = m_colorMap;
+  auto unregister = [proxy]() {
     vtkNew<vtkSMParaViewPipelineController> controller;
-    controller->UnRegisterProxy(m_colorMap);
+    controller->UnRegisterProxy(proxy);
+  };
+
+  auto* app = QCoreApplication::instance();
+  if (!app || QThread::currentThread() == app->thread()) {
+    unregister();
+  } else {
+    QMetaObject::invokeMethod(app, unregister, Qt::QueuedConnection);
   }
 }
 
@@ -478,16 +504,7 @@ QVector<double> VolumeData::tiltAngles() const
 
 void VolumeData::setTiltAngles(const QVector<double>& angles)
 {
-  if (!m_imageData) {
-    return;
-  }
-  vtkNew<vtkDoubleArray> array;
-  array->SetName("tilt_angles");
-  array->SetNumberOfTuples(angles.size());
-  for (int i = 0; i < angles.size(); ++i) {
-    array->SetValue(i, angles[i]);
-  }
-  m_imageData->GetFieldData()->AddArray(array);
+  setTiltAngles(m_imageData, angles);
 }
 
 bool VolumeData::hasTiltAngles(vtkImageData* image)
@@ -516,6 +533,21 @@ QVector<double> VolumeData::getTiltAngles(vtkImageData* image)
   return result;
 }
 
+void VolumeData::setTiltAngles(vtkImageData* image,
+                               const QVector<double>& angles)
+{
+  if (!image) {
+    return;
+  }
+  vtkNew<vtkDoubleArray> array;
+  array->SetName("tilt_angles");
+  array->SetNumberOfTuples(angles.size());
+  for (int i = 0; i < angles.size(); ++i) {
+    array->SetValue(i, angles[i]);
+  }
+  image->GetFieldData()->AddArray(array);
+}
+
 bool VolumeData::hasScanIds() const
 {
   return hasScanIds(m_imageData);
@@ -528,16 +560,7 @@ QVector<int> VolumeData::scanIds() const
 
 void VolumeData::setScanIds(const QVector<int>& ids)
 {
-  if (!m_imageData) {
-    return;
-  }
-  vtkNew<vtkTypeInt32Array> array;
-  array->SetName("scan_ids");
-  array->SetNumberOfTuples(ids.size());
-  for (int i = 0; i < ids.size(); ++i) {
-    array->SetValue(i, ids[i]);
-  }
-  m_imageData->GetFieldData()->AddArray(array);
+  setScanIds(m_imageData, ids);
 }
 
 bool VolumeData::hasScanIds(vtkImageData* image)
@@ -564,6 +587,126 @@ QVector<int> VolumeData::getScanIds(vtkImageData* image)
     result[i] = static_cast<int>(arr->GetComponent(i, 0));
   }
   return result;
+}
+
+void VolumeData::setScanIds(vtkImageData* image, const QVector<int>& ids)
+{
+  if (!image) {
+    return;
+  }
+  vtkNew<vtkTypeInt32Array> array;
+  array->SetName("scan_ids");
+  array->SetNumberOfTuples(ids.size());
+  for (int i = 0; i < ids.size(); ++i) {
+    array->SetValue(i, ids[i]);
+  }
+  image->GetFieldData()->AddArray(array);
+}
+
+void VolumeData::clearScanIds(vtkImageData* image)
+{
+  if (image && image->GetFieldData()) {
+    image->GetFieldData()->RemoveArray("scan_ids");
+  }
+}
+
+bool VolumeData::wasSubsampled(vtkImageData* image)
+{
+  if (!image || !image->GetFieldData()) {
+    return false;
+  }
+  auto* arr = image->GetFieldData()->GetArray("was_subsampled");
+  return arr != nullptr && arr->GetNumberOfTuples() > 0 &&
+         arr->GetComponent(0, 0) != 0;
+}
+
+void VolumeData::setWasSubsampled(vtkImageData* image, bool b)
+{
+  if (!image) {
+    return;
+  }
+  vtkNew<vtkTypeInt8Array> array;
+  array->SetName("was_subsampled");
+  array->SetNumberOfTuples(1);
+  array->SetValue(0, b ? 1 : 0);
+  image->GetFieldData()->AddArray(array);
+}
+
+void VolumeData::subsampleStrides(vtkImageData* image, int strides[3])
+{
+  for (int i = 0; i < 3; ++i) {
+    strides[i] = 1;
+  }
+  if (!image || !image->GetFieldData()) {
+    return;
+  }
+  auto* arr = image->GetFieldData()->GetArray("subsample_strides");
+  if (arr && arr->GetNumberOfTuples() >= 3) {
+    for (int i = 0; i < 3; ++i) {
+      strides[i] = static_cast<int>(arr->GetComponent(i, 0));
+    }
+  }
+}
+
+void VolumeData::setSubsampleStrides(vtkImageData* image, int strides[3])
+{
+  if (!image) {
+    return;
+  }
+  vtkNew<vtkTypeInt32Array> array;
+  array->SetName("subsample_strides");
+  array->SetNumberOfTuples(3);
+  for (int i = 0; i < 3; ++i) {
+    array->SetValue(i, strides[i]);
+  }
+  image->GetFieldData()->AddArray(array);
+}
+
+void VolumeData::subsampleVolumeBounds(vtkImageData* image, int bounds[6])
+{
+  for (int i = 0; i < 6; ++i) {
+    bounds[i] = -1;
+  }
+  if (!image || !image->GetFieldData()) {
+    return;
+  }
+  auto* arr = image->GetFieldData()->GetArray("subsample_volume_bounds");
+  if (arr && arr->GetNumberOfTuples() >= 6) {
+    for (int i = 0; i < 6; ++i) {
+      bounds[i] = static_cast<int>(arr->GetComponent(i, 0));
+    }
+  }
+}
+
+void VolumeData::setSubsampleVolumeBounds(vtkImageData* image, int bounds[6])
+{
+  if (!image) {
+    return;
+  }
+  vtkNew<vtkTypeInt32Array> array;
+  array->SetName("subsample_volume_bounds");
+  array->SetNumberOfTuples(6);
+  for (int i = 0; i < 6; ++i) {
+    array->SetValue(i, bounds[i]);
+  }
+  image->GetFieldData()->AddArray(array);
+}
+
+void VolumeData::setType(vtkImageData* image, DataType type)
+{
+  if (!image) {
+    return;
+  }
+  vtkNew<vtkTypeInt8Array> array;
+  array->SetName("tomviz_data_source_type");
+  array->SetNumberOfTuples(1);
+  array->SetValue(0, static_cast<int>(type));
+  image->GetFieldData()->AddArray(array);
+
+  if (type != DataType::TiltSeries) {
+    // Mirror legacy DataSource: a non-tilt-series type has no tilt angles.
+    image->GetFieldData()->RemoveArray("tilt_angles");
+  }
 }
 
 void VolumeData::setTimeSteps(const QList<TimeStep>& steps)

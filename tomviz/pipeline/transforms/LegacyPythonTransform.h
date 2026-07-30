@@ -35,6 +35,14 @@ public:
   void setJSONDescription(const QString& json);
   QString jsonDescription() const;
 
+  /// Replace the description on a node that already exists, as the user
+  /// does from the editor's Definition tab. Re-derives parameters and
+  /// flags but creates no ports, and leaves the label and executor
+  /// alone — the editor's own Name field and Execution tab own those,
+  /// and are applied alongside this. Returns the names of parameters
+  /// whose values could not be carried over.
+  QStringList reconfigureDescription(const QString& json);
+
   /// Set the Python script source code
   void setScript(const QString& script);
   QString scriptSource() const;
@@ -62,7 +70,12 @@ protected:
     const QMap<QString, PortData>& inputs) override;
 
 private:
-  void parseJSON();
+  /// @a createPorts and @a applyLabel are false when re-parsing a
+  /// description on a node that already exists: port creation here is
+  /// purely additive (it would duplicate the `results` and `dataset`
+  /// ports), and the label belongs to the editor's Name field once the
+  /// node is live.
+  void parseJSON(bool createPorts = true, bool applyLabel = true);
 
   QString m_jsonDescription;
   QString m_script;

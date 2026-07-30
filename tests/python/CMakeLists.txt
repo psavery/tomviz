@@ -1,6 +1,8 @@
 include(PythonTests.cmake)
 
 add_python_test(operator)
+add_python_test(sam2_operator)
+add_python_test(sam3_operator)
 add_python_test(pystackreg)
 add_python_test(xcorr)
 add_python_test(shift_rotation_center)

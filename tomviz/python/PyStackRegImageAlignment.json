@@ -2,6 +2,9 @@
   "name": "PyStackReg",
   "label": "Auto Tilt Image Align (PyStackReg)",
   "description": "Perform image alignment using PyStackReg.",
+  "help": {
+    "url": "alignment.html#pystackreg-image-alignment"
+  },
   "apply_to_each_array": false,
   "parameters": [
     {

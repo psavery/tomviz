@@ -15,8 +15,6 @@ class vtkImageData;
 
 namespace tomviz {
 
-class DataSource;
-
 /**
  * Format used by the FXI beamline at BNL.
  */
@@ -26,10 +24,6 @@ class FxiFormat
 public:
   // This will only read /exchange/data, nothing else
   bool read(const std::string& fileName, vtkImageData* data,
-            const QVariantMap& options = QVariantMap());
-  // This will read the data as well as dark, white, and the
-  // theta angles, and it will swap x and z for tilt series.
-  bool read(const std::string& fileName, DataSource* source,
             const QVariantMap& options = QVariantMap());
   // Read everything into an HDF5ReadResult (no DataSource needed)
   HDF5ReadResult readAll(const std::string& fileName,

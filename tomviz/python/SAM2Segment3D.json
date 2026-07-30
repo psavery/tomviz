@@ -1,0 +1,101 @@
+{
+  "name" : "SAM2Segment3D",
+  "label" : "SAM 2 Segmentation (3D)",
+  "description" : "Segment a 3D volume with Meta's Segment Anything Model 2 (SAM 2). The Z-axis is treated as the video time axis: a seed prompt on one slice (a clicked point by default, or an automatic Otsu mask) is propagated through the volume, producing a uint8 label map (0 = background, 1 = foreground). Click the slice image above to set the seed point. This operator requires an external conda environment providing sam-2 and tomviz-pipeline; select it in the Execution tab. See the Machine Learning Segmentation documentation page for setup instructions, including model checkpoint download.",
+  "externalCompatible" : true,
+  "externalOnly" : true,
+  "outputType" : "LabelMap",
+  "widget" : "SAM2SeedWidget",
+  "help" : {
+    "url" : "ml_segmentation.html#sam-2-segmentation-3d"
+  },
+  "parameters" : [
+    {
+      "name" : "seed",
+      "label" : "Seed (voxel; -1 = center / middle slice)",
+      "type" : "int",
+      "default" : [-1, -1, -1]
+    },
+    {
+      "name" : "prompt_mode",
+      "label" : "Prompt Mode",
+      "type" : "enumeration",
+      "default" : 0,
+      "options" : [
+        {"Point (click)" : 0},
+        {"Auto Mask (Otsu)" : 1}
+      ]
+    },
+    {
+      "name" : "invert_contrast",
+      "label" : "Invert Contrast (Auto Mask only)",
+      "type" : "bool",
+      "default" : false
+    },
+    {
+      "name" : "z_axis",
+      "label" : "Z Axis (numpy axis to treat as Z)",
+      "type" : "enumeration",
+      "default" : 0,
+      "options" : [
+        {"0 (first)" : 0},
+        {"1 (middle)" : 1},
+        {"2 (last)" : 2}
+      ]
+    },
+    {
+      "name" : "propagate",
+      "label" : "Propagation Direction",
+      "type" : "enumeration",
+      "default" : 0,
+      "options" : [
+        {"Both" : 0},
+        {"Forward" : 1},
+        {"Backward" : 2}
+      ]
+    },
+    {
+      "name" : "model_size",
+      "label" : "Model Size",
+      "type" : "enumeration",
+      "default" : 2,
+      "options" : [
+        {"Tiny" : 0},
+        {"Small" : 1},
+        {"Base+" : 2},
+        {"Large" : 3}
+      ]
+    },
+    {
+      "name" : "device",
+      "label" : "Device",
+      "type" : "enumeration",
+      "default" : 0,
+      "options" : [
+        {"Auto" : 0},
+        {"GPU" : 1},
+        {"CPU" : 2}
+      ]
+    },
+    {
+      "name" : "checkpoint_dir",
+      "label" : "Checkpoint Directory (blank = ~/.tomviz/sam2/checkpoints)",
+      "type" : "string",
+      "default" : ""
+    },
+    {
+      "name" : "trim_fraction",
+      "label" : "Trim Mask Below (fraction of bright value; 0 = off)",
+      "type" : "double",
+      "default" : 0.1,
+      "minimum" : 0.0,
+      "maximum" : 1.0
+    },
+    {
+      "name" : "keep_seed_component",
+      "label" : "Keep Only the Seed-Connected Component",
+      "type" : "bool",
+      "default" : true
+    }
+  ]
+}

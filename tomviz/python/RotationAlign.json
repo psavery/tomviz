@@ -35,7 +35,7 @@
     }
   ],
   "help": {
-    "url": "alignment/#tilt-axis-alignment"
+    "url": "alignment.html#tilt-axis-alignment"
   },
   "inputType": "TiltSeries",
   "outputType": "TiltSeries"

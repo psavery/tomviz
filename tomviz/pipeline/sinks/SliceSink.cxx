@@ -196,18 +196,14 @@ bool SliceSink::consume(const QMap<QString, PortData>& inputs)
     // Apply thick slicing
     m_widget->SetSliceThickness(m_sliceThickness);
 
-    // SetEnabled() touches the renderer and Qt GL state; consume() runs
-    // on the pipeline worker thread, so defer to the GUI thread.
+    // SetEnabled() touches the renderer and Qt GL state. consume() runs
+    // on the GUI thread (consumeOnGuiThread()), so apply directly.
     m_dataReceived = true;
-    QMetaObject::invokeMethod(this, [this]() {
-      if (m_widget) {
-        m_widget->SetEnabled(visibility() ? 1 : 0);
-        if (visibility()) {
-          m_widget->SetArrowVisibility(m_showArrow ? 1 : 0);
-          m_widget->SetInteraction(m_showArrow ? 1 : 0);
-        }
-      }
-    }, Qt::QueuedConnection);
+    m_widget->SetEnabled(visibility() ? 1 : 0);
+    if (visibility()) {
+      m_widget->SetArrowVisibility(m_showArrow ? 1 : 0);
+      m_widget->SetInteraction(m_showArrow ? 1 : 0);
+    }
   } else {
     // No widget yet (no view initialized) — just store dimensions for later
     if (m_slice < 0 && isOrtho()) {

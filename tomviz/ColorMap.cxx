@@ -71,26 +71,34 @@ QJsonObject buildSegmentationPreset(vtkDataArray* scalars)
       r = c; g = 0; b = x;
     }
 
-    // Anchor the first and last node positions at their label values;
-    // shift every interior node 0.25 above its label value. With Step
-    // interpolation this seats each integer label squarely inside its
-    // step instead of on a boundary, where rounding can otherwise reuse
-    // one color and skip another.
-    bool anchor = (idx == 0 || idx == lastIdx);
-    double nodeValue = anchor ? val : val + 0.25;
-    colors.append(nodeValue);
-    colors.append(r + m);
-    colors.append(g + m);
-    colors.append(b + m);
+    // Two nodes per label at val -/+ 0.25 with the same color give each
+    // integer label its own constant-color band under plain RGB
+    // interpolation. Do not use the Step color space here: VTK places
+    // its step transitions near segment midpoints, not at the nodes, so
+    // consecutive labels can land inside one step and share a color.
+    // The ramps between bands sit at non-integer values no label
+    // occupies, and the 0.5 minimum node gap keeps the GPU lookup
+    // texture size estimate small. The outermost edges sit exactly at
+    // the data min/max so a rescale to the data range (e.g. the user's
+    // "Reset data range") is an identity and cannot shift the bands.
+    double lowOffset = (idx == 0) ? 0.0 : -0.25;
+    double highOffset = (idx == lastIdx) ? 0.0 : 0.25;
+    for (double offset : { lowOffset, highOffset }) {
+      colors.append(val + offset);
+      colors.append(r + m);
+      colors.append(g + m);
+      colors.append(b + m);
+    }
     ++idx;
   }
 
   return QJsonObject{ { "name", "Segmentation" },
-                      { "colorSpace", "Step" },
+                      { "colorSpace", "RGB" },
                       { "colors", colors } };
 }
 
-void applyPresetToProxy(const QJsonObject& preset, vtkSMProxy* proxy)
+void applyPresetToProxy(const QJsonObject& preset, vtkSMProxy* proxy,
+                        bool rescaleToCurrentRange)
 {
   if (!proxy || preset.isEmpty()) {
     return;
@@ -108,7 +116,8 @@ void applyPresetToProxy(const QJsonObject& preset, vtkSMProxy* proxy)
   std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
   reader->parse(json.data(), json.data() + json.size(), &value, &errors);
 
-  vtkSMTransferFunctionProxy::ApplyPreset(proxy, value, true);
+  vtkSMTransferFunctionProxy::ApplyPreset(proxy, value,
+                                          rescaleToCurrentRange);
 }
 
 ColorMap::ColorMap()

@@ -17,9 +17,7 @@ class vtkSMViewProxy;
 
 namespace tomviz {
 
-class DataSource;
 class PreviousImageViewerSettings;
-class SliceViewDialog;
 
 namespace pipeline {
 class SliceSink;
@@ -55,14 +53,9 @@ private slots:
   void setShowOrientationAxes(bool show);
   void setImageViewerMode(bool b);
 
-  void showDarkWhiteData();
-
 private:
   void setScaleLegendStyle(ScaleLegendStyle);
   void setScaleLegendVisibility(bool);
-
-  void updateDataSource(DataSource* s);
-  void updateDataSourceEnableStates();
 
   void render();
 
@@ -75,12 +68,9 @@ private:
   QPointer<QAction> m_showCenterAxesAction;
   QPointer<QAction> m_showOrientationAxesAction;
   QPointer<QAction> m_imageViewerModeAction;
-  QPointer<QAction> m_showDarkWhiteDataAction;
 
   QScopedPointer<PreviousImageViewerSettings> m_previousImageViewerSettings;
-  QScopedPointer<SliceViewDialog> m_sliceViewDialog;
 
-  DataSource* m_dataSource = nullptr;
   vtkSMViewProxy* m_view;
   unsigned long m_viewObserverId;
   bool m_imageViewerMode = false;

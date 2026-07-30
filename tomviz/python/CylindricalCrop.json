@@ -2,6 +2,9 @@
   "name": "CylindricalCrop",
   "label": "Cylindrical Crop",
   "description": "Crop a volume to a cylindrical region. Voxels outside the cylinder are set to a fill value. The cylinder axis can be oriented arbitrarily.",
+  "help": {
+    "url": "operators_catalog.html#cylindrical-crop"
+  },
   "widget": "CylindricalCropWidget",
   "parameters": [
     {

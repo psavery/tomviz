@@ -32,11 +32,27 @@ public:
   /// custom widget needs to use it (e.g. for running test Python code).
   virtual void setScript(const QString& script) { m_script = script; }
 
+  /// The node's JSON description as it currently stands in the editor's
+  /// Definition tab — which is not necessarily the one the node is
+  /// running, since the user may be part-way through editing it.
+  ///
+  /// Called once at construction and again on every edit that changes
+  /// the parameter declarations. Subclasses that build any of their UI
+  /// from the description (e.g. by embedding a NodePropertiesWidget
+  /// alongside their bespoke controls) should override this and
+  /// re-render, so descriptor edits are reflected the same way they are
+  /// in the auto-generated form. The default just stores it.
+  virtual void setJSONDescription(const QString& json)
+  {
+    m_jsonDescription = json;
+  }
+
   /// Called when the operator is applied (e.g. to persist settings).
   virtual void writeSettings() {}
 
 protected:
   QString m_script;
+  QString m_jsonDescription;
 };
 
 } // namespace pipeline

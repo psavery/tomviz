@@ -2,6 +2,9 @@
   "name": "FourierShellCorrelation",
   "label": "Fourier Shell Correlation",
   "description": "",
+  "help": {
+    "url": "analysis.html#fourier-shell-correlation-fsc"
+  },
   "externalCompatible": false,
   "apply_to_each_array": false,
   "parameters": [

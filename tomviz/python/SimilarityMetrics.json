@@ -3,6 +3,9 @@
   "name": "SimilarityMetrics",
   "label": "Similarity Metrics",
   "description": "Compute similarity metrics between the current dataset and a reference dataset.",
+  "help": {
+    "url": "operators_catalog.html#similarity-metrics"
+  },
   "inputs": [
     {"name": "dataset", "type": "ImageData"},
     {"name": "reference_dataset", "type": "ImageData"}

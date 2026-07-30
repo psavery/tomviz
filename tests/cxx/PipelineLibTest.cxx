@@ -18,7 +18,11 @@
 #include "ThreadedExecutor.h"
 #include "TransformNode.h"
 
+#include "EmdFormat.h"
+#include "PipelineSettings.h"
 #include "PipelineStateIO.h"
+#include "PortDataWriter.h"
+#include "SaveDataDialog.h"
 #include "SinkGroupNode.h"
 #include "Tvh5Format.h"
 #include "data/VolumeData.h"
@@ -41,15 +45,18 @@
 #include "sources/ReaderSourceNode.h"
 #include "transforms/ThresholdTransform.h"
 #include "transforms/LegacyPythonTransform.h"
+#include "ExternalNodeExecutor.h"
 #include "transforms/PythonTransform.h"
 #include "PipelineStripWidget.h"
 
 #include <QApplication>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSignalSpy>
+#include <QTemporaryDir>
 #include <QTemporaryFile>
 #include <QTextStream>
 
@@ -704,6 +711,133 @@ TEST_F(PipelineLibTest, OnDiskStateFileRoundTrip)
   ASSERT_TRUE(loadedPort);
   EXPECT_TRUE(loadedPort->isPersistent());
   EXPECT_EQ(loadedPort->persistenceMode(), PersistenceMode::OnDisk);
+}
+
+TEST_F(PipelineLibTest, InMemoryStateFileRoundTripUnderOnDiskDefault)
+{
+  // "persistent: true" with no persistenceMode key means InMemory, but
+  // a freshly-constructed transform port carries the application-wide
+  // default. Loading must reset the medium to InMemory instead of
+  // keeping the construction default (regression: ports saved as
+  // "Persist in Memory" came back as "Persist on Disk"). Also verify
+  // an explicitly transient port survives the same trip.
+  auto& settings = PipelineSettings::instance();
+  auto previousDefault = settings.transformPersistenceDefault();
+  settings.setTransformPersistenceDefault(
+    TransformPersistenceDefault::OnDisk);
+
+  auto* source = new SphereSource();
+  source->setDimensions(4, 4, 4);
+  pipeline->addNode(source);
+  auto* inMemory = new ThresholdTransform();
+  inMemory->setLabel("inMemory");
+  pipeline->addNode(inMemory);
+  auto* transient = new ThresholdTransform();
+  transient->setLabel("transient");
+  pipeline->addNode(transient);
+
+  auto* inMemoryPort = inMemory->outputPort("mask");
+  ASSERT_TRUE(inMemoryPort->isPersistent());
+  ASSERT_EQ(inMemoryPort->persistenceMode(), PersistenceMode::OnDisk);
+  inMemoryPort->setPersistenceMode(PersistenceMode::InMemory);
+  transient->outputPort("mask")->setPersistent(false);
+
+  QJsonObject json;
+  ASSERT_TRUE(PipelineStateIO::save(pipeline, json));
+
+  auto newPipeline = std::make_unique<Pipeline>();
+  ASSERT_TRUE(PipelineStateIO::load(newPipeline.get(), json));
+  OutputPort* loadedInMemory = nullptr;
+  OutputPort* loadedTransient = nullptr;
+  for (auto* node : newPipeline->nodes()) {
+    if (node->label() == QLatin1String("inMemory")) {
+      loadedInMemory = node->outputPort("mask");
+    } else if (node->label() == QLatin1String("transient")) {
+      loadedTransient = node->outputPort("mask");
+    }
+  }
+  ASSERT_TRUE(loadedInMemory);
+  ASSERT_TRUE(loadedTransient);
+  EXPECT_TRUE(loadedInMemory->isPersistent());
+  EXPECT_EQ(loadedInMemory->persistenceMode(), PersistenceMode::InMemory);
+  EXPECT_FALSE(loadedTransient->isPersistent());
+
+  settings.setTransformPersistenceDefault(previousDefault);
+}
+
+TEST_F(PipelineLibTest, PersistenceChangeSignals)
+{
+  // Policy switches must emit persistenceChanged, and residency moves
+  // performed by the reconcile (evict, reload, drop) must keep
+  // dataLocationChanged accurate so UI badges track the real state.
+  auto* source = new SphereSource();
+  source->setDimensions(4, 4, 4);
+  pipeline->addNode(source);
+  auto* port = source->outputPort("volume"); // persistent InMemory
+  ASSERT_TRUE(source->execute());
+  ASSERT_EQ(port->dataLocation(), DataLocation::InMemory);
+
+  int persistenceChanges = 0;
+  QObject::connect(port, &OutputPort::persistenceChanged, port,
+                   [&persistenceChanges]() { ++persistenceChanges; });
+  QList<DataLocation> locations;
+  QObject::connect(
+    port, &OutputPort::dataLocationChanged, port,
+    [&locations](DataLocation loc) { locations.append(loc); });
+
+  // InMemory -> OnDisk: the port unpins, the deleter evicts to disk.
+  port->setPersistenceMode(PersistenceMode::OnDisk);
+  EXPECT_EQ(persistenceChanges, 1);
+  ASSERT_FALSE(locations.isEmpty());
+  EXPECT_EQ(locations.last(), DataLocation::OnDisk);
+  EXPECT_EQ(port->dataLocation(), DataLocation::OnDisk);
+
+  // OnDisk -> InMemory: reloads from the cache file and pins.
+  locations.clear();
+  port->setPersistenceMode(PersistenceMode::InMemory);
+  EXPECT_EQ(persistenceChanges, 2);
+  ASSERT_FALSE(locations.isEmpty());
+  EXPECT_EQ(locations.last(), DataLocation::InMemory);
+  EXPECT_EQ(port->dataLocation(), DataLocation::InMemory);
+
+  // Persistent -> transient with no other holder: the data drops.
+  locations.clear();
+  port->setPersistent(false);
+  EXPECT_EQ(persistenceChanges, 3);
+  ASSERT_FALSE(locations.isEmpty());
+  EXPECT_EQ(locations.last(), DataLocation::None);
+  EXPECT_FALSE(port->hasData());
+
+  // Setting the same values again is a no-op: no spurious signals.
+  port->setPersistent(false);
+  port->setPersistenceMode(PersistenceMode::InMemory);
+  EXPECT_EQ(persistenceChanges, 3);
+}
+
+TEST_F(PipelineLibTest, TransientDropEmitsDataLocationNone)
+{
+  // When the last consumer of a transient port's payload drops its
+  // handle, the universal deleter must report the payload as gone so
+  // residency cues (RAM badge) don't keep showing freed data.
+  auto* source = new SphereSource();
+  source->setDimensions(4, 4, 4);
+  pipeline->addNode(source);
+  auto* port = source->outputPort("volume");
+  port->setPersistent(false);
+  ASSERT_TRUE(source->execute());
+
+  QList<DataLocation> locations;
+  QObject::connect(
+    port, &OutputPort::dataLocationChanged, port,
+    [&locations](DataLocation loc) { locations.append(loc); });
+
+  // Executor-style handoff: take the strong ref out of the port, then
+  // drop it as the last holder.
+  { auto handle = port->take(); }
+
+  ASSERT_FALSE(locations.isEmpty());
+  EXPECT_EQ(locations.last(), DataLocation::None);
+  EXPECT_FALSE(port->hasData());
 }
 
 TEST_F(PipelineLibTest, FanInMultipleInputs)
@@ -1636,6 +1770,56 @@ TEST_F(PipelinePythonTest, PythonTransformV2RejectsSourceShape)
   auto* transform = new PythonTransform();
   transform->setJSONDescription(jsonStr);
   EXPECT_EQ(transform->inputPorts().size(), 0);
+  delete transform;
+}
+
+TEST_F(PipelinePythonTest, PythonTransformV2ExternalOnlyInstallsExecutor)
+{
+  // An externalOnly description defaults freshly created nodes to the
+  // External executor (with an empty env path for the user to fill in).
+  QString jsonStr = R"({
+    "schemaVersion": 2,
+    "name": "NeedsTorch",
+    "externalOnly": true,
+    "inputs":  [{"name": "in",  "type": "ImageData"}],
+    "outputs": [{"name": "out", "type": "ImageData"}]
+  })";
+  auto* transform = new PythonTransform();
+  transform->setJSONDescription(jsonStr);
+  auto* executor =
+    qobject_cast<ExternalNodeExecutor*>(transform->nodeExecutor());
+  ASSERT_NE(executor, nullptr);
+  EXPECT_TRUE(executor->envPath().isEmpty());
+  delete transform;
+
+  // Without the flag (and without tomviz_pipeline_env) no executor is
+  // installed.
+  QString plainJson = R"({
+    "schemaVersion": 2,
+    "name": "Plain",
+    "inputs":  [{"name": "in",  "type": "ImageData"}],
+    "outputs": [{"name": "out", "type": "ImageData"}]
+  })";
+  auto* plain = new PythonTransform();
+  plain->setJSONDescription(plainJson);
+  EXPECT_EQ(plain->nodeExecutor(), nullptr);
+  delete plain;
+}
+
+TEST_F(PipelinePythonTest, LegacyPythonTransformExternalOnlyInstallsExecutor)
+{
+  // Same behavior for schema-v1 descriptions (e.g. SAM2Segment3D.json).
+  QString jsonStr = R"({
+    "name": "NeedsTorchLegacy",
+    "label": "Needs Torch",
+    "externalOnly": true
+  })";
+  auto* transform = new LegacyPythonTransform();
+  transform->setJSONDescription(jsonStr);
+  auto* executor =
+    qobject_cast<ExternalNodeExecutor*>(transform->nodeExecutor());
+  ASSERT_NE(executor, nullptr);
+  EXPECT_TRUE(executor->envPath().isEmpty());
   delete transform;
 }
 
@@ -3607,6 +3791,440 @@ TEST_F(PipelineLibTest, SinkInputPortTypes)
   // MoleculeSink accepts Molecule data
   MoleculeSink mol;
   EXPECT_NE(mol.inputPort("molecule"), nullptr);
+}
+
+// --- Save Data (batch output-port export) tests ---
+
+namespace {
+
+using tomviz::PortDataWriter::formatById;
+
+VolumeDataPtr makeVolume(const QStringList& arrayNames)
+{
+  vtkNew<vtkImageData> image;
+  image->SetDimensions(4, 4, 4);
+  for (const auto& name : arrayNames) {
+    vtkNew<vtkFloatArray> array;
+    array->SetName(name.toUtf8().data());
+    array->SetNumberOfComponents(1);
+    array->SetNumberOfTuples(4 * 4 * 4);
+    array->FillValue(1.0f);
+    image->GetPointData()->AddArray(array);
+  }
+  if (!arrayNames.isEmpty()) {
+    image->GetPointData()->SetActiveScalars(arrayNames.first().toUtf8().data());
+  }
+  return std::make_shared<VolumeData>(image);
+}
+
+void setVolumeData(OutputPort* port, const QStringList& arrayNames)
+{
+  port->setData(
+    PortData(std::any(makeVolume(arrayNames)), PortType::ImageData));
+}
+
+// EMD holds every array of a volume in one file.
+QHash<PortType, tomviz::PortFormat> multiArrayFormats()
+{
+  return { { PortType::ImageData, formatById(PortType::ImageData, "emd") },
+           { PortType::Table, formatById(PortType::Table, "csv") },
+           { PortType::Molecule, formatById(PortType::Molecule, "xyz") } };
+}
+
+// TIFF keeps only the active scalars, so volumes split across files.
+QHash<PortType, tomviz::PortFormat> singleArrayFormats()
+{
+  auto formats = multiArrayFormats();
+  formats[PortType::ImageData] = formatById(PortType::ImageData, "tiff");
+  return formats;
+}
+
+QHash<OutputPort*, QStringList> collectArrayNames(
+  const QList<OutputPort*>& ports)
+{
+  QHash<OutputPort*, QStringList> names;
+  for (auto* port : ports) {
+    auto handle = port->materialize();
+    names.insert(port, handle ? tomviz::PortDataWriter::arrayNames(*handle)
+                              : QStringList());
+  }
+  return names;
+}
+
+QStringList fileNamesOf(const QList<tomviz::SaveDataDialog::PortPlan>& plans)
+{
+  QStringList names;
+  for (const auto& plan : plans) {
+    for (const auto& entry : plan.entries) {
+      names << QFileInfo(entry.path).fileName();
+    }
+  }
+  return names;
+}
+
+QStringList displayNamesOf(
+  const QList<tomviz::SaveDataDialog::PortPlan>& plans)
+{
+  QStringList names;
+  for (const auto& plan : plans) {
+    names << plan.displayName;
+  }
+  return names;
+}
+
+QList<tomviz::SaveDataDialog::Entry> entriesOf(
+  const QList<tomviz::SaveDataDialog::PortPlan>& plans)
+{
+  QList<tomviz::SaveDataDialog::Entry> entries;
+  for (const auto& plan : plans) {
+    entries.append(plan.entries);
+  }
+  return entries;
+}
+
+} // namespace
+
+TEST_F(PipelineLibTest, SaveDataLeafScopeIgnoresSinks)
+{
+  auto* source = new SourceNode();
+  source->setLabel("Source");
+  source->addOutput("volume", PortType::ImageData);
+  pipeline->addNode(source);
+  setVolumeData(source->outputPort("volume"), { "A" });
+
+  auto* transform =
+    new PassthroughTransform(PortType::ImageData, PortType::ImageData);
+  transform->setLabel("Transform");
+  pipeline->addNode(transform);
+  pipeline->createLink(source->outputPort("volume"),
+                       transform->inputPort("in"));
+  setVolumeData(transform->outputPort("out"), { "A" });
+
+  // A sink downstream must not disqualify the transform from being a leaf.
+  auto* sink = new CollectorSink();
+  pipeline->addNode(sink);
+  pipeline->createLink(transform->outputPort("out"), sink->inputPort("in"));
+
+  auto leaves = tomviz::SaveDataDialog::candidatePorts(
+    pipeline, tomviz::SaveDataDialog::Scope::LeafNodes);
+  ASSERT_EQ(leaves.size(), 1);
+  EXPECT_EQ(leaves.first(), transform->outputPort("out"));
+}
+
+TEST_F(PipelineLibTest, SaveDataPersistedScope)
+{
+  auto* source = new SourceNode();
+  source->setLabel("Source");
+  source->addOutput("volume", PortType::ImageData);
+  pipeline->addNode(source);
+  setVolumeData(source->outputPort("volume"), { "A" });
+  source->outputPort("volume")->setPersistent(true);
+
+  auto* transform =
+    new PassthroughTransform(PortType::ImageData, PortType::ImageData);
+  transform->setLabel("Transform");
+  pipeline->addNode(transform);
+  pipeline->createLink(source->outputPort("volume"),
+                       transform->inputPort("in"));
+  // Flip persistence before publishing — reconciling an already-published
+  // port to transient drops the payload.
+  transform->outputPort("out")->setPersistent(false);
+  setVolumeData(transform->outputPort("out"), { "A" });
+
+  auto persisted = tomviz::SaveDataDialog::candidatePorts(
+    pipeline, tomviz::SaveDataDialog::Scope::AllPersisted);
+  ASSERT_EQ(persisted.size(), 1);
+  EXPECT_EQ(persisted.first(), source->outputPort("volume"));
+
+  // The transform is the only leaf, so the two scopes disagree here.
+  auto leaves = tomviz::SaveDataDialog::candidatePorts(
+    pipeline, tomviz::SaveDataDialog::Scope::LeafNodes);
+  ASSERT_EQ(leaves.size(), 1);
+  EXPECT_EQ(leaves.first(), transform->outputPort("out"));
+}
+
+TEST_F(PipelineLibTest, SaveDataNodeScopeSeesOnlyItsOwnPorts)
+{
+  auto* source = new SourceNode();
+  source->setLabel("Source");
+  source->addOutput("volume", PortType::ImageData);
+  pipeline->addNode(source);
+  setVolumeData(source->outputPort("volume"), { "A" });
+
+  auto* transform =
+    new PassthroughTransform(PortType::ImageData, PortType::ImageData);
+  transform->setLabel("Transform");
+  pipeline->addNode(transform);
+  pipeline->createLink(source->outputPort("volume"),
+                       transform->inputPort("in"));
+  setVolumeData(transform->outputPort("out"), { "A" });
+
+  // The pipeline-wide view spans both nodes...
+  EXPECT_EQ(tomviz::SaveDataDialog::candidatePorts(
+              pipeline, tomviz::SaveDataDialog::Scope::AllPersisted)
+              .size(),
+            2);
+
+  // ...while a node-scoped export sees only that node, even though the
+  // node is upstream of another and so is not a leaf.
+  auto sourcePorts = tomviz::SaveDataDialog::candidatePorts(
+    source, tomviz::SaveDataDialog::Scope::AllPersisted);
+  ASSERT_EQ(sourcePorts.size(), 1);
+  EXPECT_EQ(sourcePorts.first(), source->outputPort("volume"));
+
+  // Transient ports stay out of an AllPersisted export.
+  transform->outputPort("out")->setPersistent(false);
+  EXPECT_TRUE(tomviz::SaveDataDialog::candidatePorts(
+                transform, tomviz::SaveDataDialog::Scope::AllPersisted)
+                .isEmpty());
+}
+
+TEST_F(PipelineLibTest, SaveDataPortScopeSeesOnlyThatPort)
+{
+  auto* source = new SourceNode();
+  source->setLabel("Source");
+  source->addOutput("volume", PortType::ImageData);
+  source->addOutput("mask", PortType::ImageData);
+  pipeline->addNode(source);
+  setVolumeData(source->outputPort("volume"), { "A" });
+  setVolumeData(source->outputPort("mask"), { "B" });
+
+  // The node view spans both of its ports...
+  EXPECT_EQ(tomviz::SaveDataDialog::candidatePorts(
+              source, tomviz::SaveDataDialog::Scope::AllPersisted)
+              .size(),
+            2);
+
+  // ...while the port view is just the one.
+  auto ports = tomviz::SaveDataDialog::candidatePorts(
+    source->outputPort("mask"), tomviz::SaveDataDialog::Scope::AllPersisted);
+  ASSERT_EQ(ports.size(), 1);
+  EXPECT_EQ(ports.first(), source->outputPort("mask"));
+
+  auto plans = tomviz::SaveDataDialog::planPorts(
+    ports, collectArrayNames(ports), "/tmp/out", multiArrayFormats());
+  EXPECT_EQ(fileNamesOf(plans), QStringList({ "Source_mask.emd" }));
+
+  // A port with no data has nothing to offer.
+  source->outputPort("mask")->clearData();
+  EXPECT_TRUE(tomviz::SaveDataDialog::candidatePorts(
+                source->outputPort("mask"),
+                tomviz::SaveDataDialog::Scope::AllPersisted)
+                .isEmpty());
+}
+
+TEST_F(PipelineLibTest, SaveDataNodeScopeExcludesSinks)
+{
+  auto* source = new SourceNode();
+  source->setLabel("Source");
+  source->addOutput("volume", PortType::ImageData);
+  pipeline->addNode(source);
+  setVolumeData(source->outputPort("volume"), { "A" });
+
+  auto* sink = new CollectorSink();
+  pipeline->addNode(sink);
+  pipeline->createLink(source->outputPort("volume"), sink->inputPort("in"));
+
+  EXPECT_TRUE(tomviz::SaveDataDialog::candidatePorts(
+                static_cast<Node*>(sink),
+                tomviz::SaveDataDialog::Scope::AllPersisted)
+                .isEmpty());
+}
+
+TEST_F(PipelineLibTest, SaveDataFileNamePlanning)
+{
+  auto* first = new SourceNode();
+  first->setLabel("Recon Volume");
+  first->addOutput("out put", PortType::ImageData);
+  pipeline->addNode(first);
+  setVolumeData(first->outputPort("out put"), { "Scalars_", "Labels/2" });
+
+  // Same label as `first` — both must gain a numeric suffix.
+  auto* second = new SourceNode();
+  second->setLabel("Recon Volume");
+  second->addOutput("out", PortType::ImageData);
+  pipeline->addNode(second);
+  setVolumeData(second->outputPort("out"), { "A" });
+
+  auto ports = tomviz::SaveDataDialog::candidatePorts(
+    pipeline, tomviz::SaveDataDialog::Scope::LeafNodes);
+  ASSERT_EQ(ports.size(), 2);
+
+  // A single-array format splits the two-array port across two files
+  // and shows them braced on one row.
+  auto split = tomviz::SaveDataDialog::planPorts(
+    ports, collectArrayNames(ports), "/tmp/out", singleArrayFormats());
+
+  EXPECT_EQ(fileNamesOf(split),
+            QStringList({ "Recon_Volume_1_out_put_Scalars.tiff",
+                          "Recon_Volume_1_out_put_Labels_2.tiff",
+                          "Recon_Volume_2_out_A.tiff" }));
+  EXPECT_EQ(displayNamesOf(split),
+            QStringList({ "Recon_Volume_1_out_put_{Scalars|Labels_2}.tiff",
+                          "Recon_Volume_2_out_A.tiff" }));
+  EXPECT_EQ(entriesOf(split).first().path,
+            QString("/tmp/out/Recon_Volume_1_out_put_Scalars.tiff"));
+  EXPECT_EQ(entriesOf(split).first().arrayNames,
+            QStringList({ "Scalars_" }));
+
+  // A multi-array format writes one file per port, array name omitted.
+  auto merged = tomviz::SaveDataDialog::planPorts(
+    ports, collectArrayNames(ports), "/tmp/out", multiArrayFormats());
+
+  EXPECT_EQ(fileNamesOf(merged), QStringList({ "Recon_Volume_1_out_put.emd",
+                                               "Recon_Volume_2_out.emd" }));
+  EXPECT_EQ(displayNamesOf(merged), fileNamesOf(merged));
+  EXPECT_EQ(entriesOf(merged).first().arrayNames,
+            QStringList({ "Scalars_", "Labels/2" }));
+}
+
+TEST_F(PipelineLibTest, SaveDataFileNameCollisionsResolved)
+{
+  auto* source = new SourceNode();
+  source->setLabel("Node");
+  source->addOutput("out", PortType::ImageData);
+  pipeline->addNode(source);
+  // Two array names that sanitize onto the same stem.
+  setVolumeData(source->outputPort("out"), { "a b", "a/b" });
+
+  auto ports = tomviz::SaveDataDialog::candidatePorts(
+    pipeline, tomviz::SaveDataDialog::Scope::LeafNodes);
+  auto plans = tomviz::SaveDataDialog::planPorts(
+    ports, collectArrayNames(ports), "/tmp/out", singleArrayFormats());
+
+  EXPECT_EQ(fileNamesOf(plans),
+            QStringList({ "Node_out_a_b.tiff", "Node_out_a_b_2.tiff" }));
+  // The braced row reflects the disambiguated names, not the raw arrays.
+  EXPECT_EQ(displayNamesOf(plans),
+            QStringList({ "Node_out_{a_b|a_b_2}.tiff" }));
+}
+
+TEST_F(PipelineLibTest, SaveDataWritesEveryArrayIntoOneEmd)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+
+  auto* source = new SourceNode();
+  source->setLabel("Sphere");
+  source->addOutput("volume", PortType::ImageData);
+  pipeline->addNode(source);
+  setVolumeData(source->outputPort("volume"), { "A", "B" });
+
+  auto ports = tomviz::SaveDataDialog::candidatePorts(
+    pipeline, tomviz::SaveDataDialog::Scope::LeafNodes);
+  auto entries = entriesOf(tomviz::SaveDataDialog::planPorts(
+    ports, collectArrayNames(ports), dir.path(), multiArrayFormats()));
+  ASSERT_EQ(entries.size(), 1);
+
+  auto handle = entries.first().port->materialize();
+  ASSERT_NE(handle, nullptr);
+  EXPECT_TRUE(tomviz::PortDataWriter::write(*handle, entries.first().arrayNames,
+                                            entries.first().path));
+
+  vtkNew<vtkImageData> readBack;
+  ASSERT_TRUE(
+    tomviz::EmdFormat::read(entries.first().path.toStdString(), readBack));
+  EXPECT_EQ(readBack->GetPointData()->GetNumberOfArrays(), 2);
+  EXPECT_NE(readBack->GetPointData()->GetArray("A"), nullptr);
+  EXPECT_NE(readBack->GetPointData()->GetArray("B"), nullptr);
+}
+
+TEST_F(PipelineLibTest, SaveDataSplitsArraysForSingleArrayFormats)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+
+  auto* source = new SourceNode();
+  source->setLabel("Sphere");
+  source->addOutput("volume", PortType::ImageData);
+  pipeline->addNode(source);
+  setVolumeData(source->outputPort("volume"), { "A", "B" });
+
+  auto ports = tomviz::SaveDataDialog::candidatePorts(
+    pipeline, tomviz::SaveDataDialog::Scope::LeafNodes);
+  // EMD is only used here to confirm the per-array filtering; the split
+  // itself is what a single-array format like TIFF triggers.
+  auto formats = singleArrayFormats();
+  formats[PortType::ImageData].multiArray = false;
+  formats[PortType::ImageData].extension = "emd";
+
+  auto plans = tomviz::SaveDataDialog::planPorts(
+    ports, collectArrayNames(ports), dir.path(), formats);
+  ASSERT_EQ(plans.size(), 1);
+  ASSERT_EQ(plans.first().entries.size(), 2);
+  EXPECT_EQ(plans.first().displayName, QString("Sphere_volume_{A|B}.emd"));
+
+  for (const auto& entry : plans.first().entries) {
+    auto handle = entry.port->materialize();
+    ASSERT_NE(handle, nullptr);
+    EXPECT_TRUE(
+      tomviz::PortDataWriter::write(*handle, entry.arrayNames, entry.path));
+
+    // Each file carries only the array it was named for.
+    vtkNew<vtkImageData> readBack;
+    ASSERT_TRUE(tomviz::EmdFormat::read(entry.path.toStdString(), readBack));
+    EXPECT_EQ(readBack->GetPointData()->GetNumberOfArrays(), 1);
+    EXPECT_NE(
+      readBack->GetPointData()->GetArray(
+        entry.arrayNames.first().toUtf8().data()),
+      nullptr);
+  }
+}
+
+TEST_F(PipelineLibTest, SaveDataWritesTableAndMolecule)
+{
+  QTemporaryDir dir;
+  ASSERT_TRUE(dir.isValid());
+
+  auto* tableSource = new SourceNode();
+  tableSource->setLabel("Stats");
+  tableSource->addOutput("table", PortType::Table);
+  pipeline->addNode(tableSource);
+
+  vtkNew<vtkDoubleArray> column;
+  column->SetName("value");
+  column->InsertNextValue(1.5);
+  column->InsertNextValue(2.5);
+  vtkSmartPointer<vtkTable> table = vtkSmartPointer<vtkTable>::New();
+  table->AddColumn(column);
+  tableSource->outputPort("table")->setData(
+    PortData(std::any(table), PortType::Table));
+
+  auto* moleculeSource = new SourceNode();
+  moleculeSource->setLabel("Atoms");
+  moleculeSource->addOutput("molecule", PortType::Molecule);
+  pipeline->addNode(moleculeSource);
+
+  vtkSmartPointer<vtkMolecule> molecule = vtkSmartPointer<vtkMolecule>::New();
+  molecule->AppendAtom(6, 0.0, 0.0, 0.0);
+  molecule->AppendAtom(8, 1.0, 0.0, 0.0);
+  moleculeSource->outputPort("molecule")->setData(
+    PortData(std::any(molecule), PortType::Molecule));
+
+  auto ports = tomviz::SaveDataDialog::candidatePorts(
+    pipeline, tomviz::SaveDataDialog::Scope::LeafNodes);
+  auto plans = tomviz::SaveDataDialog::planPorts(
+    ports, collectArrayNames(ports), dir.path(), multiArrayFormats());
+  auto entries = entriesOf(plans);
+
+  EXPECT_EQ(fileNamesOf(plans),
+            QStringList({ "Stats_table.csv", "Atoms_molecule.xyz" }));
+
+  for (const auto& entry : entries) {
+    auto handle = entry.port->materialize();
+    ASSERT_NE(handle, nullptr);
+    EXPECT_TRUE(
+      tomviz::PortDataWriter::write(*handle, entry.arrayNames, entry.path));
+    EXPECT_TRUE(QFileInfo::exists(entry.path));
+  }
+
+  QFile csv(entries.first().path);
+  ASSERT_TRUE(csv.open(QIODevice::ReadOnly | QIODevice::Text));
+  EXPECT_EQ(QString(csv.readAll()), QString("value\n1.5\n2.5"));
+
+  QFile xyz(entries.last().path);
+  ASSERT_TRUE(xyz.open(QIODevice::ReadOnly | QIODevice::Text));
+  EXPECT_TRUE(QString(xyz.readAll()).startsWith("2\n"));
 }
 
 int main(int argc, char** argv)

@@ -213,6 +213,12 @@ std::string bundlePythonPath(const std::string& exeDir)
 
 static void InitializePythonEnvironment(int argc, char** argv)
 {
+  // Keep the user site-packages directory (~/.local/lib/pythonX.Y) out of
+  // the embedded interpreter's sys.path. Compiled packages there (e.g. an
+  // h5py built against a different HDF5) can abort the process at import
+  // time. Directories can still be added explicitly via PYTHONPATH.
+  vtksys::SystemTools::PutEnv("PYTHONNOUSERSITE=1");
+
   std::string self_dir, programname;
   if (argc > 0) {
     std::string errMsg;

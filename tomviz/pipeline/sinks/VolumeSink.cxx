@@ -100,7 +100,16 @@ QIcon VolumeSink::icon() const
 
 void VolumeSink::setVisibility(bool visible)
 {
-  m_volume->SetVisibility(visible ? 1 : 0);
+  // Only show the prop once the mapper actually has data. A visible volume
+  // whose mapper has no input makes vtkVolume::RenderVolumetricGeometry()
+  // call Update() on it before its own "no input, return silently" check,
+  // which prints a spurious "Input port 0 ... has 0 connections but is not
+  // optional" error on every render. That window is real: deserialize()
+  // restores visibility at state load, before the (threaded) pipeline has
+  // executed. consume() re-applies visibility() once data arrives.
+  auto* mapper = m_volume->GetMapper();
+  bool hasInput = mapper && mapper->GetDataObjectInput();
+  m_volume->SetVisibility(visible && hasInput ? 1 : 0);
   LegacyModuleSink::setVisibility(visible);
 }
 
@@ -166,35 +175,32 @@ bool VolumeSink::consume(const QMap<QString, PortData>& inputs)
 int VolumeSink::maxTextureSize() const
 {
   // GL queries (and MakeCurrent below) must run on the thread that owns the
-  // render window's GL context - the GUI thread. consume() runs on the pipeline
-  // worker thread, so callOnThread() marshals the query over rather than calling
-  // MakeCurrent here, which would abort with the Qt fatal "Cannot make
-  // QOpenGLContext current in a different thread".
-  return callOnThread(const_cast<VolumeSink*>(this), [this]() -> int {
-    TOMVIZ_ASSERT_GUI_THREAD();
-    if (renderView()) {
-      if (auto* glRW = vtkOpenGLRenderWindow::SafeDownCast(
-            renderView()->GetRenderWindow())) {
-        // GetMaximumTextureSize3D only returns a value when the GL context is
-        // current; consume() usually runs outside a render, so make the window
-        // current first. This avoids over-bricking on high-limit GPUs (e.g.
-        // NVIDIA reports 16384) when we would otherwise hit the fallback.
-        if (glRW->GetNeverRendered() == 0) {
-          glRW->MakeCurrent();
-        }
-        int maxSize = vtkTextureObject::GetMaximumTextureSize3D(glRW);
-        if (maxSize > 0) {
-          return maxSize;
-        }
+  // render window's GL context - the GUI thread. This runs inside consume(),
+  // which VolumeSink runs on the GUI thread (consumeOnGuiThread()), so no
+  // marshaling is needed; the assert pins that contract.
+  TOMVIZ_ASSERT_GUI_THREAD();
+  if (renderView()) {
+    if (auto* glRW = vtkOpenGLRenderWindow::SafeDownCast(
+          renderView()->GetRenderWindow())) {
+      // GetMaximumTextureSize3D only returns a value when the GL context is
+      // current; consume() usually runs outside a render, so make the window
+      // current first. This avoids over-bricking on high-limit GPUs (e.g.
+      // NVIDIA reports 16384) when we would otherwise hit the fallback.
+      if (glRW->GetNeverRendered() == 0) {
+        glRW->MakeCurrent();
+      }
+      int maxSize = vtkTextureObject::GetMaximumTextureSize3D(glRW);
+      if (maxSize > 0) {
+        return maxSize;
       }
     }
-    // No usable GL context yet (e.g. the view has not rendered once). 2048 is
-    // the smallest GL_MAX_3D_TEXTURE_SIZE we expect to encounter, so bricking
-    // to it is always safe for correctness; on a higher-limit GPU it just means
-    // we may brick a volume that would have fit, until the next data update
-    // re-queries the now-current context.
-    return 2048;
-  });
+  }
+  // No usable GL context yet (e.g. the view has not rendered once). 2048 is
+  // the smallest GL_MAX_3D_TEXTURE_SIZE we expect to encounter, so bricking
+  // to it is always safe for correctness; on a higher-limit GPU it just means
+  // we may brick a volume that would have fit, until the next data update
+  // re-queries the now-current context.
+  return 2048;
 }
 
 void VolumeSink::updateMapperForInput(vtkImageData* image)

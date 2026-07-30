@@ -5,6 +5,7 @@
 
 #include "InputPort.h"
 #include "Node.h"
+#include "NodeDefinitionValidator.h"
 #include "OutputPort.h"
 #include "PythonNodeUtils.h"
 #include "PythonNodeWrapper.h"
@@ -98,6 +99,20 @@ QString PythonNodeBackend::jsonDescription() const
   return m_jsonDescription;
 }
 
+QStringList PythonNodeBackend::reconfigure(const QString& json)
+{
+  auto previousValues = m_parameters;
+  auto previousTypes = m_parameterTypes;
+
+  setJSONDescription(json);
+
+  QStringList reset;
+  m_parameters =
+    mergeParameterValues(previousValues, previousTypes, m_parameters,
+                         m_parameterTypes, m_enumOptions, &reset);
+  return reset;
+}
+
 void PythonNodeBackend::setScript(const QString& script)
 {
   m_script = script;
@@ -120,6 +135,11 @@ bool PythonNodeBackend::isTransformShape() const { return !m_inputs.isEmpty(); }
 QString PythonNodeBackend::externalPythonEnvPath() const
 {
   return m_externalPythonEnvPath;
+}
+
+bool PythonNodeBackend::externalOnly() const
+{
+  return m_externalOnly;
 }
 
 void PythonNodeBackend::setParameter(const QString& name,
@@ -176,6 +196,7 @@ void PythonNodeBackend::parseDescription()
   m_supportsCancel = false;
   m_supportsComplete = false;
   m_externalPythonEnvPath.clear();
+  m_externalOnly = false;
   m_inputs.clear();
   m_outputs.clear();
   m_parameters.clear();
@@ -201,6 +222,13 @@ void PythonNodeBackend::parseDescription()
     obj.value(QStringLiteral("supportsComplete")).toBool(false);
   m_externalPythonEnvPath =
     obj.value(QStringLiteral("tomviz_pipeline_env")).toString();
+  m_externalOnly = obj.value(QStringLiteral("externalOnly")).toBool(false);
+  if (m_externalOnly &&
+      !obj.value(QStringLiteral("externalCompatible")).toBool(true)) {
+    qWarning("PythonNodeBackend: operator %s declares externalOnly with "
+             "externalCompatible=false; treating as externalOnly.",
+             qPrintable(m_operatorName));
+  }
 
   // inputs / outputs are arrays of {name, type[, persistent]}. Missing
   // section → empty list (per the agreed schema-v2 convention).

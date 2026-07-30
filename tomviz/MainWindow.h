@@ -22,7 +22,6 @@ namespace tomviz {
 
 class AboutDialog;
 class DataSource;
-class MoleculeSource;
 class Module;
 struct OperatorDescription;
 class OperatorSearchDialog;
@@ -35,6 +34,7 @@ class OutputPort;
 class Pipeline;
 class PipelineControlsWidget;
 class PipelineStripWidget;
+class SinkGroupNode;
 class VolumePropertiesWidget;
 } // namespace pipeline
 
@@ -51,6 +51,8 @@ public:
   static MainWindow* instance();
 
   pipeline::Pipeline* pipeline() const;
+
+  void setMostRecentStateFile(const QString& fileName);
 
 protected:
   void showEvent(QShowEvent* event) override;
@@ -103,12 +105,17 @@ private:
   static std::vector<OperatorDescription> findCustomOperators();
   void registerCustomOperators(std::vector<OperatorDescription> operators);
   static std::vector<OperatorDescription> initPython();
-  void syncPythonToApp();
   void updateSaveStateEnableState();
   QString mostRecentStateFile() const;
 
   void initPipeline();
   void clearDynamicPropertiesWidget();
+  /// Install @a content as the dynamic properties panel, wrapped with a
+  /// title header declaring the type of the selected object.
+  void showPropertiesPanel(QWidget* content, const QString& title);
+  /// Relink a group member sink to the group's upstream port (removing it
+  /// from the group).
+  void leaveGroup(pipeline::Node* member, pipeline::SinkGroupNode* group);
   void updateColorMapDisplay();
   /// Coalescing wrapper around updateColorMapDisplay — at most one
   /// refresh per kColorMapUpdateThrottleMs window.
@@ -138,11 +145,12 @@ private:
   QMetaObject::Connection m_editingChangedConn;
   QPointer<QWidget> m_dynamicPropertiesWidget;
 
+  QString m_mostRecentStateFile;
+
   // Lazily loaded dialogs
   QWidget* m_aboutDialog = nullptr;
   QWidget* m_acquisitionWidget = nullptr;
   QWidget* m_animationHelperDialog = nullptr;
-  QWidget* m_passiveAcquisitionDialog = nullptr;
 
   template <class T>
   void openDialog(QWidget**);

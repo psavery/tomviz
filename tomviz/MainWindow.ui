@@ -83,7 +83,6 @@
     </property>
     <addaction name="actionAcquisition"/>
     <addaction name="actionAnimationHelper"/>
-    <addaction name="actionPassiveAcquisition"/>
    </widget>
    <widget class="QMenu" name="menuData">
     <property name="title">
@@ -134,7 +133,7 @@
    <property name="minimumSize">
     <size>
      <width>250</width>
-     <height>300</height>
+     <height>50</height>
     </size>
    </property>
    <property name="windowTitle">
@@ -233,7 +232,7 @@
    <property name="minimumSize">
     <size>
      <width>250</width>
-     <height>300</height>
+     <height>50</height>
     </size>
    </property>
    <property name="windowTitle">
@@ -264,27 +263,6 @@
           <number>0</number>
          </property>
          <widget class="QWidget" name="empty"/>
-         <widget class="QScrollArea" name="moleculePropertiesScrollArea">
-          <property name="frameShape">
-           <enum>QFrame::NoFrame</enum>
-          </property>
-          <property name="horizontalScrollBarPolicy">
-           <enum>Qt::ScrollBarAlwaysOff</enum>
-          </property>
-          <property name="widgetResizable">
-           <bool>true</bool>
-          </property>
-          <widget class="tomviz::MoleculePropertiesPanel" name="moleculePropertiesPanel">
-           <property name="geometry">
-            <rect>
-             <x>0</x>
-             <y>0</y>
-             <width>100</width>
-             <height>30</height>
-            </rect>
-           </property>
-          </widget>
-         </widget>
         </widget>
        </item>
       </layout>
@@ -325,14 +303,6 @@
    </property>
    <property name="shortcut">
     <string>Ctrl+Q</string>
-   </property>
-  </action>
-  <action name="actionPassiveAcquisition">
-   <property name="text">
-    <string>&amp;Passive Acquisition</string>
-   </property>
-   <property name="toolTip">
-    <string>Passive Acquisition</string>
    </property>
   </action>
   <action name="actionSaveData">
@@ -482,12 +452,6 @@
    <class>pqVCRToolbar</class>
    <extends>QToolBar</extends>
    <header>pqVCRToolbar.h</header>
-  </customwidget>
-  <customwidget>
-   <class>tomviz::MoleculePropertiesPanel</class>
-   <extends>QWidget</extends>
-   <header>MoleculePropertiesPanel.h</header>
-   <container>1</container>
   </customwidget>
   <customwidget>
    <class>pqOutputWidget</class>

@@ -8,9 +8,6 @@
 #include "vtkPython.h" // must be first
 #pragma pop_macro("slots")
 
-#include "legacy/core/DataSourceBase.h"
-
-#include "legacy/DataSource.h"
 #include "Logger.h"
 
 #include <vtkPythonInterpreter.h>
@@ -23,6 +20,9 @@
 #undef slots
 #include <pybind11/pybind11.h>
 #pragma pop_macro("slots")
+
+#include <QList>
+#include <QString>
 
 namespace py = pybind11;
 
@@ -88,13 +88,6 @@ Python::Object::Object(const QList<double>& list)
 Python::Object::Object(const Variant& value)
 {
   m_smartPyObject = new vtkSmartPyObject(toPyObject(value));
-}
-
-Python::Object::Object(const DataSourceBase& source)
-{
-  // The vtkSmartPyObject will take ownership of the PyObject*
-  py::object obj = py::cast(source, py::return_value_policy::reference);
-  m_smartPyObject = new vtkSmartPyObject(obj.release().ptr());
 }
 
 Python::Object::Object(PyObject* obj)
@@ -604,31 +597,6 @@ bool Python::checkForPythonError()
 void Python::prependPythonPath(std::string dir)
 {
   vtkPythonInterpreter::PrependPythonPath(dir.c_str());
-}
-
-Python::Object Python::createDataset(vtkObjectBase* data,
-                                     const DataSource& source)
-{
-  Python python;
-  auto module = python.import("tomviz.internal_dataset");
-  if (!module.isValid()) {
-    Logger::critical("Failed to import tomviz.internal_dataset module.");
-  }
-
-  auto createDatasetFunc = module.findFunction("create_dataset");
-  if (!createDatasetFunc.isValid()) {
-    Logger::critical("Unable to locate create_dataset.");
-    return Python::Object();
-  }
-
-  auto dataObj = Python::VTK::GetObjectFromPointer(data);
-  auto dataSourceObj = Python::Object(*source.pythonProxy());
-
-  Python::Tuple args(2);
-  args.set(0, dataObj);
-  args.set(1, dataSourceObj);
-
-  return createDatasetFunc.call(args);
 }
 
 std::vector<OperatorDescription> findCustomOperators(const QString& path)

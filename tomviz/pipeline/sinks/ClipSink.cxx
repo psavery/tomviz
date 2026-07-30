@@ -202,13 +202,9 @@ bool ClipSink::consume(const QMap<QString, PortData>& inputs)
     applyDirection();
     syncClippingPlane();
 
-    // SetEnabled() touches the renderer and Qt GL state; consume() runs
-    // on the pipeline worker thread, so defer to the GUI thread.
-    QMetaObject::invokeMethod(this, [this]() {
-      if (m_widget) {
-        m_widget->SetEnabled(visibility() ? 1 : 0);
-      }
-    }, Qt::QueuedConnection);
+    // SetEnabled() touches the renderer and Qt GL state. consume() runs
+    // on the GUI thread (consumeOnGuiThread()), so apply directly.
+    m_widget->SetEnabled(visibility() ? 1 : 0);
   } else {
     // Without widget: just update clipping plane from stored direction
     double cx = (m_bounds[0] + m_bounds[1]) / 2.0;

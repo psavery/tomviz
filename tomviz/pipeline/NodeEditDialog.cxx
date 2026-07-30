@@ -62,6 +62,10 @@ Node* NodeEditDialog::node() const
 
 void NodeEditDialog::init()
 {
+  // Float above the main window so the dialog does not slip behind it on
+  // macOS while the user keeps working in the render view.
+  floatAboveMainWindow(this);
+
   m_node->setEditing(true);
 
   // Suppress the auto-execute wiring so the dialog controls execution.
@@ -89,6 +93,13 @@ void NodeEditDialog::init()
     layout->addWidget(m_editWidget, 1);
     connect(m_editWidget, &EditNodeWidget::canApplyChanged,
             this, &NodeEditDialog::refreshButtonEnablement);
+
+    QString helpUrl = m_editWidget->helpUrl();
+    if (!helpUrl.isEmpty()) {
+      auto* helpButton = m_buttonBox->addButton(QDialogButtonBox::Help);
+      connect(helpButton, &QPushButton::clicked, this,
+              [helpUrl]() { openHelpUrl(helpUrl); });
+    }
   }
 
   layout->addWidget(m_buttonBox);
@@ -99,6 +110,16 @@ void NodeEditDialog::init()
           this, &NodeEditDialog::refreshButtonEnablement);
   connect(m_pipeline, &Pipeline::executionFinished,
           this, &NodeEditDialog::refreshButtonEnablement);
+
+  // The dialog is modeless, so the node can be deleted while it is open
+  // (delete from the strip, session clear, group removal). Drop our pointer
+  // and close so OK/Apply cannot touch the freed node.
+  connect(m_pipeline, &Pipeline::nodeRemoved, this, [this](Node* removed) {
+    if (removed == m_node) {
+      m_node = nullptr;
+      close();
+    }
+  });
   refreshButtonEnablement();
 }
 
@@ -112,6 +133,10 @@ void NodeEditDialog::refreshButtonEnablement()
 
 void NodeEditDialog::onApply()
 {
+  if (!m_node) {
+    return;
+  }
+
   if (m_editWidget) {
     m_editWidget->applyChangesToOperator();
   }
@@ -126,6 +151,10 @@ void NodeEditDialog::onApply()
 
 void NodeEditDialog::onOkay()
 {
+  if (!m_node) {
+    return;
+  }
+
   if (m_editWidget) {
     m_editWidget->applyChangesToOperator();
   }
@@ -144,9 +173,11 @@ void NodeEditDialog::reject()
   if (m_isNewInsertion && !m_insertionCompleted) {
     // The insertion was applied eagerly when the dialog opened.  Undo it so
     // that cancel is a true no-op.  Removing the new node also drops its own
-    // input/output links (for sources there are none).
-    m_pipeline->removeNode(m_node);
+    // input/output links (for sources there are none).  Clear m_node first so
+    // the nodeRemoved handler above does not close() and re-enter reject().
+    Node* node = m_node;
     m_node = nullptr;
+    m_pipeline->removeNode(node);
 
     // Recreate the original links that were broken to insert the node.
     for (const auto& ep : m_deferred.linksToRestore) {

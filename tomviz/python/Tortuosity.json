@@ -2,6 +2,9 @@
   "name": "Tortuosity",
   "label": "Tortuosity",
   "description": "Tortuosity calculation",
+  "help": {
+    "url": "operators_catalog.html#tortuosity"
+  },
   "parameters": [
     {
       "name": "phase",

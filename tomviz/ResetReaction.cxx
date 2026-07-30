@@ -5,7 +5,6 @@
 
 #include "ActiveObjects.h"
 #include "HistogramManager.h"
-#include "legacy/modules/ModuleManager.h"
 #include "pipeline/Pipeline.h"
 #include "Utilities.h"
 
@@ -35,7 +34,6 @@ void ResetReaction::reset()
       return;
     }
   }
-  ModuleManager::instance().reset();
   if (pipeline) {
     pipeline->clear();
   }

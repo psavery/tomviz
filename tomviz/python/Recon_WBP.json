@@ -73,7 +73,7 @@
     }
   ],
   "help": {
-    "url": "reconstruction/#weighted-back-projection"
+    "url": "reconstruction.html#weighted-back-projection"
   },
   "inputType": "TiltSeries",
   "outputType": "Volume"
