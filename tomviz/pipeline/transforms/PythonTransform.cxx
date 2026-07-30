@@ -50,6 +50,14 @@ QString PythonTransform::jsonDescription() const
   return m_backend.jsonDescription();
 }
 
+QStringList PythonTransform::reconfigureDescription(const QString& json)
+{
+  auto reset = m_backend.reconfigure(json);
+  setSupportsCancel(m_backend.supportsCancel());
+  setSupportsCompletion(m_backend.supportsComplete());
+  return reset;
+}
+
 void PythonTransform::setScript(const QString& script)
 {
   m_backend.setScript(script);
@@ -122,26 +130,29 @@ EditNodeWidget* PythonTransform::createPropertiesWidget(Pipeline* pipeline,
     currentEnvPath, factory, customNeedsData, parent);
 
   connect(widget, &PythonNodeEditorWidget::applied, this,
-          [this](const QString& newLabel,
-                 const QString& newScript,
-                 const QMap<QString, QVariant>& values,
-                 const QString& executorType,
-                 const QString& executorEnvPath) {
+          [this](const PythonNodeEdits& edits) {
             bool changed = false;
 
-            if (label() != newLabel) {
-              setLabel(newLabel);
+            // Description first: it decides which parameters exist, so
+            // the values below have to land on the new declarations.
+            if (m_backend.jsonDescription() != edits.jsonDescription) {
+              reconfigureDescription(edits.jsonDescription);
               changed = true;
             }
 
-            if (m_backend.scriptSource() != newScript) {
-              m_backend.setScript(newScript);
+            if (label() != edits.label) {
+              setLabel(edits.label);
+              changed = true;
+            }
+
+            if (m_backend.scriptSource() != edits.script) {
+              m_backend.setScript(edits.script);
               changed = true;
             }
 
             // Parameter values are already finalized by the editor.
-            for (auto it = values.constBegin();
-                 it != values.constEnd(); ++it) {
+            for (auto it = edits.values.constBegin();
+                 it != edits.values.constEnd(); ++it) {
               if (m_backend.parameter(it.key()) != it.value()) {
                 changed = true;
               }
@@ -150,19 +161,21 @@ EditNodeWidget* PythonTransform::createPropertiesWidget(Pipeline* pipeline,
 
             auto* currentExternal =
               qobject_cast<ExternalNodeExecutor*>(nodeExecutor());
-            if (executorType.isEmpty()) {
+            if (edits.executorType.isEmpty()) {
               if (nodeExecutor() != nullptr) {
                 setNodeExecutor(nullptr);
                 changed = true;
               }
-            } else if (executorType == ExternalNodeExecutor::typeString()) {
+            } else if (edits.executorType ==
+                       ExternalNodeExecutor::typeString()) {
               if (currentExternal) {
-                if (currentExternal->envPath() != executorEnvPath) {
-                  currentExternal->setEnvPath(executorEnvPath);
+                if (currentExternal->envPath() != edits.executorEnvPath) {
+                  currentExternal->setEnvPath(edits.executorEnvPath);
                   changed = true;
                 }
               } else {
-                setNodeExecutor(new ExternalNodeExecutor(executorEnvPath));
+                setNodeExecutor(
+                  new ExternalNodeExecutor(edits.executorEnvPath));
                 changed = true;
               }
             }
