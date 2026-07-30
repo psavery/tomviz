@@ -287,16 +287,20 @@ DefinitionValidation validateNodeDefinition(const QString& currentJson,
     addError(result, parseError);
     return result;
   }
-  if (candidateJson.trimmed().isEmpty() && !currentJson.trimmed().isEmpty()) {
+  QJsonObject current = parseObject(currentJson, nullptr);
+
+  // Blank text and a document cleared down to a bare "{}" are the same
+  // loss: the node's identity and every parameter go with it. The form
+  // cannot show text that doesn't parse, so clearing the raw editor and
+  // switching back produces the "{}" spelling rather than the blank one.
+  if (candidate.isEmpty() && !current.isEmpty()) {
     addError(result, QStringLiteral("the description cannot be emptied"));
     return result;
   }
-  if (candidate.isEmpty() && candidateJson.trimmed().isEmpty()) {
-    // Node never had a description and still doesn't — nothing to check.
+  if (candidate.isEmpty()) {
+    // Node never had a description and still doesn't, nothing to check.
     return result;
   }
-
-  QJsonObject current = parseObject(currentJson, nullptr);
 
   // --- identity: fixed by the C++ class the node was built as --------
   DefinitionSchema candidateSchema =

@@ -1793,6 +1793,10 @@ void MainWindow::showPropertiesPanel(QWidget* content, const QString& title)
       scroll->setFrameShape(QFrame::NoFrame);
       content->setParent(scroll);
       scroll->setWidget(content);
+      // setWidget() turns autoFillBackground on, which would make these
+      // panels paint their own palette background where they used to
+      // inherit one. Has to follow setWidget() rather than precede it.
+      content->setAutoFillBackground(false);
       layout->addWidget(scroll, 1);
     }
   } else {

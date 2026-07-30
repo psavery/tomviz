@@ -231,6 +231,16 @@ TEST(NodeDefinitionTest, EmptyingTheDescriptionIsAnError)
 {
   auto result = checkV2Transform("   ");
   EXPECT_TRUE(result.hasErrors());
+
+  // Clearing the raw editor and switching back to the form spells the
+  // same loss as "{}", because the form cannot hold unparseable text.
+  EXPECT_TRUE(checkV2Transform("{}").hasErrors());
+
+  // A node that never had a description is not being emptied.
+  EXPECT_FALSE(
+    validateNodeDefinition("", "{}", NodeShape::Transform,
+                           DefinitionSchema::V1)
+      .hasErrors());
 }
 
 TEST(NodeDefinitionTest, DuplicateParameterNamesAreAnError)

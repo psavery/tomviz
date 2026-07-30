@@ -990,9 +990,16 @@ QWidget* ParameterInterfaceBuilder::buildWidget(QWidget* parent) const
   }
   QJsonObject root = m_json.object();
 
-  // The node's "description" is deliberately not rendered here: the
-  // caller (PythonNodeEditorWidget) already heads the Parameters tab
-  // with it, and showing it twice is what this class used to do.
+  // Description label. Nothing else renders the node's "description",
+  // and SAM2SeedWidget::wireForm() reaches in here to repair this
+  // label's size policy, so it has to stay.
+  QJsonValueRef descriptionValue = root["description"];
+  if (!descriptionValue.isUndefined()) {
+    auto* descLabel = new QLabel(descriptionValue.toString());
+    descLabel->setWordWrap(true);
+    descLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+    verticalLayout->insertWidget(0, descLabel);
+  }
 
   // Parameters
   QJsonValueRef parametersNode = root["parameters"];

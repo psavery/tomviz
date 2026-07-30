@@ -141,12 +141,21 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
   // which one it is serving; a source shell has no way to grow input
   // ports whatever its description says. Signals are connected further
   // down, once the Parameters tab it drives exists.
-  NodeShape shape = qobject_cast<SourceNode*>(m_node) ? NodeShape::Source
-                                                      : NodeShape::Transform;
-  m_definitionWidget = new NodeDefinitionWidget(
-    m_jsonDescription, shape, definitionSchema(m_jsonDescription),
-    m_tabWidget);
-  m_tabWidget->addTab(m_definitionWidget, tr("Definition"));
+  //
+  // Not offered when a custom widget owns the Parameters tab. Re-
+  // rendering it from an edited description means the widget picking the
+  // change up through setJSONDescription(), and no custom widget
+  // implements that yet, so the tab would show controls built from the
+  // old description while the editor committed the new one.
+  if (!m_customFactory) {
+    NodeShape shape = qobject_cast<SourceNode*>(m_node)
+                        ? NodeShape::Source
+                        : NodeShape::Transform;
+    m_definitionWidget = new NodeDefinitionWidget(
+      m_jsonDescription, shape, definitionSchema(m_jsonDescription),
+      m_tabWidget);
+    m_tabWidget->addTab(m_definitionWidget, tr("Definition"));
+  }
 
   // --- Tab 2: Script ---
   auto* scriptTab = new QWidget(m_tabWidget);
@@ -340,10 +349,12 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
     }
   });
 
-  connect(m_definitionWidget, &NodeDefinitionWidget::validityChanged, this,
-          [this](bool) { emit canApplyChanged(); });
-  connect(m_definitionWidget, &NodeDefinitionWidget::parameterSchemaChanged,
-          this, &PythonNodeEditorWidget::rebuildParametersTab);
+  if (m_definitionWidget) {
+    connect(m_definitionWidget, &NodeDefinitionWidget::validityChanged, this,
+            [this](bool) { emit canApplyChanged(); });
+    connect(m_definitionWidget, &NodeDefinitionWidget::parameterSchemaChanged,
+            this, &PythonNodeEditorWidget::rebuildParametersTab);
+  }
 
   m_tabWidget->setCurrentIndex(m_paramsTabIndex);
 }
