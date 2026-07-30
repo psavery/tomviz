@@ -104,21 +104,34 @@ include(tomvizDetermineVersion)
 include(Git)
 
 determine_version("${tomviz_SOURCE_DIR}" "${GIT_EXECUTABLE}" "tomviz")
-# Hard coded for source tarballs, releases, etc.
-set(tomviz_version_major 2)
-set(tomviz_version_minor 3)
-set(tomviz_version_patch 1)
+# The version being developed here. Authoritative, because "git
+# describe" keeps reporting the previous release until the matching tag
+# is created, and a 3.0 build must not label itself 2.3.1. Also what
+# source tarballs (no git at all) fall back on.
+set(tomviz_version_major 3)
+set(tomviz_version_minor 0)
+set(tomviz_version_patch 0)
 set(tomviz_version_extra)
 set(tomviz_version
   "${tomviz_version_major}.${tomviz_version_minor}.${tomviz_version_patch}")
-if(tomviz_VERSION)
-  set(tomviz_version_major ${tomviz_VERSION_MAJOR})
-  set(tomviz_version_minor ${tomviz_VERSION_MINOR})
-  set(tomviz_version_patch ${tomviz_VERSION_PATCH})
+
+# git describe refines that in two ways: it supplies the commit-count
+# and sha suffix that distinguishes a development build from the release
+# (empty when sitting exactly on the tag), and once a tag newer than the
+# version above exists it takes over the number too, so tagging 3.0.1
+# needs no edit here. Packaging that builds outside a git checkout can
+# pass -DTOMVIZ_GIT_DESCRIBE=<version> to drive both.
+if(tomviz_VERSION_FULL)
   set(tomviz_version_extra ${tomviz_VERSION_PATCH_EXTRA})
+  set(tomviz_git_version
+    "${tomviz_VERSION_MAJOR}.${tomviz_VERSION_MINOR}.${tomviz_VERSION_PATCH}")
+  if("${tomviz_git_version}" VERSION_GREATER "${tomviz_version}")
+    set(tomviz_version_major ${tomviz_VERSION_MAJOR})
+    set(tomviz_version_minor ${tomviz_VERSION_MINOR})
+    set(tomviz_version_patch ${tomviz_VERSION_PATCH})
+    set(tomviz_version "${tomviz_git_version}")
+  endif()
 endif()
-set(tomviz_version
-  "${tomviz_version_major}.${tomviz_version_minor}.${tomviz_version_patch}")
 
 option(TOMVIZ_USE_EXTERNAL_VTK "Use an external VTK." OFF)
 mark_as_advanced(TOMVIZ_USE_EXTERNAL_VTK)
