@@ -691,11 +691,14 @@ TEST(NodeDefinitionTest, SaveScriptWritesTheEditedScriptAndDescription)
   ASSERT_TRUE(written.open(QIODevice::ReadOnly));
   EXPECT_EQ(QString::fromUtf8(written.readAll()), editedScript)
     << "saved the node's script instead of the edited one";
+  // Windows won't let us rewrite or remove a file we are still holding open.
+  written.close();
 
   QFile writtenJson(jsonPath);
   ASSERT_TRUE(writtenJson.open(QIODevice::ReadOnly));
   const QJsonObject reloaded =
     QJsonDocument::fromJson(writtenJson.readAll()).object();
+  writtenJson.close();
   EXPECT_EQ(reloaded.value("label").toString(), QString("Edited Label"))
     << "saved the node's description instead of the edited one";
   // The rest of the descriptor has to survive the round trip intact.
