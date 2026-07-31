@@ -15,13 +15,11 @@ set(SOURCES
   ActiveObjects.h
   AddAlignReaction.cxx
   AddAlignReaction.h
-  AddExpressionReaction.cxx
-  AddExpressionReaction.h
+  AddPythonSourceReaction.cxx
+  AddPythonSourceReaction.h
   AddPythonTransformReaction.cxx
   AddRenderViewContextMenuBehavior.cxx
   AddRenderViewContextMenuBehavior.h
-  AddResampleReaction.cxx
-  AddResampleReaction.h
   AlignWidget.cxx
   AlignWidget.h
   AnimationHelperDialog.cxx
@@ -46,14 +44,14 @@ set(SOURCES
   ColorMapSettingsWidget.h
   ComboTextEditor.cxx
   ComboTextEditor.h
-  ConformVolumeDialog.cxx
-  ConformVolumeDialog.h
-  ConformVolumeReaction.cxx
-  ConformVolumeReaction.h
   ConvertToFloatReaction.cxx
   ConvertToFloatReaction.h
   CropReaction.cxx
   CropReaction.h
+  SAM2SeedWidget.cxx
+  SAM2SeedWidget.h
+  SelectCylinderWidget.cxx
+  SelectCylinderWidget.h
   SelectVolumeWidget.cxx
   SelectVolumeWidget.h
   DataBroker.cxx
@@ -70,30 +68,16 @@ set(SOURCES
   DataExchangeFormat.h
   DataPropertiesModel.cxx
   DataPropertiesModel.h
-  DataPropertiesPanel.cxx
-  DataPropertiesPanel.h
-  DataSource.cxx
-  DataSource.h
   DataTransformMenu.cxx
   DataTransformMenu.h
   DeleteDataReaction.cxx
   DeleteDataReaction.h
-  DockerExecutor.cxx
-  DockerExecutor.h
-  DockerUtilities.cxx
-  DockerUtilities.h
   DoubleSliderWidget.cxx
   DoubleSliderWidget.h
   DoubleSpinBox.cxx
   DoubleSpinBox.h
-  DuplicateModuleReaction.h
-  DuplicateModuleReaction.cxx
   EmdFormat.cxx
   EmdFormat.h
-  ExportDataReaction.cxx
-  ExportDataReaction.h
-  ExternalPythonExecutor.cxx
-  ExternalPythonExecutor.h
   FileFormatManager.cxx
   FileFormatManager.h
   FxiFormat.cxx
@@ -116,8 +100,6 @@ set(SOURCES
   ImageStackDialog.cxx
   ImageStackModel.h
   ImageStackModel.cxx
-  InterfaceBuilder.h
-  InterfaceBuilder.cxx
   InternalPythonHelper.h
   InternalPythonHelper.cxx
   IntSliderWidget.cxx
@@ -136,34 +118,14 @@ set(SOURCES
   Logger.h
   ManualManipulationWidget.cxx
   ManualManipulationWidget.h
-  MergeImagesDialog.cxx
-  MergeImagesDialog.h
-  MergeImagesReaction.cxx
-  MergeImagesReaction.h
-  MoleculeSource.cxx
-  MoleculeSource.h
+  OperatorSearchDialog.cxx
+  OperatorSearchDialog.h
   MoleculeProperties.cxx
   MoleculeProperties.h
-  MoleculePropertiesPanel.cxx
-  MoleculePropertiesPanel.h
-  MoveActiveObject.cxx
-  MoveActiveObject.h
-  Pipeline.cxx
-  Pipeline.h
-  PipelineExecutor.cxx
-  PipelineExecutor.h
-  PipelineManager.cxx
-  PipelineManager.h
-  PipelineModel.cxx
-  PipelineModel.h
-  PipelineProxy.cxx
-  PipelineProxy.h
-  PipelineView.cxx
-  PipelineView.h
-  PipelineWorker.cxx
-  PipelineWorker.h
-  PipelineSettingsDialog.cxx
-  PipelineSettingsDialog.h
+  InteractiveTransformWidget.cxx
+  InteractiveTransformWidget.h
+  PortDataWriter.cxx
+  PortDataWriter.h
   PresetDialog.cxx
   PresetDialog.h
   PresetModel.cxx
@@ -172,22 +134,18 @@ set(SOURCES
   ProgressDialog.h
   ProgressDialogManager.cxx
   ProgressDialogManager.h
-  PtychoDialog.cxx
-  PtychoDialog.h
+  PtychoWidget.cxx
+  PtychoWidget.h
   PtychoRunner.cxx
   PtychoRunner.h
-  PythonGeneratedDatasetReaction.cxx
-  PythonGeneratedDatasetReaction.h
   PythonReader.cxx
   PythonReader.h
   PythonUtilities.cxx
   PythonUtilities.h
   PythonWriter.cxx
   PythonWriter.h
-  PyXRFMakeHDF5Dialog.cxx
-  PyXRFMakeHDF5Dialog.h
-  PyXRFProcessDialog.cxx
-  PyXRFProcessDialog.h
+  PyXRFWidget.cxx
+  PyXRFWidget.h
   PyXRFRunner.cxx
   PyXRFRunner.h
   pybind11/PythonTypeConversions.cxx
@@ -208,7 +166,10 @@ set(SOURCES
   ResetReaction.h
   RotateAlignWidget.cxx
   RotateAlignWidget.h
+  SaveDataDialog.cxx
+  SaveDataDialog.h
   SaveDataReaction.cxx
+  SaveDataReaction.h
   SaveLoadStateReaction.cxx
   SaveLoadStateReaction.h
   SaveLoadTemplateReaction.cxx
@@ -226,12 +187,8 @@ set(SOURCES
   SetDataTypeReaction.cxx
   SetTiltAnglesReaction.cxx
   SetTiltAnglesReaction.h
-  SliceViewDialog.cxx
-  SliceViewDialog.h
   SpinBox.cxx
   SpinBox.h
-  ThreadedExecutor.cxx
-  ThreadedExecutor.h
   TimeSeriesLabel.h
   TimeSeriesLabel.cxx
   TimeSeriesStep.h
@@ -239,10 +196,199 @@ set(SOURCES
   TomographyReconstruction.cxx
   TomographyTiltSeries.h
   TomographyTiltSeries.cxx
+  TransformUtils.h
+  TransformUtils.cxx
   TransposeDataReaction.h
   TransposeDataReaction.cxx
+  pipeline/transforms/CropTransform.h
+  pipeline/transforms/CropTransform.cxx
+  pipeline/transforms/ReconstructionTransform.h
+  pipeline/transforms/ReconstructionTransform.cxx
+  pipeline/transforms/TranslateAlignTransform.h
+  pipeline/transforms/TranslateAlignTransform.cxx
+  pipeline/PortData.cxx
+  pipeline/PortData.h
+  pipeline/PortDataDiskCache.cxx
+  pipeline/PortDataDiskCache.h
+  pipeline/PortDataMetadata.cxx
+  pipeline/PortDataMetadata.h
+  pipeline/PersistenceMode.h
+  pipeline/PipelineSettings.cxx
+  pipeline/PipelineSettings.h
+  pipeline/PortType.h
+  pipeline/NodeState.h
+  pipeline/Port.cxx
+  pipeline/Port.h
+  pipeline/InputPort.cxx
+  pipeline/InputPort.h
+  pipeline/OutputPort.cxx
+  pipeline/OutputPort.h
+  pipeline/VolumeOutputPort.cxx
+  pipeline/VolumeOutputPort.h
+  pipeline/Link.cxx
+  pipeline/Link.h
+  pipeline/Node.cxx
+  pipeline/Node.h
+  pipeline/NodeFactory.cxx
+  pipeline/NodeFactory.h
+  pipeline/SourceNode.cxx
+  pipeline/SourceNode.h
+  pipeline/TransformNode.cxx
+  pipeline/TransformNode.h
+  pipeline/SinkNode.cxx
+  pipeline/SinkNode.h
+  pipeline/SinkGroupNode.cxx
+  pipeline/SinkGroupNode.h
+  pipeline/PassthroughOutputPort.cxx
+  pipeline/PassthroughOutputPort.h
+  pipeline/LegacyStateLoader.cxx
+  pipeline/LegacyStateLoader.h
+  pipeline/Pipeline.cxx
+  pipeline/Pipeline.h
+  pipeline/PipelineStateIO.cxx
+  pipeline/PipelineStateIO.h
+  pipeline/PipelineExecutor.cxx
+  pipeline/PipelineExecutor.h
+  pipeline/NodeExecutor.cxx
+  pipeline/NodeExecutor.h
+  pipeline/InternalNodeExecutor.cxx
+  pipeline/InternalNodeExecutor.h
+  pipeline/ExternalNodeExecutor.cxx
+  pipeline/ExternalNodeExecutor.h
+  pipeline/NodeExecutorFactory.cxx
+  pipeline/NodeExecutorFactory.h
+  pipeline/ProgressReader.cxx
+  pipeline/ProgressReader.h
+  pipeline/PythonNodeWrapper.cxx
+  pipeline/PythonNodeWrapper.h
+  pipeline/PythonNodeUtils.cxx
+  pipeline/PythonNodeUtils.h
+  pipeline/PythonNodeBackend.cxx
+  pipeline/PythonNodeBackend.h
+  pipeline/CustomNodeWidgetRegistry.cxx
+  pipeline/CustomNodeWidgetRegistry.h
+  pipeline/DefaultExecutor.cxx
+  pipeline/DefaultExecutor.h
+  pipeline/ExecutionFuture.cxx
+  pipeline/ExecutionFuture.h
+  pipeline/ThreadedExecutor.cxx
+  pipeline/ThreadedExecutor.h
+  pipeline/data/VolumeData.cxx
+  pipeline/data/VolumeData.h
+  pipeline/sources/SphereSource.cxx
+  pipeline/sources/SphereSource.h
+  pipeline/sources/ReaderSourceNode.cxx
+  pipeline/sources/ReaderSourceNode.h
+  pipeline/sources/PythonSource.cxx
+  pipeline/sources/PythonSource.h
+  pipeline/transforms/ThresholdTransform.cxx
+  pipeline/transforms/ThresholdTransform.h
+  pipeline/transforms/SetTiltAnglesTransform.cxx
+  pipeline/transforms/SetTiltAnglesTransform.h
+  pipeline/transforms/LegacyPythonTransform.cxx
+  pipeline/transforms/LegacyPythonTransform.h
+  pipeline/transforms/PythonTransform.cxx
+  pipeline/transforms/PythonTransform.h
+  pipeline/transforms/ConvertToFloatTransform.cxx
+  pipeline/transforms/ConvertToFloatTransform.h
+  pipeline/transforms/ConvertToVolumeTransform.cxx
+  pipeline/transforms/ConvertToVolumeTransform.h
+  pipeline/transforms/ArrayWranglerTransform.cxx
+  pipeline/transforms/ArrayWranglerTransform.h
+  pipeline/transforms/TransposeDataTransform.cxx
+  pipeline/transforms/TransposeDataTransform.h
+  pipeline/transforms/SnapshotTransform.cxx
+  pipeline/transforms/SnapshotTransform.h
+  pipeline/PortUtils.h
+  pipeline/ThreadUtils.h
+  pipeline/pybind11/PybindVTKTypeCaster.h
+  pipeline/DeferredLinkInfo.h
+  pipeline/sinks/VolumeStatsSink.cxx
+  pipeline/sinks/VolumeStatsSink.h
+  pipeline/sinks/LegacyModuleSink.cxx
+  pipeline/sinks/LegacyModuleSink.h
+  pipeline/sinks/VolumeSink.cxx
+  pipeline/sinks/VolumeSink.h
+  pipeline/sinks/VolumeBricking.cxx
+  pipeline/sinks/VolumeBricking.h
+  pipeline/sinks/SliceSink.cxx
+  pipeline/sinks/SliceSink.h
+  pipeline/sinks/ContourSink.cxx
+  pipeline/sinks/ContourSink.h
+  pipeline/sinks/ThresholdSink.cxx
+  pipeline/sinks/ThresholdSink.h
+  pipeline/sinks/SegmentSink.cxx
+  pipeline/sinks/SegmentSink.h
+  pipeline/sinks/OutlineSink.cxx
+  pipeline/sinks/OutlineSink.h
+  pipeline/sinks/ClipSink.cxx
+  pipeline/sinks/ClipSink.h
+  pipeline/sinks/RulerSink.cxx
+  pipeline/sinks/RulerSink.h
+  pipeline/sinks/ScaleCubeSink.cxx
+  pipeline/sinks/ScaleCubeSink.h
+  pipeline/sinks/PlotSink.cxx
+  pipeline/sinks/PlotSink.h
+  pipeline/sinks/MoleculeSink.cxx
+  pipeline/sinks/MoleculeSink.h
+  pipeline/sinks/VolumeSinkWidget.cxx
+  pipeline/sinks/VolumeSinkWidget.h
+  pipeline/sinks/ContourSinkWidget.cxx
+  pipeline/sinks/ContourSinkWidget.h
+  pipeline/sinks/ThresholdSinkWidget.cxx
+  pipeline/sinks/ThresholdSinkWidget.h
+  pipeline/sinks/SegmentSinkWidget.cxx
+  pipeline/sinks/SegmentSinkWidget.h
+  pipeline/ParameterBindingUtils.cxx
+  pipeline/ParameterBindingUtils.h
+  pipeline/ParameterInterfaceBuilder.cxx
+  pipeline/ParameterInterfaceBuilder.h
+  pipeline/CustomPythonNodeWidget.cxx
+  pipeline/CustomPythonNodeWidget.h
+  pipeline/InputsNotReadyWidget.cxx
+  pipeline/InputsNotReadyWidget.h
+  pipeline/GatedEditorWidget.cxx
+  pipeline/GatedEditorWidget.h
+  pipeline/EditNodeWidget.cxx
+  pipeline/EditNodeWidget.h
+  pipeline/NodePropertiesWidget.cxx
+  pipeline/NodePropertiesWidget.h
+  pipeline/NodeDefinitionValidator.cxx
+  pipeline/NodeDefinitionValidator.h
+  pipeline/NodeDefinitionEdits.cxx
+  pipeline/NodeDefinitionEdits.h
+  pipeline/NodeDefinitionFormWidget.cxx
+  pipeline/NodeDefinitionFormWidget.h
+  pipeline/NodeDefinitionWidget.cxx
+  pipeline/NodeDefinitionWidget.h
+  pipeline/PythonNodeEditorWidget.cxx
+  pipeline/PythonNodeEditorWidget.h
+  pipeline/NodePropertiesPanel.cxx
+  pipeline/NodePropertiesPanel.h
+  pipeline/NodeEditDialog.cxx
+  pipeline/NodeEditDialog.h
+  pipeline/PipelineUtils.cxx
+  pipeline/PipelineUtils.h
+  pipeline/PipelineControlsWidget.cxx
+  pipeline/PipelineControlsWidget.h
+  pipeline/PipelineStripWidget.cxx
+  pipeline/PipelineStripWidget.h
+  pipeline/LinkPropertiesWidget.cxx
+  pipeline/LinkPropertiesWidget.h
+  pipeline/SinkGroupPropertiesWidget.cxx
+  pipeline/SinkGroupPropertiesWidget.h
+  pipeline/VolumeScalarsModel.cxx
+  pipeline/VolumeScalarsModel.h
+  pipeline/VolumePropertiesWidget.cxx
+  pipeline/VolumePropertiesWidget.h
+  pipeline/vtkNonOrthoImagePlaneWidget.cxx
+  pipeline/vtkNonOrthoImagePlaneWidget.h
+  FileReader.cxx
+  FileReader.h
   Tvh5Format.cxx
   Tvh5Format.h
+  ViewsLayoutsSerializer.cxx
+  ViewsLayoutsSerializer.h
   Utilities.cxx
   Utilities.h
   core/Variant.h
@@ -268,8 +414,6 @@ set(SOURCES
   vtkLengthScaleRepresentation.cxx
   vtkActiveScalarsProducer.h
   vtkActiveScalarsProducer.cxx
-  vtkNonOrthoImagePlaneWidget.cxx
-  vtkNonOrthoImagePlaneWidget.h
   vtkOMETiffReader.cxx
   vtkOMETiffReader.h
   vtkTriangleBar.cxx
@@ -284,51 +428,12 @@ list(APPEND SOURCES
 )
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/loguru)
 
-list(APPEND SOURCES
-  modules/Module.cxx
-  modules/Module.h
-  modules/ModuleClip.cxx
-  modules/ModuleClip.h
-  modules/ModuleContour.cxx
-  modules/ModuleContour.h
-  modules/ModuleContourWidget.cxx
-  modules/ModuleContourWidget.h
-  modules/ModuleFactory.cxx
-  modules/ModuleFactory.h
-  modules/ModuleManager.cxx
-  modules/ModuleManager.h
-  modules/ModuleScaleCube.cxx
-  modules/ModuleScaleCube.h
-  modules/ModuleScaleCubeWidget.cxx
-  modules/ModuleScaleCubeWidget.h
-  modules/ModuleMenu.cxx
-  modules/ModuleMenu.h
-  modules/ModuleMolecule.cxx
-  modules/ModuleMolecule.h
-  modules/ModuleOutline.cxx
-  modules/ModuleOutline.h
-  modules/ModulePlot.cxx
-  modules/ModulePlot.h
-  modules/ModulePropertiesPanel.cxx
-  modules/ModulePropertiesPanel.h
-  modules/ModuleRuler.cxx
-  modules/ModuleRuler.h
-  modules/ModuleSegment.cxx
-  modules/ModuleSegment.h
-  modules/ModuleSlice.cxx
-  modules/ModuleSlice.h
-  modules/ModuleThreshold.cxx
-  modules/ModuleThreshold.h
-  modules/ModuleVolume.cxx
-  modules/ModuleVolume.h
-  modules/ModuleVolumeWidget.cxx
-  modules/ModuleVolumeWidget.h
-  modules/ScalarsComboBox.cxx
-  modules/ScalarsComboBox.h
-  modules/VolumeManager.cxx
-  modules/VolumeManager.h
-)
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/modules)
+# loguru is vendored third-party code; silence warnings we will not patch
+# upstream for (empty variadic macro args and a benign snprintf truncation).
+if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  set_source_files_properties(loguru/loguru.cpp PROPERTIES
+    COMPILE_OPTIONS "-Wno-c++20-extensions;-Wno-format-truncation")
+endif()
 
 # acquisition/
 list(APPEND SOURCES
@@ -336,82 +441,21 @@ list(APPEND SOURCES
   acquisition/AcquisitionWidget.h
   acquisition/AcquisitionClient.cxx
   acquisition/AcquisitionClient.h
-  acquisition/AdvancedFormatWidget.cxx
-  acquisition/AdvancedFormatWidget.h
-  acquisition/BasicFormatWidget.cxx
-  acquisition/BasicFormatWidget.h
   acquisition/Connection.cxx
   acquisition/Connection.h
   acquisition/ConnectionsWidget.cxx
   acquisition/ConnectionsWidget.h
   acquisition/ConnectionDialog.cxx
   acquisition/ConnectionDialog.h
-  acquisition/CustomFormatWidget.cxx
-  acquisition/CustomFormatWidget.h
   acquisition/JsonRpcClient.cxx
   acquisition/JsonRpcClient.h
-  acquisition/PassiveAcquisitionWidget.cxx
-  acquisition/PassiveAcquisitionWidget.h
-  acquisition/RegexGroupDialog.cxx
-  acquisition/RegexGroupDialog.h
-  acquisition/RegexGroupsWidget.cxx
-  acquisition/RegexGroupsWidget.h
-  acquisition/RegexGroupSubstitution.cxx
-  acquisition/RegexGroupSubstitution.h
-  acquisition/RegexGroupSubstitutionDialog.cxx
-  acquisition/RegexGroupSubstitutionDialog.h
-  acquisition/RegexGroupsSubstitutionsWidget.cxx
-  acquisition/RegexGroupsSubstitutionsWidget.h
-  acquisition/StartServerDialog.cxx
-  acquisition/StartServerDialog.h
 )
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/acquisition)
 
 list(APPEND SOURCES
-  operators/ArrayWranglerOperator.cxx
-  operators/ArrayWranglerOperator.h
-  operators/ConvertToFloatOperator.cxx
-  operators/ConvertToFloatOperator.h
-  operators/ConvertToVolumeOperator.cxx
-  operators/ConvertToVolumeOperator.h
-  operators/CustomPythonOperatorWidget.cxx
-  operators/CustomPythonOperatorWidget.h
-  operators/CropOperator.cxx
-  operators/CropOperator.h
-  operators/EditOperatorDialog.cxx
-  operators/EditOperatorDialog.h
-  operators/EditOperatorWidget.cxx
-  operators/EditOperatorWidget.h
-  operators/Operator.cxx
-  operators/Operator.h
-  operators/OperatorDialog.cxx
-  operators/OperatorDialog.h
-  operators/OperatorFactory.cxx
-  operators/OperatorFactory.h
-  operators/OperatorPropertiesPanel.cxx
-  operators/OperatorPropertiesPanel.h
-  operators/OperatorProxy.cxx
-  operators/OperatorProxy.h
-  operators/OperatorPython.cxx
-  operators/OperatorPython.h
-  operators/OperatorResult.cxx
-  operators/OperatorResult.h
-  operators/OperatorResultPropertiesPanel.cxx
-  operators/OperatorResultPropertiesPanel.h
-  operators/OperatorWidget.cxx
-  operators/OperatorWidget.h
-  operators/ReconstructionOperator.cxx
-  operators/ReconstructionOperator.h
-  operators/SetTiltAnglesOperator.cxx
-  operators/SetTiltAnglesOperator.h
-  operators/SnapshotOperator.h
-  operators/SnapshotOperator.cxx
-  operators/TranslateAlignOperator.h
-  operators/TranslateAlignOperator.cxx
-  operators/TransposeDataOperator.h
-  operators/TransposeDataOperator.cxx
+  PipelineModuleMenu.cxx
+  PipelineModuleMenu.h
 )
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/operators)
 
 # animations/
 list(APPEND SOURCES
@@ -425,14 +469,17 @@ list(APPEND SOURCES
   h5cpp/h5readwrite.cpp
 )
 
-set(exec_sources
+list(APPEND SOURCES
   AboutDialog.h
   AboutDialog.cxx
-  main.cxx
   MainWindow.cxx
   MainWindow.h
   WelcomeDialog.cxx
   WelcomeDialog.h
+)
+
+set(exec_sources
+  main.cxx
 )
 
 set(python_files
@@ -491,6 +538,8 @@ set(python_files
   ClearVolume.py
   ConstantDataset.py
   RandomParticles.py
+  PtychoSource.py
+  PyXRFSource.py
   GenerateTiltSeries.py
   SetNegativeVoxelsToZero.py
   ShiftTiltSeriesRandomly.py
@@ -499,12 +548,16 @@ set(python_files
   Pad_Data.py
   BinVolumeByTwo.py
   BinTiltSeriesByTwo.py
+  DefaultCustomTransform.py
   DefaultITKTransform.py
   BinaryMinMaxCurvatureFlow.py
   ReinterpretSignedToUnsigned.py
   SegmentParticles.py
+  SAM2Segment3D.py
+  SAM3Segment3D.py
   UnsharpMask.py
   AddConstant.py
+  CylindricalCrop.py
   SegmentPores.py
   RotationAlign.py
   WienerFilter.py
@@ -565,8 +618,11 @@ set(json_files
   SwapAxes.json
   BinaryMinMaxCurvatureFlow.json
   SegmentParticles.json
+  SAM2Segment3D.json
+  SAM3Segment3D.json
   UnsharpMask.json
   AddConstant.json
+  CylindricalCrop.json
   SegmentPores.json
   RotationAlign.json
   WienerFilter.json
@@ -577,6 +633,12 @@ set(json_files
   FourierShellCorrelation.json
   RemoveArrays.json
   Recon_real_time_tomography.json
+  InvertData.json
+  ConstantDataset.json
+  RandomParticles.json
+  PtychoSource.json
+  PyXRFSource.json
+  STEM_probe.json
   )
 
 set(resource_files
@@ -606,6 +668,21 @@ foreach(file ${json_files})
     "${tomviz_BINARY_DIR}/share/tomviz/scripts/${file}")
   install(FILES "python/${file}"
     DESTINATION "${tomviz_data_install_dir}/scripts"
+    COMPONENT "Scripts")
+endforeach()
+set(environment_files
+  sam2-tomviz-cpu.yml
+  sam2-tomviz-cuda.yml
+  sam3-tomviz-cuda.yml
+  )
+file(MAKE_DIRECTORY "${tomviz_BINARY_DIR}/share/tomviz/environments")
+foreach(file ${environment_files})
+  list(APPEND SOURCES "python/environments/${file}")
+  execute_process(COMMAND ${CMAKE_COMMAND} -E ${script_cmd}
+    "${tomviz_SOURCE_DIR}/tomviz/python/environments/${file}"
+    "${tomviz_BINARY_DIR}/share/tomviz/environments/${file}")
+  install(FILES "python/environments/${file}"
+    DESTINATION "${tomviz_data_install_dir}/environments"
     COMPONENT "Scripts")
 endforeach()
 foreach(file ${resource_files})
@@ -638,9 +715,9 @@ set(tomviz_python_modules
   __init__.py
   _internal.py
   dataset.py
-  executor.py
   external_dataset.py
   fix_pdb.py
+  nodes.py
   operators.py
   internal_dataset.py
   internal_utils.py
@@ -694,7 +771,7 @@ endforeach()
 set(tomviz_python_pyxrf_modules
   __init__.py
   ic_names.py
-  load_output.py
+  scan_metadata.py
   sids.py
 )
 
@@ -745,10 +822,15 @@ install(FILES "${tomviz_SOURCE_DIR}/docs/TomvizBasicUserGuide.pdf"
   DESTINATION "${tomviz_data_install_dir}/docs"
   COMPONENT "Documentation")
 
-if(APPLE)
+if(APPLE AND TOMVIZ_MACOSX_BUNDLE)
   list(APPEND exec_sources icons/tomviz.icns)
   set(MACOSX_BUNDLE_ICON_FILE tomviz.icns)
   set(MACOSX_BUNDLE_BUNDLE_VERSION "${tomviz_version}")
+  # A non-empty bundle identifier and name are required for macOS to present
+  # privacy-gated native panels (NSOpenPanel/NSSavePanel). Without them the
+  # native QFileDialog silently fails to appear. Match the packaged bundle id.
+  set(MACOSX_BUNDLE_GUI_IDENTIFIER "org.tomviz.tomviz")
+  set(MACOSX_BUNDLE_BUNDLE_NAME "tomviz")
   set_source_files_properties(icons/tomviz.icns PROPERTIES
     MACOSX_PACKAGE_LOCATION Resources)
 elseif(WIN32)
@@ -758,7 +840,9 @@ endif()
 include_directories(
   ${CMAKE_CURRENT_BINARY_DIR}/core
   ${CMAKE_CURRENT_BINARY_DIR}
-  ${CMAKE_CURRENT_SOURCE_DIR})
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${CMAKE_CURRENT_SOURCE_DIR}/core
+  ${CMAKE_CURRENT_SOURCE_DIR}/pipeline)
 
 configure_file(tomvizConfig.h.in tomvizConfig.h @ONLY)
 configure_file(tomvizPythonConfig.h.in tomvizPythonConfig.h @ONLY)
@@ -767,6 +851,8 @@ add_library(tomvizlib STATIC ${SOURCES} ${accel_srcs})
 if(NOT WIN32)
   set_target_properties(tomvizlib PROPERTIES OUTPUT_NAME tomviz)
 endif()
+set_target_properties(tomvizlib PROPERTIES AUTOUIC_SEARCH_PATHS
+    "${CMAKE_CURRENT_SOURCE_DIR}/pipeline;${CMAKE_CURRENT_SOURCE_DIR}/pipeline/sinks")
 
 # Need to set this property so that in stack traces, tomviz symbols
 # can be resolved.
@@ -774,8 +860,17 @@ set_target_properties(tomvizlib PROPERTIES ENABLE_EXPORTS TRUE)
 
 set_property(TARGET tomvizlib PROPERTY POSITION_INDEPENDENT_CODE TRUE)
 
-add_executable(tomviz WIN32 MACOSX_BUNDLE ${exec_sources} resources.qrc)
+find_package(Viskores QUIET)
+
+if(APPLE AND TOMVIZ_MACOSX_BUNDLE)
+  add_executable(tomviz MACOSX_BUNDLE ${exec_sources} resources.qrc pipeline/pipeline_icons.qrc)
+else()
+  add_executable(tomviz WIN32 ${exec_sources} resources.qrc pipeline/pipeline_icons.qrc)
+endif()
 target_link_libraries(tomviz PRIVATE tomvizlib ${OPENGL_LIBRARIES} ${extra_link_libraries})
+if(Viskores_FOUND)
+  target_link_libraries(tomviz PRIVATE viskores::cont)
+endif()
 
 # Need to set this property so that in stack traces, tomviz symbols
 # can be resolved.
@@ -792,6 +887,8 @@ target_link_libraries(tomvizlib
     VTK::pugixml
     VTK::tiff
     VTK::CommonColor
+    VTK::CommonCore
+    VTK::CommonDataModel
     VTK::DomainsChemistry
     VTK::IOChemistry
     VTK::hdf5
@@ -799,11 +896,28 @@ target_link_libraries(tomvizlib
     VTK::RenderingVolume
     VTK::RenderingVolumeOpenGL2
     Qt6::Network
+    Qt6::Widgets
   PRIVATE
     Qt6::Core5Compat
-    Python3::Python)
+    Python3::Python
+    $<$<PLATFORM_ID:Windows>:dbghelp shell32>
+    pybind11::embed
+    VTK::WrappingPythonCore
+    VTK::IOImage
+    VTK::IOXML
+    VTK::IOLegacy
+    VTK::RenderingCore
+    VTK::FiltersCore
+    VTK::FiltersSources
+    VTK::FiltersGeneral
+    VTK::FiltersModeling
+    VTK::InteractionWidgets
+    VTK::ImagingCore
+    VTK::RenderingGridAxes
+    VTK::ChartsCore
+    VTK::ViewsContext2D)
 
-if(APPLE)
+if(APPLE AND TOMVIZ_MACOSX_BUNDLE)
   set_target_properties(tomviz
     PROPERTIES
       MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_SOURCE_DIR}/tomviz.plist.in)
@@ -817,7 +931,6 @@ install(TARGETS tomvizlib
   ARCHIVE DESTINATION "${INSTALL_ARCHIVE_DIR}")
 
 if(tomviz_data_DIR)
-  add_definitions(-DTOMVIZ_DATA)
   install(DIRECTORY "${tomviz_data_DIR}"
     DESTINATION "${tomviz_data_install_dir}"
     USE_SOURCE_PERMISSIONS

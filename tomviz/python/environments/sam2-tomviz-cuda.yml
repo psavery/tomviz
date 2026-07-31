@@ -1,0 +1,20 @@
+# Conda environment for the Tomviz "SAM 2 Segmentation (3D)" operator.
+# CUDA build of SAM 2 for NVIDIA GPUs (Linux only; Windows and macOS
+# builds of sam-2 on conda-forge are CPU-only - use sam2-tomviz-cpu.yml).
+#
+# Create with:  conda env create -f sam2-tomviz-cuda.yml
+# Then select this environment in the operator's Execution tab.
+name: sam2-tomviz
+channels:
+  # label/beta is needed while Tomviz 3.0 is in beta; remove at release.
+  - conda-forge/label/beta
+  - conda-forge
+dependencies:
+  - python=3.13
+  # NOTE: pin exactly while Tomviz 3.0 is in beta; relax to >=3.0 at release.
+  - tomviz-pipeline=3.0.0beta1
+  - sam-2=1.0.0.20241215=cuda*py313*
+  - numpy
+  - scikit-image
+  - scipy
+  - pillow

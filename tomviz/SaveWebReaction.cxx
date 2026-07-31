@@ -4,8 +4,6 @@
 #include "SaveWebReaction.h"
 
 #include "ActiveObjects.h"
-#include "DataSource.h"
-#include "ModuleManager.h"
 
 #include "pqActiveObjects.h"
 #include "pqCoreUtilities.h"
@@ -36,17 +34,18 @@ namespace tomviz {
 SaveWebReaction::SaveWebReaction(QAction* parentObject, MainWindow* mainWindow)
   : pqReaction(parentObject), m_mainWindow(mainWindow)
 {
-  connect(&ActiveObjects::instance(),
-          static_cast<void (ActiveObjects::*)(DataSource*)>(
-            &ActiveObjects::dataSourceChanged),
-          this, &SaveWebReaction::updateEnableState);
+  // TODO: migrate to new pipeline
+  // Old code connected to ActiveObjects::dataSourceChanged
+  connect(&ActiveObjects::instance(), &ActiveObjects::activeNodeChanged, this,
+          &SaveWebReaction::updateEnableState);
   updateEnableState();
 }
 
 void SaveWebReaction::updateEnableState()
 {
-  parentAction()->setEnabled(ActiveObjects::instance().activeDataSource() !=
-                             nullptr);
+  // TODO: migrate to new pipeline
+  // Old code checked activeDataSource() != nullptr
+  parentAction()->setEnabled(false);
 }
 
 void SaveWebReaction::onTriggered()
@@ -65,7 +64,7 @@ void SaveWebReaction::onTriggered()
     QStringList filters;
     filters << "HTML (*.html)";
 
-    QFileDialog fileDialog(nullptr, "Save Web Export:");
+    QFileDialog fileDialog(tomviz::mainWidget(), "Save Web Export:");
     fileDialog.setFileMode(QFileDialog::AnyFile);
     fileDialog.setNameFilters(filters);
     fileDialog.setAcceptMode(QFileDialog::AcceptSave);

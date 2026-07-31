@@ -2,6 +2,9 @@
   "name": "PowerSpectrumDensity",
   "label": "Power Spectrum Density",
   "description": "",
+  "help": {
+    "url": "analysis.html#power-spectrum-density-psd"
+  },
   "externalCompatible": false,
   "apply_to_each_array": false,
   "parameters": [
@@ -17,5 +20,7 @@
       "label": "PSD",
       "type": "table"
     }
-  ]
+  ],
+  "inputType": "ImageData",
+  "outputType": "ImageData"
 }

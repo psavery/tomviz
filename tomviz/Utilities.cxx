@@ -4,7 +4,6 @@
 #include "Utilities.h"
 
 #include "ActiveObjects.h"
-#include "DataSource.h"
 #include "tomvizConfig.h"
 
 #include <pqAnimationCue.h>
@@ -62,6 +61,9 @@
 #include <QDir>
 #include <QFileDialog>
 #include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonValue>
 #include <QLayout>
 #include <QMessageBox>
 #include <QStandardPaths>
@@ -298,19 +300,25 @@ bool deserialize(vtkDiscretizableColorTransferFunction* func,
     auto opacityFunc = func->GetScalarOpacityFunction();
     deserialize(opacityFunc, json);
     auto colors = json["colors"].toArray();
-    double* values = new double[colors.size()];
+    std::vector<double> values(colors.size());
     for (int i = 0; i < colors.size(); ++i) {
       values[i] = colors[i].toDouble();
     }
-    func->FillFromDataPointer(colors.size(), values);
+    // FillFromDataPointer's first argument is the number of control
+    // points, not the number of doubles in the buffer. Each control
+    // point contributes 4 doubles (x, r, g, b).
+    func->FillFromDataPointer(static_cast<int>(colors.size() / 4),
+                              values.data());
 
     if (json.contains("colorSpace")) {
-      QMap<QString, int> colorSpaceToIntMap = {
-        { "RGB", 0 },       { "HSV", 1 },  { "CIELAB", 2 },
-        { "CIEDE2000", 4 }, { "Step", 5 },
+      static const QMap<QString, int> colorSpaceToIntMap = {
+        { "RGB", 0 },        { "HSV", 1 },       { "CIELAB", 2 },
+        { "Lab", 2 },        { "Diverging", 3 }, { "CIEDE2000", 4 },
+        { "Step", 5 },
       };
-      if (colorSpaceToIntMap.contains(json["colorSpace"].toString())) {
-        func->SetColorSpace(colorSpaceToIntMap[json["colorSpace"].toString()]);
+      auto name = json["colorSpace"].toString();
+      if (colorSpaceToIntMap.contains(name)) {
+        func->SetColorSpace(colorSpaceToIntMap.value(name));
       }
     }
     return true;
@@ -578,14 +586,13 @@ vtkPVArrayInformation* scalarArrayInformation(vtkSMSourceProxy* proxy)
                : nullptr;
 }
 
-bool rescaleColorMap(vtkSMProxy* colorMap, DataSource* dataSource)
+bool rescaleColorMap(vtkSMProxy* colorMap, vtkSMSourceProxy* dataProxy)
 {
   // rescale the color/opacity maps for the data source.
   vtkSMProxy* cmap = colorMap;
   vtkSMProxy* omap =
     vtkSMPropertyHelper(cmap, "ScalarOpacityFunction").GetAsProxy();
-  vtkPVArrayInformation* ainfo =
-    tomviz::scalarArrayInformation(dataSource->proxy());
+  vtkPVArrayInformation* ainfo = tomviz::scalarArrayInformation(dataProxy);
   if (ainfo != nullptr &&
       vtkSMPropertyHelper(cmap, "AutomaticRescaleRangeMode").GetAsInt() !=
         vtkSMTransferFunctionManager::NEVER) {
@@ -761,7 +768,7 @@ void snapAnimationToTimeSteps(const std::vector<double>& timeSteps)
   auto* timeKeeper = ActiveObjects::instance().activeTimeKeeper();
   auto* proxy = timeKeeper->getProxy();
   vtkSMPropertyHelper(proxy, "TimestepValues")
-    .Set(&timeSteps[0], timeSteps.size());
+    .Set(&timeSteps[0], static_cast<unsigned int>(timeSteps.size()));
   vtkSMPropertyHelper(proxy, "TimeRange").Set(&timeRange[0], 2);
 }
 
@@ -979,6 +986,20 @@ QString findPrefix(const QStringList& fileNames)
 QWidget* mainWidget()
 {
   return pqCoreUtilities::mainWidget();
+}
+
+void floatAboveMainWindow(QWidget* widget)
+{
+  if (!widget) {
+    return;
+  }
+  // Replace the window type (e.g. Qt::Dialog) with Qt::Tool while preserving
+  // the hint flags, so the window floats above the main window on macOS rather
+  // than slipping behind it.
+  auto flags = widget->windowFlags();
+  flags &= ~Qt::WindowType_Mask;
+  flags |= Qt::Tool;
+  widget->setWindowFlags(flags);
 }
 
 QJsonValue toJson(vtkVariant variant)
@@ -1230,6 +1251,15 @@ bool moleculeToFile(vtkMolecule* molecule)
     fileName = QString("%1.xyz").arg(fileName);
   }
 
+  return moleculeToXyzFile(molecule, fileName);
+}
+
+bool moleculeToXyzFile(vtkMolecule* molecule, const QString& fileName)
+{
+  if (molecule == nullptr) {
+    return false;
+  }
+
   QFile file(fileName);
   if (!file.open(QIODevice::WriteOnly)) {
     qCritical() << QString("Error opening file for writing: %1").arg(fileName);
@@ -1457,16 +1487,13 @@ static bool nodeYsMatch(double* a, double* b)
 
 } // namespace
 
-void addPlaceholderNodes(vtkColorTransferFunction* lut, DataSource* ds)
+void addPlaceholderNodes(vtkColorTransferFunction* lut, const double range[2])
 {
   // Add nodes on the data ends as placeholders
   auto numNodes = lut->GetSize();
   if (numNodes == 0) {
     return;
   }
-
-  double range[2];
-  ds->getRange(range);
 
   auto* dataArray = lut->GetDataPointer();
   int nodeStride = 4;
@@ -1523,16 +1550,13 @@ void removePlaceholderNodes(vtkColorTransferFunction* lut)
   }
 }
 
-void addPlaceholderNodes(vtkPiecewiseFunction* opacity, DataSource* ds)
+void addPlaceholderNodes(vtkPiecewiseFunction* opacity, const double range[2])
 {
   // Add nodes on the data ends as placeholders
   auto numNodes = opacity->GetSize();
   if (numNodes == 0) {
     return;
   }
-
-  double range[2];
-  ds->getRange(range);
 
   auto* dataArray = opacity->GetDataPointer();
   int nodeStride = 2;
@@ -1655,12 +1679,11 @@ void rescaleNodes(vtkPiecewiseFunction* opacity, double newMin, double newMax)
   }
 }
 
-void removePointsOutOfRange(vtkColorTransferFunction* lut, DataSource* ds)
+void removePointsOutOfRange(vtkColorTransferFunction* lut,
+                            const double range[2])
 {
-  // Remove points outside the range of the data source
+  // Remove points outside the range
   // This will also add points on the ends of the range
-  double range[2];
-  ds->getRange(range);
 
   // Make sure there are points on the ends of the data
   double startColor[3], endColor[3];
@@ -1686,13 +1709,11 @@ void removePointsOutOfRange(vtkColorTransferFunction* lut, DataSource* ds)
   lut->AddRGBPoint(range[1], endColor[0], endColor[1], endColor[2]);
 }
 
-void removePointsOutOfRange(vtkPiecewiseFunction* opacity, DataSource* ds)
+void removePointsOutOfRange(vtkPiecewiseFunction* opacity,
+                            const double range[2])
 {
-  // Remove points outside the range of the data source
+  // Remove points outside the range
   // This will also add points on the ends of the range
-
-  double range[2];
-  ds->getRange(range);
 
   // Make sure there are points on the ends of the data
   double startY = opacity->GetValue(range[0]);
