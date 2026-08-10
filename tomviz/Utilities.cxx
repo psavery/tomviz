@@ -752,8 +752,15 @@ void setAnimationNumberOfFrames(int numFrames)
 {
   pqAnimationScene* scene =
     pqPVApplicationCore::instance()->animationManager()->getActiveScene();
+  if (!scene) {
+    return;
+  }
   pqSMAdaptor::setElementProperty(
     scene->getProxy()->GetProperty("NumberOfFrames"), numFrames);
+  // Without this the value sits on the proxy but never reaches the
+  // animation player, so playback keeps using the previous frame count
+  // until something else happens to flush the scene proxy.
+  scene->getProxy()->UpdateVTKObjects();
 }
 
 void snapAnimationToTimeSteps(const std::vector<double>& timeSteps)
@@ -762,14 +769,19 @@ void snapAnimationToTimeSteps(const std::vector<double>& timeSteps)
 
   pqAnimationScene* scene =
     pqPVApplicationCore::instance()->animationManager()->getActiveScene();
+  if (!scene) {
+    return;
+  }
   pqSMAdaptor::setEnumerationProperty(
     scene->getProxy()->GetProperty("PlayMode"), "Snap To TimeSteps");
+  scene->getProxy()->UpdateVTKObjects();
 
   auto* timeKeeper = ActiveObjects::instance().activeTimeKeeper();
   auto* proxy = timeKeeper->getProxy();
   vtkSMPropertyHelper(proxy, "TimestepValues")
     .Set(&timeSteps[0], static_cast<unsigned int>(timeSteps.size()));
   vtkSMPropertyHelper(proxy, "TimeRange").Set(&timeRange[0], 2);
+  proxy->UpdateVTKObjects();
 }
 
 void setupRenderer(vtkRenderer* renderer, vtkImageSliceMapper* mapper,
