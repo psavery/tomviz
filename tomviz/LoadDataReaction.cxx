@@ -596,6 +596,9 @@ void LoadDataReaction::sourceNodeAdded(pipeline::SourceNode* source,
         tomviz::setAnimationNumberOfFrames(200);
         auto* rv = ActiveObjects::instance().activePqRenderView();
         if (rv) {
+          // Drop any orbit left over from data that has since been
+          // removed, so the cues don't pile up on the same camera.
+          tomviz::clearCameraCues(rv->getRenderViewProxy());
           tomviz::createCameraOrbit(rv->getRenderViewProxy());
         }
       });

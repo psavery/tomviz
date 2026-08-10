@@ -17,11 +17,16 @@
 #include <pqAnimationCue.h>
 #include <pqAnimationManager.h>
 #include <pqAnimationScene.h>
+#include <pqApplicationCore.h>
 #include <pqPVApplicationCore.h>
 #include <pqPropertyLinks.h>
 #include <pqRenderView.h>
 #include <pqSMAdaptor.h>
 #include <pqSaveAnimationReaction.h>
+#include <pqServerManagerModel.h>
+
+#include <vtkSMProxy.h>
+#include <vtkWeakPointer.h>
 
 #include <QPointer>
 #include <QPushButton>
@@ -57,6 +62,7 @@ public:
   pqPropertyLinks pqLinks;
   QPointer<AnimationHelperDialog> parent;
   QList<QPointer<ModuleAnimation>> moduleAnimations;
+  vtkWeakPointer<vtkSMProxy> linkedScene;
 
   Internal(AnimationHelperDialog* p) : QObject(p), parent(p)
   {
@@ -111,19 +117,67 @@ public:
             &Internal::clearModuleAnimations);
 
     // All animations
-    pqLinks.addPropertyLink(ui.numberOfFrames, "value",
-                            SIGNAL(valueChanged(int)), scene()->getProxy(),
-                            scene()->getProxy()->GetProperty("NumberOfFrames"),
-                            0);
-    connect(ui.numberOfFrames, QOverload<int>::of(&QSpinBox::valueChanged),
-            this, &Internal::numberOfFramesModified);
+    linkToScene();
+    // React to user edits of the frame count only. Connecting to the spin
+    // box's valueChanged directly would also fire when the property link
+    // syncs the widget from the scene (e.g. after a relink, or when a time
+    // series load sets the frame count), and numberOfFramesModified would
+    // then clobber a freshly set "Snap To TimeSteps" play mode.
+    // qtWidgetChanged is only emitted for Qt-originated changes.
+    connect(&pqLinks, &pqPropertyLinks::qtWidgetChanged, this,
+            &Internal::numberOfFramesModified);
+    // Loading a state file resets the ParaView session and replaces the
+    // animation scene; rebind the frame count link when that happens while
+    // the dialog is open (showEvent covers the closed case).
+    connect(pqPVApplicationCore::instance()->animationManager(),
+            &pqAnimationManager::activeSceneChanged, this,
+            &Internal::linkToScene);
     connect(ui.exportMovie, &QPushButton::clicked, this,
             &Internal::exportMovie);
     connect(ui.clearAllAnimations, &QPushButton::clicked, this,
             &Internal::clearAllAnimations);
   }
 
+  // Bind the frame count spin box to the current animation scene. Loading
+  // a state file resets the ParaView session, which destroys the scene and
+  // creates a new one, so the link built when the dialog was first opened
+  // can be pointing at a dead proxy. The dialog is created once and only
+  // hidden on close, so re-check the scene every time it is shown.
+  void linkToScene()
+  {
+    auto* sceneProxy = scene() ? scene()->getProxy() : nullptr;
+    if (!sceneProxy || sceneProxy == linkedScene) {
+      return;
+    }
+
+    pqLinks.removeAllPropertyLinks();
+    pqLinks.addPropertyLink(ui.numberOfFrames, "value",
+                            SIGNAL(valueChanged(int)), sceneProxy,
+                            sceneProxy->GetProperty("NumberOfFrames"), 0);
+    linkedScene = sceneProxy;
+  }
+
+  void refresh()
+  {
+    linkToScene();
+    updateGui();
+  }
+
   void play() { scene()->getProxy()->InvokeCommand("Play"); }
+
+  // The active view isn't necessarily a render view: a Plot module makes
+  // an XYChartView active. Fall back to the first render view so the orbit
+  // still ends up somewhere the user can see it.
+  pqRenderView* renderViewForOrbit()
+  {
+    if (auto* renderView = activeObjects().activePqRenderView()) {
+      return renderView;
+    }
+
+    auto* smModel = pqApplicationCore::instance()->getServerManagerModel();
+    auto renderViews = smModel->findItems<pqRenderView*>();
+    return renderViews.isEmpty() ? nullptr : renderViews.first();
+  }
 
   void updateGui()
   {
@@ -182,7 +236,10 @@ public:
 
   void createCameraOrbitInternal()
   {
-    auto* renderView = activeObjects().activePqRenderView();
+    auto* renderView = renderViewForOrbit();
+    if (!renderView) {
+      return;
+    }
 
     clearCameraCues(renderView->getRenderViewProxy());
     createCameraOrbit(renderView->getRenderViewProxy());
@@ -486,6 +543,10 @@ public:
   {
     pqSMAdaptor::setEnumerationProperty(
       scene()->getProxy()->GetProperty("PlayMode"), "Sequence");
+    // qtWidgetChanged is emitted after the property link has copied and
+    // flushed the frame count, so the play mode needs its own push to
+    // reach the animation player.
+    scene()->getProxy()->UpdateVTKObjects();
   }
 
   void exportMovie() { pqSaveAnimationReaction::saveAnimation(); }
@@ -525,5 +586,11 @@ AnimationHelperDialog::AnimationHelperDialog(QWidget* parent)
 }
 
 AnimationHelperDialog::~AnimationHelperDialog() = default;
+
+void AnimationHelperDialog::showEvent(QShowEvent* e)
+{
+  QDialog::showEvent(e);
+  m_internal->refresh();
+}
 
 } // namespace tomviz
