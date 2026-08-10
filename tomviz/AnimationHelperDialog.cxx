@@ -102,6 +102,11 @@ public:
               &Internal::onNodeAdded);
       connect(pip, &pipeline::Pipeline::nodeRemoved, this,
               &Internal::onNodeRemoved);
+      // Sinks re-cache their scalar range / slice count on every
+      // consume, but the tabs only re-read them on selection changes.
+      // Track executions so the ranges follow the data.
+      connect(pip, &pipeline::Pipeline::executionFinished, this,
+              &Internal::refreshModuleRanges);
     }
 
     // Sink selection
@@ -161,6 +166,28 @@ public:
   {
     linkToScene();
     updateGui();
+    refreshModuleRanges();
+  }
+
+  // Re-read the selected module's data-dependent ranges after the
+  // pipeline produces new data. Only rebuild a tab when its range
+  // actually changed, so user-entered start/stop values survive
+  // executions that don't affect this module.
+  void refreshModuleRanges()
+  {
+    auto* node = selectedSink();
+    if (auto* contour = qobject_cast<pipeline::ContourSink*>(node)) {
+      double range[2];
+      contour->scalarRange(range);
+      if (range[0] != ui.contourStart->minimum() ||
+          range[1] != ui.contourStart->maximum()) {
+        setupContourTab(contour);
+      }
+    } else if (auto* slice = qobject_cast<pipeline::SliceSink*>(node)) {
+      if (slice->maxSlice() != ui.sliceStop->maximum()) {
+        setupSliceTab(slice);
+      }
+    }
   }
 
   void play() { scene()->getProxy()->InvokeCommand("Play"); }
@@ -463,6 +490,10 @@ public:
     ui.sliceStart->setValue(0);
     ui.sliceStop->setValue(max);
 
+    // This runs on every reselection (and now on direction changes and
+    // data updates), so drop the previous connection first or they
+    // accumulate, each firing another setupSliceTab.
+    disconnect(sink, &pipeline::SliceSink::directionChanged, this, nullptr);
     connect(sink, &pipeline::SliceSink::directionChanged, this,
             [this, sink]() {
               if (sink != this->selectedSink()) {
