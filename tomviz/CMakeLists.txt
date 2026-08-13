@@ -196,6 +196,8 @@ set(SOURCES
   TomographyReconstruction.cxx
   TomographyTiltSeries.h
   TomographyTiltSeries.cxx
+  TrackpadTouchFix.h
+  TrackpadTouchFix.cxx
   TransformUtils.h
   TransformUtils.cxx
   TransposeDataReaction.h
