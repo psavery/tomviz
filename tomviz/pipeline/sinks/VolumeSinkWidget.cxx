@@ -2,10 +2,12 @@
    It is released under the 3-Clause BSD License, see "LICENSE". */
 
 #include "VolumeSinkWidget.h"
-#include "ui_LightingParametersForm.h"
+#include "ui_VolumeLightingForm.h"
 #include "ui_VolumeSinkWidget.h"
 
 #include "vtkVolumeMapper.h"
+
+#include <QPushButton>
 
 namespace tomviz {
 
@@ -20,7 +22,7 @@ static const double RANGE_INCREMENT = 500;
 
 VolumeSinkWidget::VolumeSinkWidget(QWidget* parent_)
   : QWidget(parent_), m_ui(new Ui::VolumeSinkWidget),
-    m_uiLighting(new Ui::LightingParametersForm)
+    m_uiLighting(new Ui::VolumeLightingForm)
 {
   m_ui->setupUi(this);
 
@@ -34,10 +36,33 @@ VolumeSinkWidget::VolumeSinkWidget(QWidget* parent_)
   m_uiLighting->sliDiffuse->setLineEditWidth(leWidth);
   m_uiLighting->sliSpecular->setLineEditWidth(leWidth);
   m_uiLighting->sliSpecularPower->setLineEditWidth(leWidth);
+  m_uiLighting->sliShadows->setLineEditWidth(leWidth);
+  m_uiLighting->sliShadowReach->setLineEditWidth(leWidth);
+  m_uiLighting->sliAnisotropy->setLineEditWidth(leWidth);
 
   m_uiLighting->sliSpecularPower->setMaximum(150);
   m_uiLighting->sliSpecularPower->setMinimum(1);
   m_uiLighting->sliSpecularPower->setResolution(200);
+
+  m_uiLighting->sliShadows->setMaximum(2.0);
+  m_uiLighting->sliShadows->setResolution(200);
+  m_uiLighting->sliAnisotropy->setMinimum(-1.0);
+  m_uiLighting->sliAnisotropy->setMaximum(1.0);
+  m_uiLighting->sliAnisotropy->setResolution(200);
+
+  // Advanced section starts collapsed; the presets are the primary control.
+  m_uiLighting->advancedWidget->setVisible(false);
+  connect(m_uiLighting->expAdvanced, &pqExpanderButton::toggled,
+          m_uiLighting->advancedWidget, &QWidget::setVisible);
+
+  QPushButton* presetButtons[] = {
+    m_uiLighting->btnFlat, m_uiLighting->btnSimple, m_uiLighting->btnSoft,
+    m_uiLighting->btnFull
+  };
+  for (int i = 0; i < 4; ++i) {
+    connect(presetButtons[i], &QPushButton::clicked, this,
+            [this, i]() { emit lightingPresetClicked(i); });
+  }
 
   m_ui->soliditySlider->setLineEditWidth(leWidth);
 
@@ -84,7 +109,7 @@ VolumeSinkWidget::VolumeSinkWidget(QWidget* parent_)
   connect(m_ui->sliRgbaMappingMax, &DoubleSliderWidget::valueEdited, this,
           &VolumeSinkWidget::onRgbaMappingMaxChanged, Qt::QueuedConnection);
 
-  connect(m_uiLighting->gbLighting, &QGroupBox::toggled, this,
+  connect(m_uiLighting->cbShading, &QCheckBox::toggled, this,
           &VolumeSinkWidget::lightingToggled);
   connect(m_uiLighting->sliAmbient, &DoubleSliderWidget::valueEdited, this,
           &VolumeSinkWidget::ambientChanged);
@@ -94,6 +119,14 @@ VolumeSinkWidget::VolumeSinkWidget(QWidget* parent_)
           &VolumeSinkWidget::specularChanged);
   connect(m_uiLighting->sliSpecularPower, &DoubleSliderWidget::valueEdited,
           this, &VolumeSinkWidget::specularPowerChanged);
+  connect(m_uiLighting->sliShadows, &DoubleSliderWidget::valueEdited, this,
+          &VolumeSinkWidget::volumetricScatteringChanged);
+  connect(m_uiLighting->sliShadowReach, &DoubleSliderWidget::valueEdited, this,
+          &VolumeSinkWidget::shadowReachChanged);
+  connect(m_uiLighting->sliAnisotropy, &DoubleSliderWidget::valueEdited, this,
+          &VolumeSinkWidget::anisotropyChanged);
+  connect(m_uiLighting->cbSmoothNormals, &QCheckBox::toggled, this,
+          &VolumeSinkWidget::smoothNormalsToggled);
   connect(m_ui->soliditySlider, &DoubleSliderWidget::valueEdited, this,
           &VolumeSinkWidget::solidityChanged);
 
@@ -139,7 +172,7 @@ void VolumeSinkWidget::setInterpolationType(const int type)
 
 void VolumeSinkWidget::setLighting(const bool enable)
 {
-  m_uiLighting->gbLighting->setChecked(enable);
+  m_uiLighting->cbShading->setChecked(enable);
 }
 
 void VolumeSinkWidget::setAmbient(const double value)
@@ -160,6 +193,66 @@ void VolumeSinkWidget::setSpecular(const double value)
 void VolumeSinkWidget::setSpecularPower(const double value)
 {
   m_uiLighting->sliSpecularPower->setValue(value);
+}
+
+void VolumeSinkWidget::setVolumetricScattering(const double value)
+{
+  m_uiLighting->sliShadows->setValue(value);
+}
+
+void VolumeSinkWidget::setShadowReach(const double value)
+{
+  m_uiLighting->sliShadowReach->setValue(value);
+}
+
+void VolumeSinkWidget::setAnisotropy(const double value)
+{
+  m_uiLighting->sliAnisotropy->setValue(value);
+}
+
+void VolumeSinkWidget::setSmoothNormals(const bool enable)
+{
+  m_uiLighting->cbSmoothNormals->setChecked(enable);
+}
+
+void VolumeSinkWidget::setActiveLightingPreset(const int preset)
+{
+  QPushButton* presetButtons[] = {
+    m_uiLighting->btnFlat, m_uiLighting->btnSimple, m_uiLighting->btnSoft,
+    m_uiLighting->btnFull
+  };
+  for (int i = 0; i < 4; ++i) {
+    presetButtons[i]->setChecked(i == preset);
+  }
+}
+
+void VolumeSinkWidget::setScatteringAvailable(const bool available,
+                                              const QString& reason)
+{
+  // Swap the tool tip for the reason while disabled, stashing the one
+  // Designer set so it can be put back.
+  static const char* kOriginalToolTip = "tomvizOriginalToolTip";
+  for (auto* w : scatteringWidgets()) {
+    w->setEnabled(available);
+    if (!available) {
+      if (!w->property(kOriginalToolTip).isValid()) {
+        w->setProperty(kOriginalToolTip, w->toolTip());
+      }
+      w->setToolTip(reason);
+    } else if (w->property(kOriginalToolTip).isValid()) {
+      w->setToolTip(w->property(kOriginalToolTip).toString());
+      w->setProperty(kOriginalToolTip, QVariant());
+    }
+  }
+}
+
+QList<QWidget*> VolumeSinkWidget::scatteringWidgets() const
+{
+  // The presets that cast volumetric shadows, plus the Advanced controls
+  // that drive them. Everything else in the panel stays usable.
+  return { m_uiLighting->btnSoft, m_uiLighting->btnFull,
+           m_uiLighting->sliShadows, m_uiLighting->sliShadowReach,
+           m_uiLighting->sliAnisotropy };
 }
 
 void VolumeSinkWidget::onBlendingChanged(const int mode)

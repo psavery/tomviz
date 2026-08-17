@@ -8,17 +8,30 @@
 
 #include "data/VolumeData.h"
 
+#include <pqApplicationCore.h>
+#include <pqSettings.h>
+
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDebug>
 #include <QFormLayout>
+#include <QMessageBox>
+#include <QPushButton>
+#include <QSettings>
 #include <QSignalBlocker>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
 
+#include <algorithm>
+#include <cmath>
+
+#include <vtkCallbackCommand.h>
 #include <vtkColorTransferFunction.h>
+#include <vtkCommand.h>
 #include <vtkDataArray.h>
 #include <vtkImageData.h>
+#include <vtkLightCollection.h>
 #include <vtkPointData.h>
 #include <vtkSMProxy.h>
 #include <vtkPVRenderView.h>
@@ -30,6 +43,8 @@
 #include <vtkObjectFactory.h>
 #include <vtkOpenGLRenderWindow.h>
 #include <vtkPlaneCollection.h>
+#include <vtkRenderWindow.h>
+#include <vtkRenderer.h>
 #include <vtkSmartVolumeMapper.h>
 #include <vtkTextureObject.h>
 #include <vtkVolume.h>
@@ -39,8 +54,205 @@
 namespace tomviz {
 namespace pipeline {
 
+namespace {
+
+struct LightingPresetValues
+{
+  bool shade;
+  double ambient, diffuse, specular, specularPower;
+  double scattering, reach, anisotropy;
+  bool smoothNormals;
+};
+
+// Indexed by VolumeSink::LightingPreset (Flat..Full). Flat is unlit;
+// its remaining values are the Simple baseline so that toggling shading
+// back on afterwards gives a sensible look.
+//
+// Two constraints on the scattering presets, both established by rendering
+// the stock nanoparticle sample across each parameter's range:
+//
+//  - Ambient does nothing once scattering is on. The shader adds it as
+//    in_ambient * in_lightAmbientColor, and vtkLight::AmbientColor is black
+//    by default, so the term is always zero. Brightness in the scattering
+//    path has to come from diffuse, which is why Soft and Full push
+//    diffuse to 1.0 and leave ambient at the Simple baseline rather than
+//    pretending to raise an "ambient" look.
+//
+//  - Scattering anisotropy must not be positive. The phase function is
+//    evaluated against the view direction, and tomviz lights the scene with
+//    a headlight, so light reaching the camera is backscattered: positive
+//    (forward) anisotropy throws it away from the viewer and renders the
+//    volume nearly black. Slightly negative reads brightest without the
+//    blown-out look that sets in below about -0.5.
+const LightingPresetValues kLightingPresets[] = {
+  /* Flat */ { false, 0.1, 0.9, 0.3, 30.0, 0.0, 0.0, 0.0, false },
+  /* Simple */ { true, 0.1, 0.9, 0.3, 30.0, 0.0, 0.0, 0.0, false },
+  /* Soft */ { true, 0.1, 1.0, 0.0, 30.0, 1.0, 0.08, 0.0, true },
+  /* Full */ { true, 0.1, 1.0, 0.3, 40.0, 1.5, 0.2, -0.25, true },
+};
+
+// --- GPU watchdog guard ------------------------------------------------
+//
+// Volumetric scattering is expensive in a way that is fatal rather than
+// merely slow. vtkVolumeShaderComposer emits an unconditional volumeShadow()
+// call per light for every shaded sample as soon as
+// VolumetricScatteringBlending rises above 0 - the blend value only weights
+// the result, it never skips the ray - so each primary sample marches a
+// second ray through the volume. On a 256^3 volume at full shadow reach that
+// is on the order of 200k samples per pixel instead of ~440.
+//
+// ParaView gives still renders an effectively unbounded time budget (the
+// desired update rate drops to ~0, so VTK's own AutoAdjustSampleDistances
+// never engages), and such a frame can run for tens of seconds. Long before
+// it finishes the OS decides the GPU has hung and resets it. That is not
+// recoverable on macOS: the Metal-backed GL renderer calls abort() when a
+// command buffer comes back with kIOGPUCommandBufferCallbackErrorHang, so
+// tomviz dies with SIGABRT and no error anyone can catch, and the GPU reset
+// takes every other GL/Metal application on the machine down with it.
+//
+// So bound the frame ourselves rather than trust the driver to survive it,
+// trading resolution for safety on the two axes VTK exposes: fewer rays
+// (ImageSampleDistance) and coarser steps along each ray (SampleDistance).
+//
+// Predicting that cost up front does not work. Measured on the stock
+// nanoparticle sample, swapping a thresholded opacity map for tomviz's plain
+// linear ramp takes one scattering frame from 19 ms to 465 ms, because the
+// shader casts a shadow ray for every sample that is not fully transparent.
+// The transfer function is user-controlled and edited constantly, so any
+// estimate built from the volume's dimensions is wrong by more than an order
+// of magnitude in both directions - and guessing high wrecks frames that
+// were never in danger.
+//
+// So measure instead. The first scattering frame of a given configuration is
+// rendered deliberately cheaply, timed, and used to solve for the quality
+// that fits the budget; the picture then sharpens over the next frame or two.
+// Cost falls as the fourth power of the degradation factor (fewer rays in
+// each screen axis, and a longer step for both the primary and the shadow
+// rays), so the extrapolation is a single pow().
+//
+// Camera moves are a different matter. A scattering frame cannot be made
+// cheaper without changing what it looks like - a coarser ray step brightens
+// and thins translucent data, fewer rays blob fine structure - and drawing
+// drags at still quality makes heavy data too sluggish to interact with. So
+// drags do not approximate the scattering look at all: they render unlit
+// (the Flat preset's look), the fastest thing we can draw. Unlit also reads
+// closer to the scattering presets than Phong shading does, because those
+// presets take their brightness from the diffuse scattering term rather
+// than from surface shading - Phong renders them dim and harsh, unlit stays
+// bright and even. The still render brings the real look back on release.
+
+// What one frame should cost, still or moving. Well under any GPU watchdog,
+// with room for the estimate to be off by several times and still not hang.
+const double kTargetFrameSeconds = 0.35;
+// Quality is expressed as a cost-reduction factor: 1 is full quality, 100
+// means the frame is drawn for a hundredth of what it would otherwise cost.
+// It is spent evenly across the two knobs VTK offers, because each distorts
+// a different kind of data: thinning the rays (ImageSampleDistance) fattens
+// fine structure into blobs on hard-surface opacity maps, while lengthening
+// the ray step (SampleDistance) brightens and thins semi-transparent data by
+// under-integrating its haze and shadows. At equal cost the even split stays
+// closest to the full-quality image on both; either knob alone is worse on
+// one of them.
+const double kNoReduction = 1.0;
+// Per-knob cap: at most 1 ray per 8x8 pixels and one step per 8 voxels.
+const double kMaxKnobFactor = 8.0;
+// The reduction with both knobs at their cap, each contributing its square.
+const double kMaxReduction =
+  kMaxKnobFactor * kMaxKnobFactor * kMaxKnobFactor * kMaxKnobFactor;
+// First frame of a new configuration, before anything has been timed.
+const double kProbeReduction = kMaxReduction;
+// Sharpening moves at most this far per frame (the square of a halving on
+// each knob), so every gain in quality is backed by a nearby measurement.
+const double kMaxSharpeningStep = 16.0;
+// Relative change below which the refinement loop stops, so it terminates
+// instead of chasing timing noise.
+const double kReductionEpsilon = 0.1;
+
+/// What to scale both sampling knobs by to achieve @a reduction. Each knob
+/// contributes its square to the total, so an even split gives each the
+/// fourth root. The clamp cannot bind while reduction stays within
+/// kMaxReduction, and is kept only so the knobs are bounded on their own.
+double knobFactor(double reduction)
+{
+  return reduction > kNoReduction
+           ? std::min(kMaxKnobFactor, std::pow(reduction, 0.25))
+           : 1.0;
+}
+
+/// Everything that invalidates a previous timing measurement. When any of it
+/// changes the guard goes back to a probe frame rather than trusting a
+/// measurement taken under different conditions.
+///
+/// Viewport size is deliberately absent: ParaView renders interactive frames
+/// into a smaller buffer than still ones, so keying on size would throw the
+/// measurement away at the start and end of every drag. Cost scales linearly
+/// with pixel count, so the estimate is stored per pixel and rescaled instead.
+struct GuardKey
+{
+  double scattering = -1.0;
+  double reach = -1.0;
+  int lights = 0;
+  vtkMTimeType propertyTime = 0;
+  vtkMTimeType inputTime = 0;
+
+  bool operator==(const GuardKey& o) const
+  {
+    return scattering == o.scattering && reach == o.reach &&
+           lights == o.lights && propertyTime == o.propertyTime &&
+           inputTime == o.inputTime;
+  }
+  bool operator!=(const GuardKey& o) const { return !(*this == o); }
+};
+
+/// Cost reduction needed to bring a frame of @a secondsPerPixel (the per-pixel
+/// cost at full quality) over @a pixels down to @a targetSeconds.
+double solveReduction(double secondsPerPixel, double pixels,
+                      double targetSeconds)
+{
+  if (secondsPerPixel <= 0.0 || pixels <= 0.0 || targetSeconds <= 0.0) {
+    return kNoReduction;
+  }
+  const double wanted = secondsPerPixel * pixels / targetSeconds;
+  return std::min(kMaxReduction, std::max(kNoReduction, wanted));
+}
+
+/// True when @a ren is drawing a frame the user is actively interacting
+/// through. This is the same test vtkSmartVolumeMapper::Render uses to
+/// decide whether to let the GPU mapper degrade itself.
+bool isInteractiveRender(vtkRenderer* ren, double interactiveUpdateRate)
+{
+  auto* window = ren ? ren->GetRenderWindow() : nullptr;
+  return window && window->GetDesiredUpdateRate() >= interactiveUpdateRate;
+}
+
+int lightCount(vtkRenderer* ren)
+{
+  auto* lights = ren ? ren->GetLights() : nullptr;
+  return lights ? std::max(1, lights->GetNumberOfItems()) : 1;
+}
+
+double viewportPixels(vtkRenderer* ren)
+{
+  const int* size = ren ? ren->GetSize() : nullptr;
+  return size ? static_cast<double>(size[0]) * static_cast<double>(size[1])
+              : 0.0;
+}
+
+double smallestSpacing(vtkImageData* image)
+{
+  double spacing[3] = { 1.0, 1.0, 1.0 };
+  image->GetSpacing(spacing);
+  const double smallest = std::min(std::min(std::abs(spacing[0]),
+                                            std::abs(spacing[1])),
+                                   std::abs(spacing[2]));
+  return smallest > 0.0 ? smallest : 1.0;
+}
+
+} // namespace
+
 // Subclass vtkSmartVolumeMapper so we can forward jittering to the GPU mapper,
-// matching the legacy ModuleVolume behavior.
+// matching the legacy ModuleVolume behavior, and so that Render() can bound
+// the cost of a scattering-heavy frame (see the GPU watchdog guard above).
 class SmartVolumeMapper : public vtkSmartVolumeMapper
 {
 public:
@@ -52,6 +264,204 @@ public:
   void UseJitteringOff() { GetGPUMapper()->UseJitteringOff(); }
   vtkTypeBool GetUseJittering() { return GetGPUMapper()->GetUseJittering(); }
   void SetUseJittering(vtkTypeBool b) { GetGPUMapper()->SetUseJittering(b); }
+
+  // The scattering level the user asked for. Still frames render it, fitted
+  // into the time budget by adjusting the sampling; camera moves render
+  // unlit instead (see applyRenderGuard). It only falls back to 0 on stills
+  // when even the coarsest possible frame would blow the budget.
+  vtkSetClampMacro(RequestedVolumetricScattering, double, 0.0, 2.0);
+  vtkGetMacro(RequestedVolumetricScattering, double);
+
+  /// True when the last frame was rendered coarser than the measurement now
+  /// says is necessary, i.e. redrawing would produce a sharper picture.
+  /// One-shot: the flag is cleared by reading it, so a request cannot outlive
+  /// the frame that raised it. Without that, a volume that stops rendering
+  /// (hidden, or its view redrawn for some other prop) would leave the flag
+  /// set and spin the refinement loop forever.
+  bool ConsumeRefinementRequest()
+  {
+    const bool wanted = NeedsRefinement;
+    NeedsRefinement = false;
+    return wanted;
+  }
+
+  /// True when the frame just drawn was an unlit interactive one - i.e. the
+  /// scattering look is currently off screen and a still render is owed.
+  /// One-shot, cleared by reading, for the same reason as above.
+  bool ConsumeSuppressedFrame()
+  {
+    const bool drawn = SuppressedFrameDrawn;
+    SuppressedFrameDrawn = false;
+    return drawn;
+  }
+
+  void Render(vtkRenderer* ren, vtkVolume* vol) override
+  {
+    const bool guarded = applyRenderGuard(ren, vol);
+    vtkSmartVolumeMapper::Render(ren, vol);
+    if (guarded) {
+      recordFrameTime();
+    }
+  }
+
+protected:
+  /// Returns true if the scattering guard is in force for this frame.
+  bool applyRenderGuard(vtkRenderer* ren, vtkVolume* vol)
+  {
+    NeedsRefinement = false;
+
+    auto* property = vol ? vol->GetProperty() : nullptr;
+
+    // Undo a previous frame's interactive suppression before reading any
+    // state off the property.
+    if (ShadeSuppressed && property) {
+      property->SetShade(1);
+      ShadeSuppressed = false;
+      // Our own toggling moved the property's MTime; fold that into the
+      // stored key so the end of a drag does not masquerade as a
+      // configuration change and trigger a needless probe/refine cycle. (A
+      // transfer function edited mid-drag would be folded in with it, but
+      // with one cursor those cannot coincide.)
+      Key.propertyTime = property->GetMTime();
+    }
+
+    const bool shaded = property && property->GetShade() != 0;
+    const double requested = shaded ? RequestedVolumetricScattering : 0.0;
+    auto* image = vtkImageData::SafeDownCast(GetDataObjectInput());
+
+    if (requested <= 0.0 || !image) {
+      SetVolumetricScatteringBlending(0.0f);
+      releaseSampleDistances();
+      return false;
+    }
+
+    // Camera moves render unlit - the Flat look - instead of a degraded
+    // scattering frame; see the design notes above. The still frame that
+    // follows interaction restores the shading through the block at the top
+    // of this function; VolumeSink::onRenderFinished guarantees that still
+    // frame actually happens.
+    if (isInteractiveRender(ren, GetInteractiveUpdateRate())) {
+      property->SetShade(0);
+      ShadeSuppressed = true;
+      SuppressedFrameDrawn = true;
+      SetVolumetricScatteringBlending(0.0f);
+      releaseSampleDistances();
+      return false;
+    }
+
+    const double pixels = viewportPixels(ren);
+
+    GuardKey key;
+    key.scattering = requested;
+    key.reach = GetGlobalIlluminationReach();
+    key.lights = lightCount(ren);
+    // The opacity transfer function swings the cost by more than an order of
+    // magnitude, and it lives on the property, so any edit to it has to send
+    // us back to a probe frame.
+    key.propertyTime = property->GetMTime();
+    key.inputTime = image->GetMTime();
+    if (key != Key) {
+      Key = key;
+      SecondsPerPixel = -1.0;
+      Reduction = kProbeReduction;
+    } else if (SecondsPerPixel > 0.0) {
+      const double wanted =
+        solveReduction(SecondsPerPixel, pixels, kTargetFrameSeconds);
+      // Coarsening is applied at once - that is the safety direction.
+      // Sharpening steps down gradually, because a probe frame is small
+      // enough for fixed overhead to dominate its timing and make the
+      // extrapolation optimistic.
+      Reduction = wanted > Reduction
+                    ? wanted
+                    : std::max(wanted, Reduction / kMaxSharpeningStep);
+    }
+
+    // Safety valve: when even the coarsest possible frame blows the budget,
+    // the scattering itself is unaffordable on this configuration - keeping
+    // the process alive beats keeping the look.
+    if (SecondsPerPixel > 0.0 &&
+        SecondsPerPixel * pixels / kMaxReduction > kTargetFrameSeconds) {
+      SetVolumetricScatteringBlending(0.0f);
+      releaseSampleDistances();
+      return false;
+    }
+
+    SetVolumetricScatteringBlending(static_cast<float>(requested));
+
+    auto* gpu = GetGPUMapper();
+    if (BaseSampleDistance < 0.0f) {
+      BaseSampleDistance = gpu->GetSampleDistance();
+    }
+    // Both flags have to go off on this mapper: vtkSmartVolumeMapper::Render
+    // otherwise re-derives the GPU mapper's AutoAdjustSampleDistances from
+    // the update rate and hands our explicit distances back to the heuristic.
+    SetInteractiveAdjustSampleDistances(0);
+    SetAutoAdjustSampleDistances(0);
+    const double knob = knobFactor(Reduction);
+    gpu->SetImageSampleDistance(static_cast<float>(knob));
+    gpu->SetSampleDistance(
+      static_cast<float>(knob * smallestSpacing(image)));
+    LastPixels = pixels;
+    return true;
+  }
+
+  /// Fold the frame we just drew into the quality estimate. vtkGPUVolumeRay
+  /// CastMapper times its own render; measured against a blocking framebuffer
+  /// readback that figure tracks real GPU time to within a few percent here,
+  /// so it is a usable signal.
+  void recordFrameTime()
+  {
+    auto* gpu = GetGPUMapper();
+    const double measured = gpu->GetTimeToDraw();
+    if (measured <= 0.0 || LastPixels <= 0.0) {
+      return;
+    }
+    // Normalise to what one pixel would cost at full quality, so the estimate
+    // survives the viewport changing size - which it does at the start and
+    // end of every camera move.
+    SecondsPerPixel = measured * Reduction / LastPixels;
+
+    // A frame that measured cheaper than its reduction warranted asks for
+    // one redraw to sharpen. Coarsening never schedules anything - the
+    // too-slow frame has already happened, and the correction lands on
+    // whatever renders next.
+    const double wanted =
+      solveReduction(SecondsPerPixel, LastPixels, kTargetFrameSeconds);
+    NeedsRefinement = wanted < Reduction * (1.0 - kReductionEpsilon);
+  }
+
+  /// Hand sampling back to VTK, undoing whatever applyRenderGuard() set.
+  void releaseSampleDistances()
+  {
+    if (BaseSampleDistance < 0.0f) {
+      return;
+    }
+    auto* gpu = GetGPUMapper();
+    gpu->SetImageSampleDistance(1.0f); // one ray per pixel
+    gpu->SetSampleDistance(BaseSampleDistance);
+    SetInteractiveAdjustSampleDistances(1);
+    SetAutoAdjustSampleDistances(1);
+    BaseSampleDistance = -1.0f;
+  }
+
+  double RequestedVolumetricScattering = 0.0;
+  // The mapper's own SampleDistance, stashed while we are overriding it.
+  // Negative means we are not currently overriding anything.
+  float BaseSampleDistance = -1.0f;
+  // Current quality, and the conditions it was measured under.
+  double Reduction = kProbeReduction;
+  GuardKey Key;
+  bool NeedsRefinement = false;
+  // True while we have shading switched off on the volume property for an
+  // interactive frame; the next frame restores it.
+  bool ShadeSuppressed = false;
+  // Set alongside ShadeSuppressed for each unlit frame; consumed by the
+  // sink's render observer to arm the settle timer.
+  bool SuppressedFrameDrawn = false;
+  // Measured cost of one pixel at full quality; negative until a frame of the
+  // current configuration has been timed.
+  double SecondsPerPixel = -1.0;
+  double LastPixels = 0.0;
 };
 
 vtkStandardNewMacro(SmartVolumeMapper)
@@ -78,14 +488,29 @@ VolumeSink::VolumeSink(QObject* parent) : LegacyModuleSink(parent)
   m_multiBlockMapper->SetBlendMode(vtkVolumeMapper::COMPOSITE_BLEND);
 
   m_volumeProperty->SetInterpolationType(VTK_LINEAR_INTERPOLATION);
-  m_volumeProperty->SetAmbient(0.0);
-  m_volumeProperty->SetDiffuse(1.0);
-  m_volumeProperty->SetSpecular(1.0);
-  m_volumeProperty->SetSpecularPower(100.0);
+  // Start on the Simple preset: directional shading reads the shape of a
+  // volume far better than the unlit Flat look, and it costs nothing extra.
+  // Saved state always carries lighting/enabled explicitly, so this only
+  // affects newly created volumes.
+  const auto& simple = kLightingPresets[static_cast<int>(
+    LightingPreset::Simple)];
+  m_volumeProperty->SetShade(simple.shade ? 1 : 0);
+  m_volumeProperty->SetAmbient(simple.ambient);
+  m_volumeProperty->SetDiffuse(simple.diffuse);
+  m_volumeProperty->SetSpecular(simple.specular);
+  m_volumeProperty->SetSpecularPower(simple.specularPower);
 
   m_volume->SetMapper(m_volumeMapper);
   m_volume->SetVisibility(0);
   m_volume->SetProperty(m_volumeProperty);
+
+  // Fallback still render after interaction; see onRenderFinished(). The
+  // interval only needs to outlast the gap between interactive frames -
+  // even heavy unlit frames arrive well inside 400 ms.
+  m_settleTimer.setSingleShot(true);
+  m_settleTimer.setInterval(400);
+  connect(&m_settleTimer, &QTimer::timeout, this,
+          [this]() { emit renderNeeded(); });
 }
 
 VolumeSink::~VolumeSink()
@@ -125,12 +550,62 @@ bool VolumeSink::initialize(vtkSMViewProxy* view)
   }
 
   renderView()->AddPropToRenderer(m_volume);
+
+  // The scattering guard draws its first frame of any new configuration
+  // deliberately coarse so it can time it safely. Watch for the end of each
+  // render so a sharper one can be requested once that measurement says
+  // there is headroom.
+  if (auto* window = renderView()->GetRenderWindow()) {
+    m_refinementObserver->SetClientData(this);
+    m_refinementObserver->SetCallback(
+      [](vtkObject*, unsigned long, void* clientData, void*) {
+        static_cast<VolumeSink*>(clientData)->onRenderFinished();
+      });
+    m_refinementObserverId =
+      window->AddObserver(vtkCommand::EndEvent, m_refinementObserver);
+  }
   return true;
+}
+
+void VolumeSink::onRenderFinished()
+{
+  if (m_usingMultiBlock) {
+    return;
+  }
+
+  if (m_volumeMapper->ConsumeSuppressedFrame()) {
+    // An unlit interactive frame is on screen. In principle ParaView follows
+    // interaction with a still render, which is what brings the scattering
+    // look back - but that depends on an EndInteractionEvent reaching the
+    // view's interactor helper, and macOS trackpad wheel and gesture streams
+    // do not reliably deliver one. Arm a fallback: each interactive frame
+    // re-arms the timer, so it fires only once the motion has genuinely
+    // stopped, and the still frame it requests is what restores the look. A
+    // still frame that arrives on its own cancels it below.
+    m_settleTimer.start();
+    return;
+  }
+  m_settleTimer.stop();
+
+  if (!m_volumeMapper->ConsumeRefinementRequest()) {
+    return;
+  }
+  // Queued: we are inside the render that just finished, and re-entering the
+  // render window from its own EndEvent would recurse. The loop terminates
+  // because each pass either lands within kReductionEpsilon of the measured
+  // target or stops improving.
+  QTimer::singleShot(0, this, [this]() { emit renderNeeded(); });
 }
 
 bool VolumeSink::finalize()
 {
   if (renderView()) {
+    if (m_refinementObserverId) {
+      if (auto* window = renderView()->GetRenderWindow()) {
+        window->RemoveObserver(m_refinementObserverId);
+      }
+      m_refinementObserverId = 0;
+    }
     renderView()->RemovePropFromRenderer(m_volume);
   }
   return LegacyModuleSink::finalize();
@@ -220,6 +695,13 @@ void VolumeSink::updateMapperForInput(vtkImageData* image)
       if (planes && planes->GetNumberOfItems() > 0) {
         warnClippingUnsupported();
       }
+      // Same for a scattering preset: it is unbounded on the bricked path, so
+      // fall back to Simple rather than leave a preset half-applied.
+      if (volumetricScattering() > 0.0) {
+        warnScatteringUnsupported();
+        applyLightingPreset(LightingPreset::Simple);
+      }
+      emit lightingStateChanged();
     }
   } else {
     // Fits in one texture: keep the original single-mapper path so normal
@@ -229,6 +711,8 @@ void VolumeSink::updateMapperForInput(vtkImageData* image)
     if (m_usingMultiBlock) {
       m_volume->SetMapper(m_volumeMapper);
       m_usingMultiBlock = false;
+      // The scattering presets are available again on this path.
+      emit lightingStateChanged();
     }
   }
 }
@@ -284,6 +768,7 @@ void VolumeSink::setLighting(bool enabled)
 {
   m_volumeProperty->SetShade(enabled ? 1 : 0);
   emit lightingChanged(enabled);
+  emit lightingStateChanged();
   emit renderNeeded();
 }
 
@@ -295,6 +780,7 @@ double VolumeSink::ambient() const
 void VolumeSink::setAmbient(double value)
 {
   m_volumeProperty->SetAmbient(value);
+  emit lightingStateChanged();
   emit renderNeeded();
 }
 
@@ -306,6 +792,7 @@ double VolumeSink::diffuse() const
 void VolumeSink::setDiffuse(double value)
 {
   m_volumeProperty->SetDiffuse(value);
+  emit lightingStateChanged();
   emit renderNeeded();
 }
 
@@ -317,6 +804,7 @@ double VolumeSink::specular() const
 void VolumeSink::setSpecular(double value)
 {
   m_volumeProperty->SetSpecular(value);
+  emit lightingStateChanged();
   emit renderNeeded();
 }
 
@@ -328,7 +816,143 @@ double VolumeSink::specularPower() const
 void VolumeSink::setSpecularPower(double value)
 {
   m_volumeProperty->SetSpecularPower(value);
+  emit lightingStateChanged();
   emit renderNeeded();
+}
+
+double VolumeSink::volumetricScattering() const
+{
+  // The requested value, not the mapper's current one - the mappers lower
+  // theirs during interaction and raise it again for the still frame.
+  return m_volumeMapper->GetRequestedVolumetricScattering();
+}
+
+void VolumeSink::setVolumetricScattering(double value)
+{
+  if (value > 0.0 && !scatteringSupported()) {
+    warnScatteringUnsupported();
+    value = 0.0;
+  }
+  // Deliberately not forwarded to m_multiBlockMapper: its per-brick mappers
+  // are out of reach, so a scattering frame there cannot be bounded. Leaving
+  // that mapper at its zero default is the backstop that guarantees the
+  // bricked path never renders one, whatever state arrives.
+  m_volumeMapper->SetRequestedVolumetricScattering(value);
+  emit lightingStateChanged();
+  emit renderNeeded();
+}
+
+bool VolumeSink::scatteringSupported() const
+{
+  // A volume too large for one 3-D texture renders through
+  // vtkMultiBlockVolumeMapper, whose per-brick mappers are private - there is
+  // no way to cap their sampling, so a scattering frame there is unbounded.
+  // These are also the largest volumes, i.e. the likeliest to hang the GPU.
+  if (m_usingMultiBlock) {
+    return false;
+  }
+  // Escape hatch for sites deploying to hardware known not to cope, or for
+  // anyone who has already lost a session to it.
+  auto* core = pqApplicationCore::instance();
+  auto* settings = core ? core->settings() : nullptr;
+  return !settings ||
+         settings->value("Volume.AllowVolumetricScattering", true).toBool();
+}
+
+void VolumeSink::warnScatteringUnsupported() const
+{
+  if (m_usingMultiBlock) {
+    qWarning("VolumeSink: volumetric scattering is not supported for volumes "
+             "larger than the GPU's 3-D texture size limit. This volume is "
+             "rendered in bricks, whose sampling cannot be bounded, so the "
+             "Soft and Full lighting presets are unavailable. Reduce the "
+             "volume below the limit (e.g. subsample or crop) to use them.");
+    return;
+  }
+  qWarning("VolumeSink: volumetric scattering is disabled by the "
+           "Volume.AllowVolumetricScattering setting.");
+}
+
+double VolumeSink::shadowReach() const
+{
+  return m_volumeMapper->GetGlobalIlluminationReach();
+}
+
+void VolumeSink::setShadowReach(double value)
+{
+  m_volumeMapper->SetGlobalIlluminationReach(value);
+  m_multiBlockMapper->SetGlobalIlluminationReach(value);
+  emit lightingStateChanged();
+  emit renderNeeded();
+}
+
+double VolumeSink::scatteringAnisotropy() const
+{
+  return m_volumeProperty->GetScatteringAnisotropy();
+}
+
+void VolumeSink::setScatteringAnisotropy(double value)
+{
+  m_volumeProperty->SetScatteringAnisotropy(value);
+  emit lightingStateChanged();
+  emit renderNeeded();
+}
+
+bool VolumeSink::smoothNormals() const
+{
+  return m_volumeMapper->GetComputeNormalFromOpacity();
+}
+
+void VolumeSink::setSmoothNormals(bool enabled)
+{
+  m_volumeMapper->SetComputeNormalFromOpacity(enabled);
+  m_multiBlockMapper->SetComputeNormalFromOpacity(enabled);
+  emit lightingStateChanged();
+  emit renderNeeded();
+}
+
+// --- Lighting presets ---
+
+void VolumeSink::applyLightingPreset(LightingPreset preset)
+{
+  int idx = static_cast<int>(preset);
+  if (idx < 0 || idx > 3) {
+    return;
+  }
+  const auto& p = kLightingPresets[idx];
+  setAmbient(p.ambient);
+  setDiffuse(p.diffuse);
+  setSpecular(p.specular);
+  setSpecularPower(p.specularPower);
+  setVolumetricScattering(p.scattering);
+  setShadowReach(p.reach);
+  setScatteringAnisotropy(p.anisotropy);
+  setSmoothNormals(p.smoothNormals);
+  setLighting(p.shade);
+}
+
+VolumeSink::LightingPreset VolumeSink::currentLightingPreset() const
+{
+  // With shading off none of the other parameters affect the render, so any
+  // unlit state is Flat - including pre-preset defaults and old state files.
+  if (!lighting()) {
+    return LightingPreset::Flat;
+  }
+  // Not named "near": that is a legacy macro in the Windows headers.
+  auto approx = [](double a, double b) { return std::fabs(a - b) < 1e-3; };
+  for (int i = 1; i <= 3; ++i) {
+    const auto& p = kLightingPresets[i];
+    if (approx(ambient(), p.ambient) && approx(diffuse(), p.diffuse) &&
+        approx(specular(), p.specular) &&
+        approx(specularPower(), p.specularPower) &&
+        approx(volumetricScattering(), p.scattering) &&
+        approx(shadowReach(), p.reach) &&
+        approx(scatteringAnisotropy(), p.anisotropy) &&
+        smoothNormals() == p.smoothNormals) {
+      return static_cast<LightingPreset>(i);
+    }
+  }
+  return LightingPreset::Custom;
 }
 
 // --- Blending ---
@@ -481,6 +1105,67 @@ void VolumeSink::removeAllClippingPlanes()
 
 // --- Properties widget ---
 
+QString VolumeSink::scatteringUnavailableReason() const
+{
+  if (scatteringSupported()) {
+    return QString();
+  }
+  if (m_usingMultiBlock) {
+    return tr("This volume is larger than the GPU's 3-D texture size limit, "
+              "so it is rendered in bricks. Volumetric shadows cannot be "
+              "bounded on that path and are unavailable here. Subsample or "
+              "crop the volume to use these presets.");
+  }
+  return tr("Volumetric shadows are turned off by the "
+            "Volume.AllowVolumetricScattering setting.");
+}
+
+bool VolumeSink::confirmScatteringPreset(LightingPreset preset,
+                                         QWidget* parent) const
+{
+  int idx = static_cast<int>(preset);
+  if (idx < 0 || idx > 3 || kLightingPresets[idx].scattering <= 0.0) {
+    return true;
+  }
+
+  auto* core = pqApplicationCore::instance();
+  auto* settings = core ? core->settings() : nullptr;
+  const QString key = "Volume.WarnVolumetricScattering";
+  if (settings && !settings->value(key, true).toBool()) {
+    return true;
+  }
+
+  // Worth interrupting for: when this goes wrong it is not a slow render but
+  // a lost session. A hung GPU command buffer is unrecoverable on macOS - the
+  // driver aborts the process - and the GPU reset that follows can take other
+  // applications down with it.
+  QMessageBox box(parent);
+  box.setIcon(QMessageBox::Warning);
+  box.setWindowTitle(tr("Volumetric Shadows"));
+  box.setText(tr("The Soft and Full presets cast volumetric shadows."));
+  box.setInformativeText(
+    tr("These are far more demanding than the other presets. Tomviz renders "
+       "them at reduced resolution to stay within what the GPU can finish, "
+       "but on lower-end hardware a frame can still take long enough for the "
+       "driver to reset the GPU, which will close Tomviz - and possibly other "
+       "applications - without warning.\n\n"
+       "Save your work before continuing."));
+  auto* proceed = box.addButton(tr("Continue"), QMessageBox::AcceptRole);
+  box.addButton(QMessageBox::Cancel);
+  box.setDefaultButton(proceed);
+
+  // QMessageBox takes ownership of the check box.
+  auto* dontAsk = new QCheckBox(tr("Don't warn me again"));
+  box.setCheckBox(dontAsk);
+  box.exec();
+
+  const bool accepted = box.clickedButton() == proceed;
+  if (accepted && dontAsk->isChecked() && settings) {
+    settings->setValue(key, false);
+  }
+  return accepted;
+}
+
 QWidget* VolumeSink::createSinkPropertiesWidget(QWidget* parent)
 {
   auto* widget = new VolumeSinkWidget(parent);
@@ -506,19 +1191,34 @@ QWidget* VolumeSink::createSinkPropertiesWidget(QWidget* parent)
   connect(separateCmapCheck, &QCheckBox::toggled,
           [this](bool on) { setUseDetachedColorMap(on); });
 
-  // Push current state into the widget
-  {
+  // Push all lighting state (values + active preset highlight) into the
+  // widget; reused whenever any lighting parameter changes on this sink.
+  auto syncLighting = [this, widget]() {
     QSignalBlocker blocker(widget);
-    widget->setJittering(jittering());
     widget->setLighting(lighting());
-    widget->setBlendingMode(blendingMode());
-    widget->setInterpolationType(interpolationType());
     widget->setAmbient(ambient());
     widget->setDiffuse(diffuse());
     widget->setSpecular(specular());
     widget->setSpecularPower(specularPower());
+    widget->setVolumetricScattering(volumetricScattering());
+    widget->setShadowReach(shadowReach());
+    widget->setAnisotropy(scatteringAnisotropy());
+    widget->setSmoothNormals(smoothNormals());
+    widget->setActiveLightingPreset(static_cast<int>(currentLightingPreset()));
+    widget->setScatteringAvailable(scatteringSupported(),
+                                   scatteringUnavailableReason());
+  };
+  connect(this, &VolumeSink::lightingStateChanged, widget, syncLighting);
+
+  // Push current state into the widget
+  {
+    QSignalBlocker blocker(widget);
+    widget->setJittering(jittering());
+    widget->setBlendingMode(blendingMode());
+    widget->setInterpolationType(interpolationType());
     widget->setSolidity(solidity());
   }
+  syncLighting();
 
   // Connect widget signals to VolumeSink setters
   connect(widget, &VolumeSinkWidget::jitteringToggled, this,
@@ -534,11 +1234,6 @@ QWidget* VolumeSink::createSinkPropertiesWidget(QWidget* parent)
             QSignalBlocker blocker(widget);
             widget->setInterpolationType(type);
           });
-  connect(this, &VolumeSink::lightingChanged, widget,
-          [widget](bool enabled) {
-            QSignalBlocker blocker(widget);
-            widget->setLighting(enabled);
-          });
   connect(widget, &VolumeSinkWidget::ambientChanged, this,
           &VolumeSink::setAmbient);
   connect(widget, &VolumeSinkWidget::diffuseChanged, this,
@@ -547,6 +1242,26 @@ QWidget* VolumeSink::createSinkPropertiesWidget(QWidget* parent)
           &VolumeSink::setSpecular);
   connect(widget, &VolumeSinkWidget::specularPowerChanged, this,
           &VolumeSink::setSpecularPower);
+  connect(widget, &VolumeSinkWidget::volumetricScatteringChanged, this,
+          &VolumeSink::setVolumetricScattering);
+  connect(widget, &VolumeSinkWidget::shadowReachChanged, this,
+          &VolumeSink::setShadowReach);
+  connect(widget, &VolumeSinkWidget::anisotropyChanged, this,
+          &VolumeSink::setScatteringAnisotropy);
+  connect(widget, &VolumeSinkWidget::smoothNormalsToggled, this,
+          &VolumeSink::setSmoothNormals);
+  connect(widget, &VolumeSinkWidget::lightingPresetClicked, this,
+          [this, widget](int preset) {
+            auto p = static_cast<LightingPreset>(preset);
+            if (!confirmScatteringPreset(p, widget)) {
+              // Put the highlight back on whatever is actually rendering.
+              QSignalBlocker blocker(widget);
+              widget->setActiveLightingPreset(
+                static_cast<int>(currentLightingPreset()));
+              return;
+            }
+            applyLightingPreset(p);
+          });
   connect(widget, &VolumeSinkWidget::solidityChanged, this,
           &VolumeSink::setSolidity);
 
@@ -571,6 +1286,10 @@ QJsonObject VolumeSink::serialize() const
   light["diffuse"] = diffuse();
   light["specular"] = specular();
   light["specularPower"] = specularPower();
+  light["scattering"] = volumetricScattering();
+  light["shadowReach"] = shadowReach();
+  light["anisotropy"] = scatteringAnisotropy();
+  light["smoothNormals"] = smoothNormals();
   json["lighting"] = light;
 
   return json;
@@ -600,6 +1319,11 @@ bool VolumeSink::deserialize(const QJsonObject& json)
     setDiffuse(light["diffuse"].toDouble());
     setSpecular(light["specular"].toDouble());
     setSpecularPower(light["specularPower"].toDouble());
+    // Missing in pre-preset state files; the defaults match their behavior.
+    setVolumetricScattering(light["scattering"].toDouble(0.0));
+    setShadowReach(light["shadowReach"].toDouble(0.0));
+    setScatteringAnisotropy(light["anisotropy"].toDouble(0.0));
+    setSmoothNormals(light["smoothNormals"].toBool(false));
   }
   if (json.contains("activeScalars")) {
     readActiveScalars(json, m_activeScalars);

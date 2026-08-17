@@ -18,7 +18,7 @@ class QFormLayout;
 
 namespace Ui {
 class VolumeSinkWidget;
-class LightingParametersForm;
+class VolumeLightingForm;
 } // namespace Ui
 
 namespace tomviz {
@@ -46,6 +46,16 @@ public:
   void setDiffuse(const double value);
   void setSpecular(const double value);
   void setSpecularPower(const double value);
+  void setVolumetricScattering(const double value);
+  void setShadowReach(const double value);
+  void setAnisotropy(const double value);
+  void setSmoothNormals(const bool enable);
+  /// Highlight the preset button matching the sink's current lighting
+  /// state (VolumeSink::LightingPreset); -1 (Custom) unchecks them all.
+  void setActiveLightingPreset(const int preset);
+  /// Enable or disable the presets and controls that cast volumetric
+  /// shadows. When disabling, @a reason is shown as their tool tip.
+  void setScatteringAvailable(const bool available, const QString& reason);
   void setTransferMode(const int transferMode);
   void setSolidity(const double value);
   void setRgbaMappingAllowed(const bool allowed);
@@ -74,6 +84,11 @@ signals:
   void diffuseChanged(const double value);
   void specularChanged(const double value);
   void specularPowerChanged(const double value);
+  void volumetricScatteringChanged(const double value);
+  void shadowReachChanged(const double value);
+  void anisotropyChanged(const double value);
+  void smoothNormalsToggled(const bool state);
+  void lightingPresetClicked(const int preset);
   void transferModeChanged(const int mode);
   void solidityChanged(const double value);
   void useRgbaMappingToggled(const bool b);
@@ -89,9 +104,11 @@ private:
   void operator=(const VolumeSinkWidget&) = delete;
 
   bool usesLighting(const int mode) const;
+  /// Controls that only do anything when volumetric scattering is available.
+  QList<QWidget*> scatteringWidgets() const;
 
   QScopedPointer<Ui::VolumeSinkWidget> m_ui;
-  QScopedPointer<Ui::LightingParametersForm> m_uiLighting;
+  QScopedPointer<Ui::VolumeLightingForm> m_uiLighting;
 
 private slots:
   void onBlendingChanged(const int mode);
