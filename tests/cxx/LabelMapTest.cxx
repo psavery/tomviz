@@ -2,6 +2,7 @@
    It is released under the 3-Clause BSD License, see "LICENSE". */
 
 #include <QApplication>
+#include <QColor>
 #include <QTest>
 
 #include <pqApplicationCore.h>
@@ -87,6 +88,32 @@ private slots:
 
     // Nothing loaded is not something to offer it for.
     QVERIFY(!canInterpretAsLabelMap(nullptr));
+  }
+
+  // A label map adopted from a plain volume keeps its table in the sink
+  // rather than in the port's payload, so this round trip is the only
+  // thing carrying the user's colors and names into a state file.
+  void labelTableSurvivesAStateFile()
+  {
+    auto data = std::make_shared<LabelMapData>(threeLabelImage());
+    data->refreshLabels();
+    auto& labels = data->labels();
+    QCOMPARE(labels.count(), 3);
+
+    labels.setName(1, "particle A");
+    labels.setColor(1, QColor(10, 200, 30));
+    labels.setVisible(2, false);
+    const auto json = labels.serialize();
+
+    LabelTable restored;
+    restored.deserialize(json);
+    QCOMPARE(restored.count(), 3);
+    QCOMPARE(restored.at(1).name, QString("particle A"));
+    QCOMPARE(restored.at(1).color, QColor(10, 200, 30));
+    QCOMPARE(restored.at(2).visible, false);
+    // Label 0 is background and starts hidden; that must not come back
+    // as visible either.
+    QCOMPARE(restored.at(0).visible, false);
   }
 
   void hiddenLabelSurvivesReexecution()

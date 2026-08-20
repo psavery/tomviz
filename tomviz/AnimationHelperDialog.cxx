@@ -155,7 +155,6 @@ public:
   Ui::AnimationHelperDialog ui;
   pqPropertyLinks pqLinks;
   QPointer<AnimationHelperDialog> parent;
-  QPointer<CameraAnimation> cameraAnimation;
   vtkWeakPointer<vtkSMProxy> linkedScene;
 
   // Opacity curves captured but not yet added, keyed by the volume they
@@ -396,7 +395,7 @@ public:
         }
       }
     }
-    bool hasCameraPath = !cameraAnimation.isNull();
+    bool hasCameraPath = CameraViewpoints::instance().isFlying();
     bool hasCameraAnimations = hasCameraCues || hasCameraPath;
 
     // Reflect what is actually driving the camera. Blocked so setting the
@@ -480,17 +479,9 @@ public:
       animateViewpointsInternal();
     } else {
       clearCameraCues();
-      deleteCameraAnimation();
+      CameraViewpoints::instance().stopFlight();
     }
     updateEnableStates();
-  }
-
-  void deleteCameraAnimation()
-  {
-    if (cameraAnimation) {
-      cameraAnimation->deleteLater();
-      cameraAnimation = nullptr;
-    }
   }
 
   void createCameraOrbitInternal()
@@ -502,7 +493,7 @@ public:
 
     clearCameraCues(renderView->getRenderViewProxy());
     // The orbit and the viewpoint path both drive the camera every tick.
-    deleteCameraAnimation();
+    CameraViewpoints::instance().stopFlight();
     createCameraOrbit(renderView->getRenderViewProxy());
 
     ensureAnimationFrames();
@@ -518,16 +509,10 @@ public:
 
     // Only one animation can own the camera.
     clearCameraCues(renderView->getRenderViewProxy());
-    deleteCameraAnimation();
-    cameraAnimation = new CameraAnimation(renderView);
-
     ensureAnimationFrames();
-    // Playback that starts at time zero never announces a time change,
-    // because the clock is already there, so the first frame would show
-    // the camera wherever the user left it rather than at the start of
-    // the path. Put it there now, which also previews the path the
-    // moment it is switched on.
-    cameraAnimation->onTimeChanged();
+    // startFlight() puts the camera at the head of the path straight
+    // away, which previews it the moment it is switched on.
+    CameraViewpoints::instance().startFlight(renderView);
 
     play();
   }
@@ -1439,7 +1424,7 @@ public:
   void clearAllAnimations()
   {
     clearCameraCues();
-    deleteCameraAnimation();
+    CameraViewpoints::instance().stopFlight();
     if (ui.enableTimeSeriesAnimations->isVisible()) {
       ui.enableTimeSeriesAnimations->setChecked(false);
     }

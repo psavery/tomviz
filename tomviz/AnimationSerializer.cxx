@@ -8,16 +8,35 @@
 #include "animations/CameraViewpoints.h"
 #include "animations/ModuleAnimations.h"
 
+#include <pqAnimationCue.h>
 #include <pqAnimationManager.h>
 #include <pqAnimationScene.h>
 #include <pqPVApplicationCore.h>
+#include <pqRenderView.h>
 
 #include <vtkSMPropertyHelper.h>
 #include <vtkSMProxy.h>
+#include <vtkSMRenderViewProxy.h>
 
 namespace tomviz {
 
 namespace {
+
+bool hasCameraOrbitCue()
+{
+  auto* core = pqPVApplicationCore::instance();
+  auto* manager = core ? core->animationManager() : nullptr;
+  auto* scene = manager ? manager->getActiveScene() : nullptr;
+  if (!scene) {
+    return false;
+  }
+  for (auto* cue : scene->getCues()) {
+    if (cue->getSMName().startsWith("CameraAnimationCue")) {
+      return true;
+    }
+  }
+  return false;
+}
 
 vtkSMProxy* animationSceneProxy()
 {
@@ -42,6 +61,11 @@ void AnimationSerializer::save(QJsonObject& doc)
       vtkSMPropertyHelper(scene, "NumberOfFrames").GetAsInt();
   }
 
+  // An orbit is a ParaView cue rather than anything of ours, so it is
+  // recognised the same way the helper recognises it: by the name its
+  // cue was registered under.
+  animation["cameraOrbit"] = hasCameraOrbitCue();
+
   doc["animation"] = animation;
 }
 
@@ -56,6 +80,19 @@ void AnimationSerializer::restore(const QJsonObject& doc,
   }
 
   ModuleAnimations::instance().deserialize(animation, pipeline);
+
+  // Restore what was driving the camera. Only one thing can, and the
+  // viewpoint path wins if a file somehow claims both.
+  auto* renderView = ActiveObjects::instance().activePqRenderView();
+  viewpoints.stopFlight();
+  if (renderView) {
+    clearCameraCues(renderView->getRenderViewProxy());
+    if (animation["flying"].toBool()) {
+      viewpoints.startFlight(renderView);
+    } else if (animation["cameraOrbit"].toBool()) {
+      createCameraOrbit(renderView->getRenderViewProxy());
+    }
+  }
 
   // Loading a state file builds a fresh animation scene, which the view
   // restore leaves on the frame count used for newly loaded data. A file

@@ -72,6 +72,13 @@ bool LabelMapSink::consume(const QMap<QString, PortData>& inputs)
     if (!m_adopted || m_adopted->imageData() != volume->imageData()) {
       m_adopted = std::make_shared<LabelMapData>(
         vtkSmartPointer<vtkImageData>(volume->imageData()));
+      // A table restored from a state file describes voxels this sink
+      // had not seen yet. Now that it has them, hand it over; the
+      // refresh below reconciles it against what is actually there.
+      if (!m_restoredAdopted.isEmpty()) {
+        m_adopted->labels().deserialize(m_restoredAdopted);
+        m_restoredAdopted = QJsonObject();
+      }
     }
     // Label bands would otherwise be written into the color map the
     // port's plain volume shares with every other sink reading it,
@@ -100,6 +107,31 @@ bool LabelMapSink::consume(const QMap<QString, PortData>& inputs)
   }
 
   emit labelsChanged();
+  return true;
+}
+
+QJsonObject LabelMapSink::serialize() const
+{
+  auto json = VolumeSink::serialize();
+  // A real label map carries its table in its own payload. An adopted
+  // one has nowhere else to put it: the port's payload is a plain
+  // volume shared with other sinks, so the colors and names the user
+  // gave these labels live here or nowhere.
+  if (m_adopted) {
+    json["adoptedLabelMap"] = m_adopted->labels().serialize();
+  } else if (!m_restoredAdopted.isEmpty()) {
+    // Restored but never consumed, so it is still owed a home.
+    json["adoptedLabelMap"] = m_restoredAdopted;
+  }
+  return json;
+}
+
+bool LabelMapSink::deserialize(const QJsonObject& json)
+{
+  if (!VolumeSink::deserialize(json)) {
+    return false;
+  }
+  m_restoredAdopted = json.value("adoptedLabelMap").toObject();
   return true;
 }
 

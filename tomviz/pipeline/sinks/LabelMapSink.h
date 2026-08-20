@@ -6,6 +6,8 @@
 
 #include "VolumeSink.h"
 
+#include <QJsonObject>
+
 #include <memory>
 
 namespace tomviz {
@@ -39,6 +41,9 @@ public:
 
   QWidget* createSinkPropertiesWidget(QWidget* parent) override;
 
+  QJsonObject serialize() const override;
+  bool deserialize(const QJsonObject& json) override;
+
   /// The label map payload this sink last consumed. When the port
   /// carries a plain volume whose values read as labels, this is a view
   /// this sink built over the same voxels instead. Null when there is no
@@ -64,6 +69,11 @@ private:
   /// with every other sink reading it and they are entitled to go on
   /// seeing a plain volume.
   LabelMapDataPtr m_adopted;
+
+  /// An adopted table read from a state file, held until there is data
+  /// to attach it to. Deserialize runs before the sink has consumed
+  /// anything, so there is no view to put it in yet.
+  QJsonObject m_restoredAdopted;
 };
 
 } // namespace pipeline

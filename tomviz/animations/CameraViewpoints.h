@@ -8,11 +8,13 @@
 #include <QJsonObject>
 #include <QList>
 #include <QObject>
+#include <QPointer>
 
 #include <vtkSmartPointer.h>
 
 #include <array>
 
+class pqRenderView;
 class vtkCamera;
 class vtkCameraInterpolator;
 
@@ -119,6 +121,14 @@ public:
   /// switching it mid-path would jump rather than move.
   void interpolate(double t, vtkCamera* camera);
 
+  /// Start or stop flying the camera along the path. The flight lives
+  /// here rather than in the dialog that switches it on, because it has
+  /// to outlive the dialog being closed and be visible to the state
+  /// file: restoring a path nobody is flying looks like it was lost.
+  void startFlight(pqRenderView* view);
+  void stopFlight();
+  bool isFlying() const;
+
   QJsonObject serialize() const;
   bool deserialize(const QJsonObject& json);
 
@@ -134,6 +144,7 @@ private:
   void rebuildInterpolator();
 
   QList<Viewpoint> m_viewpoints;
+  QPointer<QObject> m_flight;
   // Held by pointer rather than by value so the header does not have to
   // pull in the interpolator to destroy it.
   vtkSmartPointer<vtkCameraInterpolator> m_interpolator;

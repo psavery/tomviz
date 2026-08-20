@@ -127,8 +127,12 @@ bool SaveLoadStateReaction::loadState(const QString& filename)
   if (success) {
     RecentFilesMenu::pushStateFile(filename);
     // Set the most recent state file if we successfully loaded a
-    // state, whether it was done programmatically or via file dialog
-    MainWindow::instance()->setMostRecentStateFile(filename);
+    // state, whether it was done programmatically or via file dialog.
+    // There is no main window to tell when a state file is loaded
+    // headlessly, which is how the load path is tested.
+    if (auto* window = MainWindow::instance()) {
+      window->setMostRecentStateFile(filename);
+    }
   }
 
   return success;

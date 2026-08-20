@@ -3,6 +3,8 @@
 
 #include "CameraViewpoints.h"
 
+#include "CameraAnimation.h"
+
 #include <QJsonArray>
 #include <QRegularExpression>
 
@@ -294,6 +296,32 @@ void CameraViewpoints::rebuildInterpolator()
   }
 }
 
+void CameraViewpoints::startFlight(pqRenderView* view)
+{
+  stopFlight();
+  if (view && m_viewpoints.size() >= 2) {
+    auto* flight = new CameraAnimation(view);
+    m_flight = flight;
+    // Playback that starts at time zero never announces a time change,
+    // so put the camera at the head of the path now rather than leaving
+    // it wherever it was until the clock first moves.
+    flight->onTimeChanged();
+  }
+}
+
+void CameraViewpoints::stopFlight()
+{
+  if (m_flight) {
+    m_flight->deleteLater();
+    m_flight = nullptr;
+  }
+}
+
+bool CameraViewpoints::isFlying() const
+{
+  return !m_flight.isNull();
+}
+
 QJsonObject CameraViewpoints::serialize() const
 {
   QJsonArray array;
@@ -303,6 +331,7 @@ QJsonObject CameraViewpoints::serialize() const
 
   QJsonObject json;
   json["viewpoints"] = array;
+  json["flying"] = isFlying();
   return json;
 }
 
