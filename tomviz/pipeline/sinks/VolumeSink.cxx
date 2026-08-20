@@ -473,9 +473,6 @@ protected:
     key.scattering = requested;
     key.reach = GetGlobalIlluminationReach();
     key.lights = lightCount(ren);
-    // The opacity transfer function swings the cost by more than an order of
-    // magnitude, and it lives on the property, so any edit to it has to send
-    // us back to a probe frame.
     key.inputPoints = image->GetNumberOfPoints();
 
     const double cost = CostCurveOverride
@@ -489,7 +486,12 @@ protected:
       DiscardMeasurement = true;
       ScatteringUnaffordable = false;
       OpacityCost = cost;
-    } else if (SecondsPerPixel > 0.0) {
+    } else if (SecondsPerPixel <= 0.0) {
+      // No estimate to scale yet; just track which curve the pending
+      // measurement is being taken under, or the first ratio after it
+      // would compare that measurement against a curve it never saw.
+      OpacityCost = cost;
+    } else {
       // Carry the estimate across a changed transfer function instead of
       // discarding it. A curve that just got more opaque scales the estimate
       // up, and coarsening off that lands on this very frame - the safe

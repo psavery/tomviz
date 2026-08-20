@@ -10,6 +10,7 @@
 
 #include "Utilities.h"
 #include "pipeline/data/VolumeData.h"
+#include "pipeline/sinks/LabelMapSink.h"
 #include "pipeline/sinks/VolumeSink.h"
 
 #include <QJsonArray>
@@ -80,10 +81,13 @@ public:
 
   /// True if @a node has a scalar opacity worth animating. Only volume
   /// rendering reads one; the surface sinks have a flat opacity instead,
-  /// which OpacityAnimation covers.
+  /// which OpacityAnimation covers. Label maps render through the same
+  /// sink but rebuild their transfer functions from the label table, so
+  /// a morph would fight that projection every tick.
   static bool supports(pipeline::Node* node)
   {
-    return qobject_cast<pipeline::VolumeSink*>(node) != nullptr;
+    return qobject_cast<pipeline::VolumeSink*>(node) &&
+           !qobject_cast<pipeline::LabelMapSink*>(node);
   }
 
   pipeline::VolumeSink* sink()

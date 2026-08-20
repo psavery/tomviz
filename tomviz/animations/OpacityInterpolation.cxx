@@ -54,11 +54,6 @@ void blendThroughTable(vtkPiecewiseFunction* from, vtkPiecewiseFunction* to,
 
 } // anonymous namespace
 
-int opacityInterpolationSamples()
-{
-  return kSamples;
-}
-
 void interpolateOpacity(vtkPiecewiseFunction* from, vtkPiecewiseFunction* to,
                         double u, const double range[2], vtkPiecewiseFunction* out)
 {

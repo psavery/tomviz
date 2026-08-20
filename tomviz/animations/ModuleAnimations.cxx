@@ -52,7 +52,8 @@ ModuleAnimation* buildAnimation(const QString& type, pipeline::Node* node,
       return new ClipAnimation(sink, start, stop, unit);
     }
   } else if (type == "scalarOpacity") {
-    if (auto* sink = qobject_cast<pipeline::VolumeSink*>(node)) {
+    auto* sink = qobject_cast<pipeline::VolumeSink*>(node);
+    if (sink && ScalarOpacityAnimation::supports(node)) {
       QList<OpacityKeyframe> keyframes;
       for (const auto& value : json["keyframes"].toArray()) {
         auto entry = value.toObject();
@@ -104,25 +105,6 @@ void ModuleAnimations::remove(ModuleAnimation* animation)
       emit changed();
       return;
     }
-  }
-}
-
-void ModuleAnimations::removeForNode(pipeline::Node* node)
-{
-  bool removed = false;
-  for (int i = m_animations.size() - 1; i >= 0; --i) {
-    if (m_animations[i].isNull()) {
-      m_animations.removeAt(i);
-      removed = true;
-    } else if (m_animations[i]->baseNode == node) {
-      m_animations[i]->deleteLater();
-      m_animations.removeAt(i);
-      removed = true;
-    }
-  }
-
-  if (removed) {
-    emit changed();
   }
 }
 

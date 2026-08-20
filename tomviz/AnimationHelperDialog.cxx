@@ -514,6 +514,25 @@ public:
   }
 
   // Camera viewpoints
+  struct CameraContext
+  {
+    pqRenderView* view = nullptr;
+    vtkSMRenderViewProxy* proxy = nullptr;
+    vtkCamera* camera = nullptr;
+  };
+
+  // The render view and camera the viewpoint actions operate on. All
+  // three are present or the camera is null.
+  CameraContext cameraContext()
+  {
+    CameraContext context;
+    context.view = renderViewForOrbit();
+    context.proxy =
+      context.view ? context.view->getRenderViewProxy() : nullptr;
+    context.camera = context.proxy ? context.proxy->GetActiveCamera() : nullptr;
+    return context;
+  }
+
   void refreshViewpoints()
   {
     auto& viewpoints = CameraViewpoints::instance();
@@ -609,17 +628,15 @@ public:
 
   void addViewpoint()
   {
-    auto* renderView = renderViewForOrbit();
-    auto* proxy = renderView ? renderView->getRenderViewProxy() : nullptr;
-    auto* camera = proxy ? proxy->GetActiveCamera() : nullptr;
-    if (!camera) {
+    auto context = cameraContext();
+    if (!context.camera) {
       return;
     }
 
     auto& viewpoints = CameraViewpoints::instance();
     Viewpoint viewpoint;
-    viewpoint.readFrom(camera);
-    viewpoint.thumbnail = captureThumbnail(renderView);
+    viewpoint.readFrom(context.camera);
+    viewpoint.thumbnail = captureThumbnail(context.view);
     viewpoint.name = viewpoints.nextDefaultName();
 
     viewpoints.append(viewpoint);
@@ -630,17 +647,15 @@ public:
   {
     auto& viewpoints = CameraViewpoints::instance();
     int row = ui.viewpointList->currentRow();
-    auto* renderView = renderViewForOrbit();
-    auto* proxy = renderView ? renderView->getRenderViewProxy() : nullptr;
-    auto* camera = proxy ? proxy->GetActiveCamera() : nullptr;
-    if (row < 0 || row >= viewpoints.size() || !camera) {
+    auto context = cameraContext();
+    if (row < 0 || row >= viewpoints.size() || !context.camera) {
       return;
     }
 
     // Re-frame the viewpoint but leave its place in the path alone.
     auto viewpoint = viewpoints.at(row);
-    viewpoint.readFrom(camera);
-    viewpoint.thumbnail = captureThumbnail(renderView);
+    viewpoint.readFrom(context.camera);
+    viewpoint.thumbnail = captureThumbnail(context.view);
     viewpoints.replace(row, viewpoint);
   }
 
@@ -648,18 +663,16 @@ public:
   {
     auto& viewpoints = CameraViewpoints::instance();
     int row = ui.viewpointList->currentRow();
-    auto* renderView = renderViewForOrbit();
-    auto* proxy = renderView ? renderView->getRenderViewProxy() : nullptr;
-    auto* camera = proxy ? proxy->GetActiveCamera() : nullptr;
-    if (row < 0 || row >= viewpoints.size() || !camera) {
+    auto context = cameraContext();
+    if (row < 0 || row >= viewpoints.size() || !context.camera) {
       return;
     }
 
-    viewpoints.at(row).applyTo(camera);
-    if (auto* renderer = proxy->GetRenderer()) {
+    viewpoints.at(row).applyTo(context.camera);
+    if (auto* renderer = context.proxy->GetRenderer()) {
       renderer->ResetCameraClippingRange();
     }
-    renderView->render();
+    context.view->render();
   }
 
   void removeViewpoint()
@@ -799,7 +812,7 @@ public:
       if (qobject_cast<pipeline::ContourSink*>(node) ||
           qobject_cast<pipeline::SliceSink*>(node) ||
           qobject_cast<pipeline::ClipSink*>(node) ||
-          qobject_cast<pipeline::VolumeSink*>(node)) {
+          ScalarOpacityAnimation::supports(node)) {
         if (findUpstreamSource(node) == source) {
           sinks.append(node);
         }
@@ -872,8 +885,7 @@ public:
     ui.animatedProperty->clear();
 
     auto* node = selectedSink();
-    if (auto* contour = qobject_cast<pipeline::ContourSink*>(node)) {
-      Q_UNUSED(contour)
+    if (qobject_cast<pipeline::ContourSink*>(node)) {
       ui.animatedProperty->addItem("Iso value", "iso");
       ui.animatedProperty->addItem("Opacity", "opacity");
     } else if (qobject_cast<pipeline::SliceSink*>(node)) {
@@ -883,7 +895,7 @@ public:
       ui.animatedProperty->addItem(
         clip->isOrtho() ? "Slice index" : "Position", "clip");
       ui.animatedProperty->addItem("Opacity", "opacity");
-    } else if (qobject_cast<pipeline::VolumeSink*>(node)) {
+    } else if (ScalarOpacityAnimation::supports(node)) {
       ui.animatedProperty->addItem("Opacity curve", "curve");
     }
 
@@ -1265,7 +1277,8 @@ public:
         return new OpacityAnimation(node, start, stop);
       }
     } else if (property == "curve") {
-      if (auto* volume = qobject_cast<pipeline::VolumeSink*>(node)) {
+      auto* volume = qobject_cast<pipeline::VolumeSink*>(node);
+      if (volume && ScalarOpacityAnimation::supports(node)) {
         QList<OpacityKeyframe> keyframes;
         auto staged = stagedCurves.value(node);
         for (auto it = staged.constBegin(); it != staged.constEnd(); ++it) {

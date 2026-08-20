@@ -49,6 +49,9 @@ public:
       return;
     }
     auto vol = port->data().value<pipeline::VolumeDataPtr>();
+    if (!vol) {
+      return;
+    }
 
     int numSteps = vol->timeSteps().size();
     if (numSteps <= 1) {
@@ -73,13 +76,11 @@ private:
       if (!port->hasData()) {
         continue;
       }
-      try {
-        auto vol = port->data().value<pipeline::VolumeDataPtr>();
-        if (vol && vol->hasTimeSteps()) {
-          return port;
-        }
-      } catch (const std::bad_any_cast&) {
-        continue;
+      // value() falls back to an empty pointer when the port carries
+      // something else, so a non-volume port is skipped, not thrown.
+      auto vol = port->data().value<pipeline::VolumeDataPtr>();
+      if (vol && vol->hasTimeSteps()) {
+        return port;
       }
     }
     return nullptr;

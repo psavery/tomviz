@@ -30,10 +30,6 @@ void interpolateOpacity(vtkPiecewiseFunction* from, vtkPiecewiseFunction* to,
                         double u, const double range[2],
                         vtkPiecewiseFunction* out);
 
-/// Number of samples used when two curves have to be blended through a
-/// table. Exposed for tests.
-int opacityInterpolationSamples();
-
 } // namespace tomviz
 
 #endif
