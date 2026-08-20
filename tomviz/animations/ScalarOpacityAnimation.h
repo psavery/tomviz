@@ -33,19 +33,13 @@ struct OpacityKeyframe
 };
 
 /// Morphs a volume through a sequence of opacity curves, one keyed to
-/// each chosen viewpoint, so a feature can dissolve away leg by leg as
-/// the camera flies.
+/// each chosen viewpoint, so a feature can dissolve away leg by leg.
 ///
-/// One animation holds the whole sequence rather than one animation per
-/// leg: independent morphs on the same volume would each write the
-/// volume's opacity every tick, and whichever wrote last would win even
-/// while another one's leg was playing.
-///
-/// The blended curve is handed to the sink separately rather than
-/// written into the function the histogram editor owns: playback would
-/// otherwise leave a curve the user hand-authored replaced by a sampled
-/// one, and a morph that was interrupted would leave it that way for
-/// good.
+/// One animation holds the whole sequence: separate morphs on the same
+/// volume would each write its opacity every tick and the last writer
+/// would win. The blend goes to the sink separately rather than into
+/// the curve the histogram editor owns, which an interrupted morph
+/// would otherwise leave replaced by a sampled one.
 class ScalarOpacityAnimation : public ModuleAnimation
 {
   Q_OBJECT

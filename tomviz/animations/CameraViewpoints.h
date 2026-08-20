@@ -109,22 +109,17 @@ public:
   /// it is 1, so a visualization bound to a leg does its whole sweep
   /// while the camera flies that leg and holds still either side of it.
   ///
-  /// A leg that is not there any more (the viewpoints were deleted, or
-  /// the file was saved with more of them) gives back `progress`
-  /// unchanged, so the animation still runs over the whole timeline
-  /// rather than freezing at one value.
+  /// A leg that no longer exists gives back `progress` unchanged, so
+  /// the animation runs over the whole timeline rather than freezing.
   double segmentProgress(double progress, int segment) const;
 
-  /// Move `camera` to time `t` in [0, 1] along the path. Interpolates
-  /// position, focal point, view up, view angle and parallel scale;
-  /// whether the camera is in parallel projection is left alone, since
-  /// switching it mid-path would jump rather than move.
+  /// Move `camera` to time `t` in [0, 1] along the path. Parallel
+  /// projection is left alone, since switching it mid-path would jump.
   void interpolate(double t, vtkCamera* camera);
 
-  /// Start or stop flying the camera along the path. The flight lives
-  /// here rather than in the dialog that switches it on, because it has
-  /// to outlive the dialog being closed and be visible to the state
-  /// file: restoring a path nobody is flying looks like it was lost.
+  /// Start or stop flying the camera along the path. It lives here
+  /// rather than in the dialog so it survives the dialog closing and is
+  /// visible to the state file.
   void startFlight(pqRenderView* view);
   void stopFlight();
   bool isFlying() const;
