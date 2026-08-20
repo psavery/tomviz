@@ -71,8 +71,17 @@ public:
 
   /// Volumetric scattering blending (0 = surface shading only,
   /// 2 = fully volumetric with shadows). GPU ray-cast mapper parameter.
+  /// This is the requested level; nothing is rendered while shadows are
+  /// switched off (see setShadowsEnabled).
   double volumetricScattering() const;
   void setVolumetricScattering(double value);
+
+  /// Master switch for volumetric shadows, independent of the preset. When
+  /// off the volume renders with plain surface shading, but the scattering
+  /// level above is remembered, so switching back on restores the look
+  /// without the preset selection ever changing.
+  bool shadowsEnabled() const;
+  void setShadowsEnabled(bool enabled);
 
   /// Shadow reach (GlobalIlluminationReach): 0 = local shadows only,
   /// 1 = shadows across the whole volume.
@@ -95,6 +104,7 @@ public:
     Custom = -1,
     Flat = 0,
     Simple,
+    Gentle,
     Soft,
     Full
   };
@@ -163,9 +173,14 @@ private:
   // User-facing version of the above, for the properties widget. Empty when
   // scattering is supported.
   QString scatteringUnavailableReason() const;
-  // Ask before switching to a preset that casts volumetric shadows, unless
-  // the user has opted out. Returns false if they declined.
-  bool confirmScatteringPreset(LightingPreset preset, QWidget* parent) const;
+  // Ask before anything starts casting volumetric shadows, unless the user
+  // has opted out. Returns false if they declined.
+  bool confirmVolumetricShadows(QWidget* parent) const;
+  // The scattering level actually handed to the mapper: the requested one,
+  // or zero while shadows are switched off.
+  double effectiveScattering() const;
+  // Push effectiveScattering() to the mapper.
+  void applyScattering();
   // Called at the end of every render of this sink's view. Arms the settle
   // timer after unlit interactive frames (so the scattering look is always
   // restored, even when no end-of-interaction still render arrives) and
@@ -189,6 +204,12 @@ private:
   // Requests the still render that restores the scattering look once
   // interactive frames stop arriving; armed in onRenderFinished().
   QTimer m_settleTimer;
+
+  // Requested scattering level and the master shadow switch that gates it.
+  // Kept here rather than read back from the mapper so that the level
+  // survives being switched off, which is what lets a preset stay selected.
+  double m_scattering = 0.0;
+  bool m_shadowsEnabled = true;
 
   QPointer<QComboBox> m_scalarsCombo;
   int m_activeScalars = -1;

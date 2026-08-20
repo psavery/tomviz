@@ -64,7 +64,8 @@ struct LightingPresetValues
   bool smoothNormals;
 };
 
-// Indexed by VolumeSink::LightingPreset (Flat..Full). Flat is unlit;
+// Indexed by VolumeSink::LightingPreset (Flat..Full), in increasing order
+// of render cost. Flat is unlit;
 // its remaining values are the Simple baseline so that toggling shading
 // back on afterwards gives a sensible look.
 //
@@ -84,12 +85,32 @@ struct LightingPresetValues
 //    (forward) anisotropy throws it away from the viewer and renders the
 //    volume nearly black. Slightly negative reads brightest without the
 //    blown-out look that sets in below about -0.5.
+//
+// Gentle needs its own note, because it gets its look without shadows at
+// all. It is for noisy experimental reconstructions, where Simple's specular
+// highlight riding on a gradient normal turns reconstruction noise into
+// glitter: dropping the highlight and filling the unlit side in with ambient
+// measurably lowers the high-frequency energy in the image (about 15% less
+// on the stock nanoparticle sample) while keeping the shape readable. That
+// is the matte, low-contrast look ChimeraX's preset of the same name gives,
+// reached the cheap way - it costs no more to render than Simple.
+//
+// Reach was the obvious knob to try instead, since ChimeraX gets its gentle
+// look by coarsening the ambient-shadow map. It does nothing here. Measured
+// on both the nanoparticle sample and a synthetic noisy blob, taking reach
+// from Soft's 0.08 up to 1.0 moves the image by well under one 8-bit level:
+// the shadow ray saturates almost immediately, so lengthening it finds
+// nothing left to occlude.
 const LightingPresetValues kLightingPresets[] = {
   /* Flat */ { false, 0.1, 0.9, 0.3, 30.0, 0.0, 0.0, 0.0, false },
   /* Simple */ { true, 0.1, 0.9, 0.3, 30.0, 0.0, 0.0, 0.0, false },
+  /* Gentle */ { true, 0.35, 0.75, 0.0, 30.0, 0.0, 0.0, 0.0, true },
   /* Soft */ { true, 0.1, 1.0, 0.0, 30.0, 1.0, 0.08, 0.0, true },
   /* Full */ { true, 0.1, 1.0, 0.3, 40.0, 1.5, 0.2, -0.25, true },
 };
+
+const int kNumLightingPresets =
+  static_cast<int>(sizeof(kLightingPresets) / sizeof(kLightingPresets[0]));
 
 // --- GPU watchdog guard ------------------------------------------------
 //
@@ -697,7 +718,7 @@ void VolumeSink::updateMapperForInput(vtkImageData* image)
       }
       // Same for a scattering preset: it is unbounded on the bricked path, so
       // fall back to Simple rather than leave a preset half-applied.
-      if (volumetricScattering() > 0.0) {
+      if (effectiveScattering() > 0.0) {
         warnScatteringUnsupported();
         applyLightingPreset(LightingPreset::Simple);
       }
@@ -823,8 +844,9 @@ void VolumeSink::setSpecularPower(double value)
 double VolumeSink::volumetricScattering() const
 {
   // The requested value, not the mapper's current one - the mappers lower
-  // theirs during interaction and raise it again for the still frame.
-  return m_volumeMapper->GetRequestedVolumetricScattering();
+  // theirs during interaction and raise it again for the still frame, and
+  // the shadow switch can be holding it at zero.
+  return m_scattering;
 }
 
 void VolumeSink::setVolumetricScattering(double value)
@@ -833,13 +855,41 @@ void VolumeSink::setVolumetricScattering(double value)
     warnScatteringUnsupported();
     value = 0.0;
   }
+  m_scattering = value;
+  applyScattering();
+  emit lightingStateChanged();
+  emit renderNeeded();
+}
+
+bool VolumeSink::shadowsEnabled() const
+{
+  return m_shadowsEnabled;
+}
+
+void VolumeSink::setShadowsEnabled(bool enabled)
+{
+  if (enabled && m_scattering > 0.0 && !scatteringSupported()) {
+    warnScatteringUnsupported();
+    enabled = false;
+  }
+  m_shadowsEnabled = enabled;
+  applyScattering();
+  emit lightingStateChanged();
+  emit renderNeeded();
+}
+
+double VolumeSink::effectiveScattering() const
+{
+  return m_shadowsEnabled ? m_scattering : 0.0;
+}
+
+void VolumeSink::applyScattering()
+{
   // Deliberately not forwarded to m_multiBlockMapper: its per-brick mappers
   // are out of reach, so a scattering frame there cannot be bounded. Leaving
   // that mapper at its zero default is the backstop that guarantees the
   // bricked path never renders one, whatever state arrives.
-  m_volumeMapper->SetRequestedVolumetricScattering(value);
-  emit lightingStateChanged();
-  emit renderNeeded();
+  m_volumeMapper->SetRequestedVolumetricScattering(effectiveScattering());
 }
 
 bool VolumeSink::scatteringSupported() const
@@ -916,10 +966,15 @@ void VolumeSink::setSmoothNormals(bool enabled)
 void VolumeSink::applyLightingPreset(LightingPreset preset)
 {
   int idx = static_cast<int>(preset);
-  if (idx < 0 || idx > 3) {
+  if (idx < 0 || idx >= kNumLightingPresets) {
     return;
   }
   const auto& p = kLightingPresets[idx];
+  // Choosing a preset that casts shadows is a request to see them, so it
+  // undoes an earlier flip of the shadow switch.
+  if (p.scattering > 0.0) {
+    setShadowsEnabled(true);
+  }
   setAmbient(p.ambient);
   setDiffuse(p.diffuse);
   setSpecular(p.specular);
@@ -940,7 +995,7 @@ VolumeSink::LightingPreset VolumeSink::currentLightingPreset() const
   }
   // Not named "near": that is a legacy macro in the Windows headers.
   auto approx = [](double a, double b) { return std::fabs(a - b) < 1e-3; };
-  for (int i = 1; i <= 3; ++i) {
+  for (int i = 1; i < kNumLightingPresets; ++i) {
     const auto& p = kLightingPresets[i];
     if (approx(ambient(), p.ambient) && approx(diffuse(), p.diffuse) &&
         approx(specular(), p.specular) &&
@@ -1114,20 +1169,14 @@ QString VolumeSink::scatteringUnavailableReason() const
     return tr("This volume is larger than the GPU's 3-D texture size limit, "
               "so it is rendered in bricks. Volumetric shadows cannot be "
               "bounded on that path and are unavailable here. Subsample or "
-              "crop the volume to use these presets.");
+              "crop the volume to use them.");
   }
   return tr("Volumetric shadows are turned off by the "
             "Volume.AllowVolumetricScattering setting.");
 }
 
-bool VolumeSink::confirmScatteringPreset(LightingPreset preset,
-                                         QWidget* parent) const
+bool VolumeSink::confirmVolumetricShadows(QWidget* parent) const
 {
-  int idx = static_cast<int>(preset);
-  if (idx < 0 || idx > 3 || kLightingPresets[idx].scattering <= 0.0) {
-    return true;
-  }
-
   auto* core = pqApplicationCore::instance();
   auto* settings = core ? core->settings() : nullptr;
   const QString key = "Volume.WarnVolumetricScattering";
@@ -1142,10 +1191,11 @@ bool VolumeSink::confirmScatteringPreset(LightingPreset preset,
   QMessageBox box(parent);
   box.setIcon(QMessageBox::Warning);
   box.setWindowTitle(tr("Volumetric Shadows"));
-  box.setText(tr("The Soft and Full presets cast volumetric shadows."));
+  box.setText(tr("This turns on volumetric shadows."));
   box.setInformativeText(
-    tr("These are far more demanding than the other presets. Tomviz renders "
-       "them at reduced resolution to stay within what the GPU can finish, "
+    tr("They are far more demanding than the rest of the lighting. Tomviz "
+       "renders them at reduced resolution to stay within what the GPU can "
+       "finish, "
        "but on lower-end hardware a frame can still take long enough for the "
        "driver to reset the GPU, which will close Tomviz - and possibly other "
        "applications - without warning.\n\n"
@@ -1201,6 +1251,7 @@ QWidget* VolumeSink::createSinkPropertiesWidget(QWidget* parent)
     widget->setSpecular(specular());
     widget->setSpecularPower(specularPower());
     widget->setVolumetricScattering(volumetricScattering());
+    widget->setShadowsEnabled(shadowsEnabled());
     widget->setShadowReach(shadowReach());
     widget->setAnisotropy(scatteringAnisotropy());
     widget->setSmoothNormals(smoothNormals());
@@ -1253,7 +1304,11 @@ QWidget* VolumeSink::createSinkPropertiesWidget(QWidget* parent)
   connect(widget, &VolumeSinkWidget::lightingPresetClicked, this,
           [this, widget](int preset) {
             auto p = static_cast<LightingPreset>(preset);
-            if (!confirmScatteringPreset(p, widget)) {
+            int idx = static_cast<int>(p);
+            const bool castsShadows = idx >= 0 &&
+                                      idx < kNumLightingPresets &&
+                                      kLightingPresets[idx].scattering > 0.0;
+            if (castsShadows && !confirmVolumetricShadows(widget)) {
               // Put the highlight back on whatever is actually rendering.
               QSignalBlocker blocker(widget);
               widget->setActiveLightingPreset(
@@ -1261,6 +1316,18 @@ QWidget* VolumeSink::createSinkPropertiesWidget(QWidget* parent)
               return;
             }
             applyLightingPreset(p);
+          });
+  connect(widget, &VolumeSinkWidget::shadowsToggled, this,
+          [this, widget](bool enabled) {
+            // Only switching them on is worth a warning, and only when there
+            // is a scattering level for it to restore.
+            if (enabled && volumetricScattering() > 0.0 &&
+                !confirmVolumetricShadows(widget)) {
+              QSignalBlocker blocker(widget);
+              widget->setShadowsEnabled(shadowsEnabled());
+              return;
+            }
+            setShadowsEnabled(enabled);
           });
   connect(widget, &VolumeSinkWidget::solidityChanged, this,
           &VolumeSink::setSolidity);
@@ -1287,6 +1354,7 @@ QJsonObject VolumeSink::serialize() const
   light["specular"] = specular();
   light["specularPower"] = specularPower();
   light["scattering"] = volumetricScattering();
+  light["shadowsEnabled"] = shadowsEnabled();
   light["shadowReach"] = shadowReach();
   light["anisotropy"] = scatteringAnisotropy();
   light["smoothNormals"] = smoothNormals();
@@ -1321,6 +1389,9 @@ bool VolumeSink::deserialize(const QJsonObject& json)
     setSpecularPower(light["specularPower"].toDouble());
     // Missing in pre-preset state files; the defaults match their behavior.
     setVolumetricScattering(light["scattering"].toDouble(0.0));
+    // Missing before the shadow switch existed, where a stored scattering
+    // level was always rendered.
+    setShadowsEnabled(light["shadowsEnabled"].toBool(true));
     setShadowReach(light["shadowReach"].toDouble(0.0));
     setScatteringAnisotropy(light["anisotropy"].toDouble(0.0));
     setSmoothNormals(light["smoothNormals"].toBool(false));

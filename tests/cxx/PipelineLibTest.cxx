@@ -2322,6 +2322,87 @@ TEST_F(PipelineLibTest, SerializationRoundTrip)
   delete sink2;
 }
 
+TEST_F(PipelineLibTest, LightingStateRoundTrip)
+{
+  using Preset = VolumeSink::LightingPreset;
+
+  auto* sink = new VolumeSink();
+  sink->applyLightingPreset(Preset::Soft);
+  // The shadow switch is independent of the preset: turning it off must not
+  // lose the scattering level the preset asked for, or the preset itself.
+  sink->setShadowsEnabled(false);
+  ASSERT_EQ(sink->currentLightingPreset(), Preset::Soft);
+  ASSERT_GT(sink->volumetricScattering(), 0.0);
+
+  QJsonObject json = sink->serialize();
+  auto light = json["lighting"].toObject();
+  EXPECT_FALSE(light["shadowsEnabled"].toBool());
+  EXPECT_GT(light["scattering"].toDouble(), 0.0);
+
+  auto* restored = new VolumeSink();
+  ASSERT_TRUE(restored->deserialize(json));
+  EXPECT_EQ(restored->lighting(), sink->lighting());
+  EXPECT_DOUBLE_EQ(restored->ambient(), sink->ambient());
+  EXPECT_DOUBLE_EQ(restored->diffuse(), sink->diffuse());
+  EXPECT_DOUBLE_EQ(restored->specular(), sink->specular());
+  EXPECT_DOUBLE_EQ(restored->specularPower(), sink->specularPower());
+  EXPECT_DOUBLE_EQ(restored->volumetricScattering(),
+                   sink->volumetricScattering());
+  EXPECT_DOUBLE_EQ(restored->shadowReach(), sink->shadowReach());
+  EXPECT_DOUBLE_EQ(restored->scatteringAnisotropy(),
+                   sink->scatteringAnisotropy());
+  EXPECT_EQ(restored->smoothNormals(), sink->smoothNormals());
+  EXPECT_FALSE(restored->shadowsEnabled());
+  // The panel derives the highlighted button from the values, so this is
+  // also what keeps Soft lit after a reload.
+  EXPECT_EQ(restored->currentLightingPreset(), Preset::Soft);
+
+  delete sink;
+  delete restored;
+}
+
+TEST_F(PipelineLibTest, LightingStateRoundTripGentle)
+{
+  using Preset = VolumeSink::LightingPreset;
+
+  auto* sink = new VolumeSink();
+  sink->applyLightingPreset(Preset::Gentle);
+  ASSERT_EQ(sink->currentLightingPreset(), Preset::Gentle);
+  // Gentle gets its look without shadows, so it must not be confused with
+  // Soft or Simple after a round trip.
+  ASSERT_DOUBLE_EQ(sink->volumetricScattering(), 0.0);
+
+  auto* restored = new VolumeSink();
+  ASSERT_TRUE(restored->deserialize(sink->serialize()));
+  EXPECT_EQ(restored->currentLightingPreset(), Preset::Gentle);
+
+  delete sink;
+  delete restored;
+}
+
+TEST_F(PipelineLibTest, LightingStatePredatesShadowSwitch)
+{
+  using Preset = VolumeSink::LightingPreset;
+
+  // A state file written before the shadow switch existed has no
+  // "shadowsEnabled" key, and its stored scattering level was always
+  // rendered. Those files must still come back with shadows on.
+  auto* sink = new VolumeSink();
+  sink->applyLightingPreset(Preset::Full);
+  QJsonObject json = sink->serialize();
+  auto light = json["lighting"].toObject();
+  light.remove("shadowsEnabled");
+  json["lighting"] = light;
+
+  auto* restored = new VolumeSink();
+  ASSERT_TRUE(restored->deserialize(json));
+  EXPECT_TRUE(restored->shadowsEnabled());
+  EXPECT_EQ(restored->currentLightingPreset(), Preset::Full);
+
+  delete sink;
+  delete restored;
+}
+
 TEST_F(PipelineLibTest, PipelineStateIOLinearRoundTrip)
 {
   auto* source = new SphereSource();

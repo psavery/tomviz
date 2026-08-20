@@ -55,12 +55,9 @@ VolumeSinkWidget::VolumeSinkWidget(QWidget* parent_)
   connect(m_uiLighting->expAdvanced, &pqExpanderButton::toggled,
           m_uiLighting->advancedWidget, &QWidget::setVisible);
 
-  QPushButton* presetButtons[] = {
-    m_uiLighting->btnFlat, m_uiLighting->btnSimple, m_uiLighting->btnSoft,
-    m_uiLighting->btnFull
-  };
-  for (int i = 0; i < 4; ++i) {
-    connect(presetButtons[i], &QPushButton::clicked, this,
+  const auto presets = presetButtons();
+  for (int i = 0; i < presets.size(); ++i) {
+    connect(presets[i], &QPushButton::clicked, this,
             [this, i]() { emit lightingPresetClicked(i); });
   }
 
@@ -121,6 +118,8 @@ VolumeSinkWidget::VolumeSinkWidget(QWidget* parent_)
           this, &VolumeSinkWidget::specularPowerChanged);
   connect(m_uiLighting->sliShadows, &DoubleSliderWidget::valueEdited, this,
           &VolumeSinkWidget::volumetricScatteringChanged);
+  connect(m_uiLighting->cbShadows, &QCheckBox::toggled, this,
+          &VolumeSinkWidget::shadowsToggled);
   connect(m_uiLighting->sliShadowReach, &DoubleSliderWidget::valueEdited, this,
           &VolumeSinkWidget::shadowReachChanged);
   connect(m_uiLighting->sliAnisotropy, &DoubleSliderWidget::valueEdited, this,
@@ -200,6 +199,26 @@ void VolumeSinkWidget::setVolumetricScattering(const double value)
   m_uiLighting->sliShadows->setValue(value);
 }
 
+void VolumeSinkWidget::setShadowsEnabled(const bool enable)
+{
+  m_uiLighting->cbShadows->setChecked(enable);
+  updateShadowControlsEnabled();
+}
+
+void VolumeSinkWidget::updateShadowControlsEnabled()
+{
+  // Editing a value that cannot show up in the render is just confusing, so
+  // follow the switch - and the switch itself follows availability.
+  const bool enable = m_scatteringAvailable &&
+                      m_uiLighting->cbShadows->isChecked();
+  m_uiLighting->laShadows->setEnabled(enable);
+  m_uiLighting->sliShadows->setEnabled(enable);
+  m_uiLighting->laShadowReach->setEnabled(enable);
+  m_uiLighting->sliShadowReach->setEnabled(enable);
+  m_uiLighting->laAnisotropy->setEnabled(enable);
+  m_uiLighting->sliAnisotropy->setEnabled(enable);
+}
+
 void VolumeSinkWidget::setShadowReach(const double value)
 {
   m_uiLighting->sliShadowReach->setValue(value);
@@ -217,13 +236,17 @@ void VolumeSinkWidget::setSmoothNormals(const bool enable)
 
 void VolumeSinkWidget::setActiveLightingPreset(const int preset)
 {
-  QPushButton* presetButtons[] = {
-    m_uiLighting->btnFlat, m_uiLighting->btnSimple, m_uiLighting->btnSoft,
-    m_uiLighting->btnFull
-  };
-  for (int i = 0; i < 4; ++i) {
-    presetButtons[i]->setChecked(i == preset);
+  const auto presets = presetButtons();
+  for (int i = 0; i < presets.size(); ++i) {
+    presets[i]->setChecked(i == preset);
   }
+}
+
+QList<QPushButton*> VolumeSinkWidget::presetButtons() const
+{
+  return { m_uiLighting->btnFlat, m_uiLighting->btnSimple,
+           m_uiLighting->btnGentle, m_uiLighting->btnSoft,
+           m_uiLighting->btnFull };
 }
 
 void VolumeSinkWidget::setScatteringAvailable(const bool available,
@@ -231,6 +254,7 @@ void VolumeSinkWidget::setScatteringAvailable(const bool available,
 {
   // Swap the tool tip for the reason while disabled, stashing the one
   // Designer set so it can be put back.
+  m_scatteringAvailable = available;
   static const char* kOriginalToolTip = "tomvizOriginalToolTip";
   for (auto* w : scatteringWidgets()) {
     w->setEnabled(available);
@@ -244,6 +268,7 @@ void VolumeSinkWidget::setScatteringAvailable(const bool available,
       w->setProperty(kOriginalToolTip, QVariant());
     }
   }
+  updateShadowControlsEnabled();
 }
 
 QList<QWidget*> VolumeSinkWidget::scatteringWidgets() const
@@ -251,8 +276,8 @@ QList<QWidget*> VolumeSinkWidget::scatteringWidgets() const
   // The presets that cast volumetric shadows, plus the Advanced controls
   // that drive them. Everything else in the panel stays usable.
   return { m_uiLighting->btnSoft, m_uiLighting->btnFull,
-           m_uiLighting->sliShadows, m_uiLighting->sliShadowReach,
-           m_uiLighting->sliAnisotropy };
+           m_uiLighting->cbShadows, m_uiLighting->sliShadows,
+           m_uiLighting->sliShadowReach, m_uiLighting->sliAnisotropy };
 }
 
 void VolumeSinkWidget::onBlendingChanged(const int mode)

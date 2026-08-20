@@ -8,6 +8,7 @@
 #include <QWidget>
 
 class QFormLayout;
+class QPushButton;
 
 /**
  * \brief UI layer of VolumeSink.
@@ -47,6 +48,7 @@ public:
   void setSpecular(const double value);
   void setSpecularPower(const double value);
   void setVolumetricScattering(const double value);
+  void setShadowsEnabled(const bool enable);
   void setShadowReach(const double value);
   void setAnisotropy(const double value);
   void setSmoothNormals(const bool enable);
@@ -85,6 +87,7 @@ signals:
   void specularChanged(const double value);
   void specularPowerChanged(const double value);
   void volumetricScatteringChanged(const double value);
+  void shadowsToggled(const bool state);
   void shadowReachChanged(const double value);
   void anisotropyChanged(const double value);
   void smoothNormalsToggled(const bool state);
@@ -104,8 +107,18 @@ private:
   void operator=(const VolumeSinkWidget&) = delete;
 
   bool usesLighting(const int mode) const;
+  /// The preset buttons, indexed by VolumeSink::LightingPreset.
+  QList<QPushButton*> presetButtons() const;
+  /// Grey out the Advanced shadow controls whenever they cannot do
+  /// anything: shadows switched off, or scattering unavailable entirely.
+  void updateShadowControlsEnabled();
   /// Controls that only do anything when volumetric scattering is available.
   QList<QWidget*> scatteringWidgets() const;
+
+  // Mirrors the last setScatteringAvailable() call. Read back from the
+  // check box instead and a disabled parent (non-composite blending
+  // greys the whole group) would latch the shadow controls off.
+  bool m_scatteringAvailable = true;
 
   QScopedPointer<Ui::VolumeSinkWidget> m_ui;
   QScopedPointer<Ui::VolumeLightingForm> m_uiLighting;

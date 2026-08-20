@@ -33,63 +33,89 @@
      </property>
      <layout class="QVBoxLayout" name="lightingLayout">
       <item>
-       <layout class="QHBoxLayout" name="presetLayout">
+       <layout class="QGridLayout" name="presetLayout">
         <property name="spacing">
          <number>4</number>
         </property>
-        <item>
-         <widget class="QPushButton" name="btnFlat">
-          <property name="text">
-           <string>Flat</string>
-          </property>
-          <property name="checkable">
-           <bool>true</bool>
-          </property>
-          <property name="toolTip">
-           <string>No shading. Colors come straight from the color map, so data values read accurately. Fastest.</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="btnSimple">
-          <property name="text">
-           <string>Simple</string>
-          </property>
-          <property name="checkable">
-           <bool>true</bool>
-          </property>
-          <property name="toolTip">
-           <string>Classic directional shading. Fast and interactive.</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="btnSoft">
-          <property name="text">
-           <string>Soft</string>
-          </property>
-          <property name="checkable">
-           <bool>true</bool>
-          </property>
-          <property name="toolTip">
-           <string>Soft ambient look with gentle volumetric shadows and smooth normals. Emphasizes surface topography. Slower.</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="btnFull">
-          <property name="text">
-           <string>Full</string>
-          </property>
-          <property name="checkable">
-           <bool>true</bool>
-          </property>
-          <property name="toolTip">
-           <string>Full volumetric scattering with long-range shadows. Highest quality, best for figures. Slowest.</string>
-          </property>
-         </widget>
-        </item>
+         <item row="0" column="0">
+          <widget class="QPushButton" name="btnFlat">
+           <property name="text">
+            <string>Flat</string>
+           </property>
+           <property name="checkable">
+            <bool>true</bool>
+           </property>
+           <property name="toolTip">
+            <string>No shading. Colors come straight from the color map, so data values read accurately. Fastest.</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="1">
+          <widget class="QPushButton" name="btnSimple">
+           <property name="text">
+            <string>Simple</string>
+           </property>
+           <property name="checkable">
+            <bool>true</bool>
+           </property>
+           <property name="toolTip">
+            <string>Classic directional shading. Fast and interactive.</string>
+           </property>
+          </widget>
+         </item>
+         <item row="0" column="2">
+          <widget class="QPushButton" name="btnGentle">
+           <property name="text">
+            <string>Gentle</string>
+           </property>
+           <property name="checkable">
+            <bool>true</bool>
+           </property>
+           <property name="toolTip">
+            <string>Matte, low-contrast shading with no highlight. Reads the shape without turning reconstruction noise into glitter. As fast as Simple.</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="0">
+          <widget class="QPushButton" name="btnSoft">
+           <property name="text">
+            <string>Soft</string>
+           </property>
+           <property name="checkable">
+            <bool>true</bool>
+           </property>
+           <property name="toolTip">
+            <string>Soft ambient look with gentle volumetric shadows and smooth normals. Emphasizes surface topography. Slower.</string>
+           </property>
+          </widget>
+         </item>
+         <item row="1" column="1">
+          <widget class="QPushButton" name="btnFull">
+           <property name="text">
+            <string>Full</string>
+           </property>
+           <property name="checkable">
+            <bool>true</bool>
+           </property>
+           <property name="toolTip">
+            <string>Full volumetric scattering with long-range shadows. Highest quality, best for figures. Slowest.</string>
+           </property>
+          </widget>
+         </item>
        </layout>
+      </item>
+      <item>
+       <widget class="QCheckBox" name="cbShadows">
+        <property name="text">
+         <string>Shadows</string>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+        <property name="toolTip">
+         <string>Cast volumetric shadows. Turning this off keeps the selected preset but renders it without shadows, which is much faster.</string>
+        </property>
+       </widget>
       </item>
       <item>
        <widget class="pqExpanderButton" name="expAdvanced">
@@ -133,7 +159,7 @@
          <item row="1" column="1">
           <widget class="tomviz::DoubleSliderWidget" name="sliAmbient" native="true">
            <property name="toolTip">
-            <string>Uniform light reaching every voxel regardless of orientation. Has no effect while Shadows is above 0, where all lighting comes through the scattering model.</string>
+            <string>Uniform light reaching every voxel regardless of orientation. Has no effect while Shadow Strength is above 0, where all lighting comes through the scattering model.</string>
            </property>
           </widget>
          </item>
@@ -170,7 +196,7 @@
          <item row="5" column="0">
           <widget class="QLabel" name="laShadows">
            <property name="text">
-            <string>Shadows</string>
+            <string>Shadow Strength</string>
            </property>
           </widget>
          </item>
@@ -205,7 +231,7 @@
          <item row="7" column="1">
           <widget class="tomviz::DoubleSliderWidget" name="sliAnisotropy" native="true">
            <property name="toolTip">
-            <string>Direction light scatters in: 0 scatters evenly. Because the scene is lit from the camera, negative (backward) values send more light back to the viewer and brighten the volume, while positive values scatter it away and darken it - beyond about +0.5 the volume goes nearly black. Only used when Shadows is above 0.</string>
+            <string>Direction light scatters in: 0 scatters evenly. Because the scene is lit from the camera, negative (backward) values send more light back to the viewer and brighten the volume, while positive values scatter it away and darken it - beyond about +0.5 the volume goes nearly black. Only used when Shadow Strength is above 0.</string>
            </property>
           </widget>
          </item>
