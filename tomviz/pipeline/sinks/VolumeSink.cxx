@@ -422,9 +422,18 @@ protected:
       const double wanted =
         solveReduction(SecondsPerPixel, pixels, kTargetFrameSeconds);
       // Coarsening is applied at once - that is the safety direction.
-      // Sharpening steps down gradually, because a probe frame is small
-      // enough for fixed overhead to dominate its timing and make the
-      // extrapolation optimistic.
+      //
+      // Sharpening is capped, but not for the reason it looks like. Fixed
+      // per-frame overhead really does dominate a coarse frame's timing,
+      // and that biases the estimate pessimistic, never optimistic: a frame
+      // at reduction R measures overhead + cost/R, so the full-quality cost
+      // this solves for is the true cost plus overhead x R, which can only
+      // come out too coarse. The cap is a backstop against a measurement
+      // wrong in the other direction - a frame whose cost falls off faster
+      // than the sampling model says it should - and it is nearly free:
+      // measured across regimes it costs at most one extra frame, and once
+      // overhead dominates it never binds at all, because the estimate is
+      // already shrinking more slowly than 16x per frame.
       Reduction = wanted > Reduction
                     ? wanted
                     : std::max(wanted, Reduction / kMaxSharpeningStep);
