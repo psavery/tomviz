@@ -237,7 +237,14 @@ struct GuardKey
   double scattering = -1.0;
   double reach = -1.0;
   int lights = 0;
-  vtkMTimeType propertyTime = 0;
+  // The transfer function is deliberately absent, even though it swings the
+  // cost by more than an order of magnitude. Keying on it (via the property's
+  // MTime, which folds its functions in) meant every edit threw the estimate
+  // away, and an animated curve threw it away on every single frame - so the
+  // volume rendered every frame of an animation at maximum coarseness. Its
+  // cost is tracked by opacityCost() and folded into the estimate as a scale
+  // factor instead. Everything still keyed here changes in steps rather than
+  // smoothly, so there is nothing to carry across.
   // Voxel count, not the input's MTime. VolumeData::switchTimeStep swaps in
   // a different vtkImageData for every time step, so keying on identity
   // sends a playing time series back to a probe frame on every frame and
@@ -250,11 +257,56 @@ struct GuardKey
   bool operator==(const GuardKey& o) const
   {
     return scattering == o.scattering && reach == o.reach &&
-           lights == o.lights && propertyTime == o.propertyTime &&
-           inputPoints == o.inputPoints;
+           lights == o.lights && inputPoints == o.inputPoints;
   }
   bool operator!=(const GuardKey& o) const { return !(*this == o); }
 };
+
+/// Opacity below which a sample is treated as fully transparent, matching
+/// what the shader skips.
+const double kTransparentOpacity = 1.0 / 255.0;
+/// Never let the proxy reach zero: it is used as a ratio.
+const double kMinOpacityCost = 1.0 / 256.0;
+
+/// The share of the transfer function's domain that is not transparent.
+///
+/// This is the part of the transfer function that sets the frame cost - the
+/// shader casts a shadow ray for every sample that is not fully transparent -
+/// and unlike the function's MTime it moves smoothly as the curve is edited or
+/// animated. That is what makes it usable as a scale factor: an estimate
+/// measured under one curve can be carried across to the next one instead of
+/// being thrown away, which is the difference between a morphing curve
+/// refining normally and one that never escapes its probe frame.
+///
+/// It ignores how the data is distributed across the range, so it is only
+/// roughly proportional to the real cost. It does not have to be better than
+/// that: it only ever rescales a measurement the controller then corrects, and
+/// the correction is applied in the safe direction first.
+double opacityCost(vtkVolumeProperty* property)
+{
+  auto* opacity = property ? property->GetScalarOpacity() : nullptr;
+  if (!opacity) {
+    return 1.0;
+  }
+
+  double range[2];
+  opacity->GetRange(range);
+  if (!(range[1] > range[0])) {
+    return 1.0;
+  }
+
+  const int samples = 256;
+  int solid = 0;
+  for (int i = 0; i < samples; ++i) {
+    const double x =
+      range[0] + (range[1] - range[0]) * i / (samples - 1.0);
+    if (opacity->GetValue(x) > kTransparentOpacity) {
+      ++solid;
+    }
+  }
+
+  return std::max(kMinOpacityCost, static_cast<double>(solid) / samples);
+}
 
 /// Cost reduction needed to bring a frame of @a secondsPerPixel (the per-pixel
 /// cost at full quality) over @a pixels down to @a targetSeconds.
@@ -376,12 +428,6 @@ protected:
     if (ShadeSuppressed && property) {
       property->SetShade(1);
       ShadeSuppressed = false;
-      // Our own toggling moved the property's MTime; fold that into the
-      // stored key so the end of a drag does not masquerade as a
-      // configuration change and trigger a needless probe/refine cycle. (A
-      // transfer function edited mid-drag would be folded in with it, but
-      // with one cursor those cannot coincide.)
-      Key.propertyTime = property->GetMTime();
     }
 
     const bool shaded = property && property->GetShade() != 0;
@@ -417,15 +463,30 @@ protected:
     // The opacity transfer function swings the cost by more than an order of
     // magnitude, and it lives on the property, so any edit to it has to send
     // us back to a probe frame.
-    key.propertyTime = property->GetMTime();
     key.inputPoints = image->GetNumberOfPoints();
+
+    const double cost = opacityCost(property);
+
     if (key != Key) {
       Key = key;
       SecondsPerPixel = -1.0;
       Reduction = kProbeReduction;
       DiscardMeasurement = true;
       ScatteringUnaffordable = false;
+      OpacityCost = cost;
     } else if (SecondsPerPixel > 0.0) {
+      // Carry the estimate across a changed transfer function instead of
+      // discarding it. A curve that just got more opaque scales the estimate
+      // up, and coarsening off that lands on this very frame - the safe
+      // direction. A cheaper curve scales it down, but sharpening is still
+      // rate-limited below, so the gain has to be confirmed by a measurement
+      // before it is taken in full.
+      if (OpacityCost > 0.0 && cost != OpacityCost) {
+        SecondsPerPixel *= cost / OpacityCost;
+        ScatteringUnaffordable = false;
+      }
+      OpacityCost = cost;
+
       const double wanted =
         solveReduction(SecondsPerPixel, pixels, kTargetFrameSeconds);
       // Coarsening is applied at once - that is the safety direction.
@@ -552,6 +613,9 @@ protected:
   float BaseSampleDistance = -1.0f;
   // Current quality, and the conditions it was measured under.
   double Reduction = kProbeReduction;
+  /// opacityCost() as it stood when SecondsPerPixel was last measured, so a
+  /// change in the curve can be folded in as a ratio.
+  double OpacityCost = -1.0;
   GuardKey Key;
   bool NeedsRefinement = false;
   // Set when a configuration change sends us back to a probe frame; makes
