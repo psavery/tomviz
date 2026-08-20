@@ -80,14 +80,18 @@ Tomviz resolves the `pyxrf-utils` command in this order (see
    state as `pyxrf_utils_command`). This may be a bare command name on
    `$PATH` or an absolute path.
 2. `run-pyxrf-utils`, then `pyxrf-utils`, found on `$PATH`.
-3. A hard-coded NSLS-II fallback path (legacy; prefer 1 or 2).
+3. A hard-coded NSLS-II fallback path, the HXN shared deployment at
+   `/nsls2/data/hxn/legacy/users/data_analysis/tomviz_utils/bin/run-pyxrf-utils`.
 
 The recommended deployment is the wrapper script:
 
 1. Copy `example-script/run-pyxrf-utils` to a directory on the users'
-   `$PATH` (or any stable absolute path).
+   `$PATH` (or any stable absolute path). At HXN, that path is the
+   one hard-coded above, so no user configuration is needed.
 2. Edit its `PIXI_MANIFEST` variable to point at the deployed
-   `pixi.toml` from the previous sections.
+   `pixi.toml` from the previous sections. Add `umask 002` near the
+   top as well: an env update run under a restrictive umask has
+   previously left `conda-meta/*.json` unreadable to other users.
 3. Make it executable (`chmod a+rx run-pyxrf-utils`).
 
 Because the wrapper goes through `pixi run`, the CLI always executes

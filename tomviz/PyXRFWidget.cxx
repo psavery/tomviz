@@ -56,8 +56,8 @@ QString findPyxrfUtilsCommand(const QString& savedCommand)
   }
 
   const QString absoluteFallback =
-    "/nsls2/data2/hxn/legacy/Hiran/tomviz/conda_envs/"
-    "tomviz-latest-wip/bin/run-pyxrf-utils";
+    "/nsls2/data/hxn/legacy/users/data_analysis/tomviz_utils/bin/"
+    "run-pyxrf-utils";
   if (executableExists(absoluteFallback)) {
     return absoluteFallback;
   }
