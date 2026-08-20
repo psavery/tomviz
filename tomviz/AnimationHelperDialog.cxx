@@ -177,6 +177,10 @@ public:
     // can bring in a whole set of them at once.
     connect(&ModuleAnimations::instance(), &ModuleAnimations::changed, this,
             &Internal::updateEnableStates);
+    // Editing the viewpoints changes which legs a visualization can be
+    // bound to.
+    connect(&CameraViewpoints::instance(), &CameraViewpoints::changed, this,
+            &Internal::refreshSegmentOptions);
 
     // Time series
     connect(&activeObjects(),
@@ -267,7 +271,31 @@ public:
     linkToScene();
     updateGui();
     refreshViewpoints();
+    refreshSegmentOptions();
     refreshModuleRanges();
+  }
+
+  // The legs a visualization animation can be bound to: the whole
+  // timeline, or one hop of the camera path.
+  void refreshSegmentOptions()
+  {
+    QSignalBlocker blocked(ui.animationSegment);
+    // An empty combo has no current data, and asking an invalid variant
+    // for an int gives 0, which is the first leg rather than "no leg".
+    auto current = ui.animationSegment->currentData();
+    int previous = current.isValid() ? current.toInt() : -1;
+
+    ui.animationSegment->clear();
+    ui.animationSegment->addItem("Whole animation", -1);
+
+    auto& viewpoints = CameraViewpoints::instance();
+    for (int i = 0; i + 1 < viewpoints.size(); ++i) {
+      ui.animationSegment->addItem(
+        QString("Viewpoint %1 to %2").arg(i + 1).arg(i + 2), i);
+    }
+
+    int index = ui.animationSegment->findData(previous);
+    ui.animationSegment->setCurrentIndex(index < 0 ? 0 : index);
   }
 
   // Re-read the selected module's data-dependent ranges after the
@@ -879,6 +907,14 @@ public:
     if (ui.animateOpacity->isChecked() && OpacityAnimation::supports(node)) {
       ModuleAnimations::instance().add(new OpacityAnimation(
         node, ui.opacityStart->value(), ui.opacityStop->value()));
+    }
+
+    // Both of them run over the leg the user picked.
+    int segment = ui.animationSegment->currentData().toInt();
+    for (auto* animation : ModuleAnimations::instance().animations()) {
+      if (animation->baseNode == node) {
+        animation->segment = segment;
+      }
     }
 
     updateEnableStates();

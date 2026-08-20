@@ -5,6 +5,7 @@
 #define tomvizModuleAnimation_h
 
 #include "ActiveObjects.h"
+#include "CameraViewpoints.h"
 #include "pipeline/Node.h"
 
 #include <pqTimeKeeper.h>
@@ -22,6 +23,12 @@ class ModuleAnimation : public QObject
 
 public:
   QPointer<pipeline::Node> baseNode;
+
+  /// The leg of the camera path this animation runs during, or -1 to run
+  /// over the whole timeline. Binding to a leg is what lets one
+  /// visualization change while the camera flies from one viewpoint to
+  /// the next, and another change on the leg after that.
+  int segment = -1;
 
   ModuleAnimation(pipeline::Node* node) : baseNode(node)
   {
@@ -82,7 +89,12 @@ public:
       // A single time step (or none) has no range to animate over.
       return 0;
     }
-    return (time() - start) / (stop - start);
+    double elapsed = (time() - start) / (stop - start);
+    if (segment < 0) {
+      return elapsed;
+    }
+
+    return CameraViewpoints::instance().segmentProgress(elapsed, segment);
   }
 
   virtual void onTimeChanged() {}

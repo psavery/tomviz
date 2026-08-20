@@ -86,6 +86,17 @@ public:
   /// never which viewpoint is reached when.
   double remapProgress(double progress) const;
 
+  /// How far through one leg of the path the animation is, given its
+  /// overall progress. Before the leg starts this is 0 and after it ends
+  /// it is 1, so a visualization bound to a leg does its whole sweep
+  /// while the camera flies that leg and holds still either side of it.
+  ///
+  /// A leg that is not there any more (the viewpoints were deleted, or
+  /// the file was saved with more of them) gives back `progress`
+  /// unchanged, so the animation still runs over the whole timeline
+  /// rather than freezing at one value.
+  double segmentProgress(double progress, int segment) const;
+
   /// Move `camera` to time `t` in [0, 1] along the path. Interpolates
   /// position, focal point, view up, view angle and parallel scale;
   /// whether the camera is in parallel projection is left alone, since

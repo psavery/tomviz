@@ -211,6 +211,21 @@ double CameraViewpoints::remapProgress(double progress) const
   return stopList[segment] + u * span;
 }
 
+double CameraViewpoints::segmentProgress(double progress, int segment) const
+{
+  auto stopList = stops();
+  if (segment < 0 || segment + 1 >= stopList.size()) {
+    return progress;
+  }
+
+  double span = stopList[segment + 1] - stopList[segment];
+  if (span <= 0) {
+    return progress >= stopList[segment] ? 1.0 : 0.0;
+  }
+
+  return qBound(0.0, (progress - stopList[segment]) / span, 1.0);
+}
+
 void CameraViewpoints::interpolate(double t, vtkCamera* camera)
 {
   if (!camera || m_viewpoints.size() < 2) {

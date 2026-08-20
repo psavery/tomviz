@@ -154,6 +154,7 @@ QJsonObject ModuleAnimations::serialize(pipeline::Pipeline* pipeline) const
     auto entry = animation->serialize();
     entry["type"] = type;
     entry["node"] = pipeline->nodeId(animation->baseNode);
+    entry["segment"] = animation->segment;
     array.append(entry);
   }
 
@@ -183,6 +184,7 @@ void ModuleAnimations::deserialize(const QJsonObject& json,
 
     if (auto* animation =
           buildAnimation(entry["type"].toString(), node, entry)) {
+      animation->segment = entry["segment"].toInt(-1);
       m_animations.append(animation);
     }
   }

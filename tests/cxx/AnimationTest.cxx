@@ -157,6 +157,31 @@ TEST_F(AnimationTest, EasingSlowsTheEndsOfALegAndNotItsMiddle)
   EXPECT_DOUBLE_EQ(viewpoints().remapProgress(0.5), 0.5);
 }
 
+TEST_F(AnimationTest, BindingToALegConfinesAnAnimationToIt)
+{
+  viewpoints().append(viewpointAt(0, 1.0, false));
+  viewpoints().append(viewpointAt(1, 3.0, false));
+  viewpoints().append(viewpointAt(2, 1.0, false));
+  // Legs run 0 -> 0.25 -> 1.
+
+  // The first leg: done by the time the camera reaches viewpoint 2, and
+  // held at either end rather than running on.
+  EXPECT_DOUBLE_EQ(viewpoints().segmentProgress(0.0, 0), 0.0);
+  EXPECT_DOUBLE_EQ(viewpoints().segmentProgress(0.125, 0), 0.5);
+  EXPECT_DOUBLE_EQ(viewpoints().segmentProgress(0.25, 0), 1.0);
+  EXPECT_DOUBLE_EQ(viewpoints().segmentProgress(0.9, 0), 1.0);
+
+  // The second leg has not started while the first one is running.
+  EXPECT_DOUBLE_EQ(viewpoints().segmentProgress(0.1, 1), 0.0);
+  EXPECT_DOUBLE_EQ(viewpoints().segmentProgress(0.625, 1), 0.5);
+  EXPECT_DOUBLE_EQ(viewpoints().segmentProgress(1.0, 1), 1.0);
+
+  // An animation bound to a leg that is not there any more runs over the
+  // whole timeline instead of freezing.
+  EXPECT_DOUBLE_EQ(viewpoints().segmentProgress(0.4, 7), 0.4);
+  EXPECT_DOUBLE_EQ(viewpoints().segmentProgress(0.4, -1), 0.4);
+}
+
 TEST_F(AnimationTest, ThePathPassesThroughEveryViewpoint)
 {
   viewpoints().append(viewpointAt(0, 1.0, true));
