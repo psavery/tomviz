@@ -292,6 +292,8 @@ public:
             &Internal::clearCurve);
     connect(ui.keyframeList, &QListWidget::currentRowChanged, this,
             [this]() { updateEnableStates(); });
+    connect(ui.keyframeList, &QListWidget::itemDoubleClicked, this,
+            &Internal::loadCurveIntoEditor);
     connect(ui.addModuleAnimation, &QPushButton::clicked, this,
             &Internal::addModuleAnimation);
     // The registry can change from outside the dialog too, e.g. when a
@@ -441,7 +443,15 @@ public:
 
     QString property = selectedProperty();
     bool curveProperty = property == "curve";
-    int stagedCount = node ? stagedCurves.value(node).size() : 0;
+    int stagedCount = 0;
+    if (node) {
+      const int rows = keyframeRowCount();
+      for (int anchor : stagedCurves.value(node).keys()) {
+        if (anchor < rows) {
+          ++stagedCount;
+        }
+      }
+    }
     bool curveSelected = ui.keyframeList->currentRow() >= 0;
     bool curveStaged =
       node && curveSelected &&
@@ -1114,6 +1124,13 @@ public:
     }
   }
 
+  // One row per viewpoint, or a plain start and end when there is no
+  // camera path to key against.
+  int keyframeRowCount()
+  {
+    return std::max(2, CameraViewpoints::instance().size());
+  }
+
   void refreshKeyframeRows()
   {
     if (selectedProperty() != "curve") {
@@ -1143,7 +1160,7 @@ public:
 
     auto& viewpoints = CameraViewpoints::instance();
     auto staged = stagedCurves.value(node);
-    int rows = std::max(2, static_cast<int>(viewpoints.size()));
+    int rows = keyframeRowCount();
     for (int anchor = 0; anchor < rows; ++anchor) {
       QString label;
       if (viewpoints.size() >= 2) {
@@ -1194,6 +1211,43 @@ public:
     stagedCurves[node].insert(anchor, copy);
     refreshKeyframeRows();
     updateEnableStates();
+  }
+
+  // Put a captured curve back into the histogram editor, so it can be
+  // looked at and edited. The counterpart of double clicking a viewpoint
+  // to move the camera there.
+  void loadCurveIntoEditor(QListWidgetItem* item)
+  {
+    auto* node = selectedSink();
+    auto* live = liveOpacityCurve();
+    int anchor = ui.keyframeList->row(item);
+    if (!node || !live || anchor < 0) {
+      return;
+    }
+
+    auto captured = stagedCurves.value(node).value(anchor);
+    if (!captured) {
+      return;
+    }
+
+    live->DeepCopy(captured);
+
+    // Captures strip the nodes the editor parks at the ends of the data
+    // range, so put them back or its chart stops spanning the range.
+    auto* volume = qobject_cast<pipeline::VolumeSink*>(node);
+    auto volumeData = volume ? volume->volumeData() : nullptr;
+    if (volumeData && volumeData->isValid()) {
+      auto colorRange = volumeData->colorMapRange();
+      double range[2] = { colorRange[0], colorRange[1] };
+      addPlaceholderNodes(live, range);
+    }
+
+    // The editor watches this function and redraws, re-renders and
+    // mirrors the change into its proxy off the one event. Render
+    // anyway, in case the editor is currently showing another data
+    // source and nothing else would.
+    live->Modified();
+    activeObjects().renderAllViews();
   }
 
   void clearCurve()
@@ -1296,7 +1350,14 @@ public:
       if (volume && ScalarOpacityAnimation::supports(node)) {
         QList<OpacityKeyframe> keyframes;
         auto staged = stagedCurves.value(node);
+        const int rows = keyframeRowCount();
         for (auto it = staged.constBegin(); it != staged.constEnd(); ++it) {
+          // Curves captured against viewpoints that have since been
+          // removed are kept in case those viewpoints come back, but
+          // they are not part of what the list is currently offering.
+          if (it.key() >= rows) {
+            continue;
+          }
           OpacityKeyframe keyframe;
           keyframe.anchor = it.key();
           keyframe.curve = it.value();

@@ -374,7 +374,7 @@
            <item>
             <widget class="QListWidget" name="keyframeList">
              <property name="toolTip">
-              <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;The opacity curve the volume shows as it arrives at each viewpoint. The volume morphs smoothly between the captured curves.&lt;/p&gt;&lt;p&gt;&lt;br/&gt;&lt;/p&gt;&lt;p&gt;Shape the curve in the histogram editor, select a viewpoint here, and capture it. Viewpoints without a captured curve are skipped.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+              <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;The opacity curve the volume shows as it arrives at each viewpoint. The volume morphs smoothly between the captured curves.&lt;/p&gt;&lt;p&gt;&lt;br/&gt;&lt;/p&gt;&lt;p&gt;Shape the curve in the histogram editor, select a viewpoint here, and capture it. Viewpoints without a captured curve are skipped.&lt;/p&gt;&lt;p&gt;&lt;br/&gt;&lt;/p&gt;&lt;p&gt;Double click a captured curve to load it back into the histogram editor.&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
              </property>
             </widget>
            </item>
