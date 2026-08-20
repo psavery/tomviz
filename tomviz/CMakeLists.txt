@@ -122,6 +122,8 @@ set(SOURCES
   OperatorSearchDialog.h
   MoleculeProperties.cxx
   MoleculeProperties.h
+  MovieExportDialog.cxx
+  MovieExportDialog.h
   InteractiveTransformWidget.cxx
   InteractiveTransformWidget.h
   PortDataWriter.cxx
@@ -884,6 +886,7 @@ target_link_libraries(tomvizlib
     tomvizcore
     ParaView::pqApplicationComponents
     ParaView::pqPython
+    ParaView::RemotingAnimation
     ParaView::RemotingExport
     ParaView::RemotingViews
     VTK::jsoncpp

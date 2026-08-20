@@ -6,6 +6,7 @@
 
 #include "ActiveObjects.h"
 #include "ContourAnimation.h"
+#include "MovieExportDialog.h"
 #include "SliceAnimation.h"
 #include "Utilities.h"
 
@@ -22,7 +23,6 @@
 #include <pqPropertyLinks.h>
 #include <pqRenderView.h>
 #include <pqSMAdaptor.h>
-#include <pqSaveAnimationReaction.h>
 #include <pqServerManagerModel.h>
 
 #include <vtkSMProxy.h>
@@ -580,7 +580,11 @@ public:
     scene()->getProxy()->UpdateVTKObjects();
   }
 
-  void exportMovie() { pqSaveAnimationReaction::saveAnimation(); }
+  void exportMovie()
+  {
+    MovieExportDialog dialog(parent);
+    dialog.exec();
+  }
 
   void clearAllAnimations()
   {
