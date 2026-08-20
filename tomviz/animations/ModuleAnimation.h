@@ -71,7 +71,17 @@ public:
 
   virtual double timeStart() { return timeSteps().front(); }
   virtual double timeStop() { return timeSteps().back(); }
-  virtual double progress() { return time() / (timeStop() - timeStart()); }
+
+  virtual double progress()
+  {
+    double start = timeStart();
+    double stop = timeStop();
+    if (stop <= start) {
+      // A single time step (or none) has no range to animate over.
+      return 0;
+    }
+    return (time() - start) / (stop - start);
+  }
 
   virtual void onTimeChanged() {}
 };
