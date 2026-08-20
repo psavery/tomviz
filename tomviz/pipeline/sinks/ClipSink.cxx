@@ -43,8 +43,42 @@
 #include <vtkTransform.h>
 #include <vtkTrivialProducer.h>
 
+#include <algorithm>
+#include <cmath>
+
 namespace tomviz {
 namespace pipeline {
+
+void planeTravelRange(const double bounds[6], const double normal[3],
+                      double& minDistance, double& maxDistance)
+{
+  minDistance = 0.0;
+  maxDistance = 0.0;
+
+  double length = std::sqrt(normal[0] * normal[0] + normal[1] * normal[1] +
+                            normal[2] * normal[2]);
+  if (length == 0.0) {
+    return;
+  }
+
+  double n[3] = { normal[0] / length, normal[1] / length,
+                  normal[2] / length };
+  double center[3] = { (bounds[0] + bounds[1]) / 2.0,
+                       (bounds[2] + bounds[3]) / 2.0,
+                       (bounds[4] + bounds[5]) / 2.0 };
+
+  // The extreme distances are always reached at corners, so the eight of
+  // them bound every point in the box.
+  for (int i = 0; i < 8; ++i) {
+    double corner[3] = { bounds[i & 1], bounds[2 + ((i >> 1) & 1)],
+                         bounds[4 + ((i >> 2) & 1)] };
+    double d = (corner[0] - center[0]) * n[0] +
+               (corner[1] - center[1]) * n[1] +
+               (corner[2] - center[2]) * n[2];
+    minDistance = std::min(minDistance, d);
+    maxDistance = std::max(maxDistance, d);
+  }
+}
 
 ClipSink::ClipSink(QObject* parent) : LegacyModuleSink(parent)
 {
@@ -462,6 +496,45 @@ void ClipSink::setPlaneNormal(double nx, double ny, double nz)
   syncClippingPlane();
   emit clipPlaneUpdated();
   emit renderNeeded();
+}
+
+void ClipSink::planeNormalInData(double normal[3]) const
+{
+  if (m_widget) {
+    m_widget->GetNormal(normal);
+    return;
+  }
+
+  double* n = m_clippingPlane->GetNormal();
+  normal[0] = n[0];
+  normal[1] = n[1];
+  normal[2] = n[2];
+}
+
+void ClipSink::setPlaneDistance(double distance)
+{
+  double n[3];
+  planeNormalInData(n);
+  double length = std::sqrt(n[0] * n[0] + n[1] * n[1] + n[2] * n[2]);
+  if (length == 0.0) {
+    return;
+  }
+
+  double boundsCenter[3] = { (m_bounds[0] + m_bounds[1]) / 2.0,
+                             (m_bounds[2] + m_bounds[3]) / 2.0,
+                             (m_bounds[4] + m_bounds[5]) / 2.0 };
+
+  setPlaneOrigin(boundsCenter[0] + distance * n[0] / length,
+                 boundsCenter[1] + distance * n[1] / length,
+                 boundsCenter[2] + distance * n[2] / length);
+}
+
+void ClipSink::planeDistanceRange(double& minDistance,
+                                  double& maxDistance) const
+{
+  double n[3];
+  planeNormalInData(n);
+  planeTravelRange(m_bounds, n, minDistance, maxDistance);
 }
 
 vtkPlane* ClipSink::clippingPlane() const

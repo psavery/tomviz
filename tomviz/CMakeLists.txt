@@ -464,7 +464,12 @@ list(APPEND SOURCES
 # animations/
 list(APPEND SOURCES
   animations/ModuleAnimation.h
+  animations/CameraAnimation.h
+  animations/CameraViewpoints.cxx
+  animations/CameraViewpoints.h
+  animations/ClipAnimation.h
   animations/ContourAnimation.h
+  animations/OpacityAnimation.h
   animations/SliceAnimation.h
   animations/TimeSeriesAnimation.h
 )

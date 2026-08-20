@@ -23,6 +23,13 @@ namespace pipeline {
 class Link;
 class OutputPort;
 
+/// Signed distances, measured from the centre of `bounds` along `normal`,
+/// of the bounding-box corners furthest to either side of that centre. A
+/// plane at any distance in between still crosses the box. `normal` need
+/// not be unit length; a zero-length one gives an empty range.
+void planeTravelRange(const double bounds[6], const double normal[3],
+                      double& minDistance, double& maxDistance);
+
 /// Clipping-plane visualization sink using vtkNonOrthoImagePlaneWidget.
 /// Matches the old ModuleClip: shows an interactive texture-mapped plane
 /// and emits the clipping plane geometry for other modules to clip against.
@@ -84,6 +91,16 @@ public:
   void setPlaneOrigin(double x, double y, double z);
   void setPlaneNormal(double nx, double ny, double nz);
 
+  /// Move the plane to a signed distance from the centre of the data
+  /// bounds, measured along the plane normal. Unlike the slice index
+  /// this is defined for every orientation, so it is the position an
+  /// animation sweeps when the plane is not axis aligned.
+  void setPlaneDistance(double distance);
+
+  /// The range planeDistance() can cover while the plane still crosses
+  /// the data.
+  void planeDistanceRange(double& minDistance, double& maxDistance) const;
+
   /// Max slice index for the current direction (-1 if Custom).
   int maxSlice() const;
 
@@ -112,6 +129,11 @@ protected:
 private:
   void setupWidget();
   void applyDirection();
+
+  // The plane normal in data coordinates, which is what the widget and
+  // m_bounds are expressed in. planeNormal() reports the world-space
+  // normal instead, so it is the wrong one to position against.
+  void planeNormalInData(double normal[3]) const;
 
   // Sync m_clippingPlane from the widget, transforming data-coordinate
   // center/normal into world coordinates via the volume's display transform.

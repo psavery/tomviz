@@ -51,6 +51,7 @@ set(_pythonpath "${_pythonpath}${_separator}$ENV{PYTHONPATH}")
 
 # Add the test cases
 add_cxx_test(Variant)
+add_cxx_test(Animation)
 add_cxx_test(ScanID)
 add_cxx_test(Utilities)
 add_cxx_test(VolumeBricking)

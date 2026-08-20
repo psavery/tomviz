@@ -5,13 +5,18 @@
 #include "ui_AnimationHelperDialog.h"
 
 #include "ActiveObjects.h"
+#include "CameraAnimation.h"
+#include "CameraViewpoints.h"
+#include "ClipAnimation.h"
 #include "ContourAnimation.h"
 #include "MovieExportDialog.h"
+#include "OpacityAnimation.h"
 #include "SliceAnimation.h"
 #include "Utilities.h"
 
 #include "pipeline/Pipeline.h"
 #include "pipeline/SourceNode.h"
+#include "pipeline/sinks/ClipSink.h"
 #include "pipeline/sinks/ContourSink.h"
 #include "pipeline/sinks/SliceSink.h"
 
@@ -25,9 +30,13 @@
 #include <pqSMAdaptor.h>
 #include <pqServerManagerModel.h>
 
+#include <vtkCamera.h>
+#include <vtkRenderer.h>
 #include <vtkSMProxy.h>
+#include <vtkSMRenderViewProxy.h>
 #include <vtkWeakPointer.h>
 
+#include <QListWidget>
 #include <QPointer>
 #include <QPushButton>
 #include <QSignalBlocker>
@@ -62,7 +71,11 @@ public:
   pqPropertyLinks pqLinks;
   QPointer<AnimationHelperDialog> parent;
   QList<QPointer<ModuleAnimation>> moduleAnimations;
+  QPointer<CameraAnimation> cameraAnimation;
   vtkWeakPointer<vtkSMProxy> linkedScene;
+  // Which unit the Clip tab is currently showing. The clip has slices
+  // only while it is axis aligned, and the direction can change under us.
+  bool clipTabIsOrtho = true;
 
   Internal(AnimationHelperDialog* p) : QObject(p), parent(p)
   {
@@ -81,6 +94,38 @@ public:
             &Internal::clearCameraAnimations);
     connect(ui.createCameraOrbit, &QPushButton::clicked, this,
             &Internal::createCameraOrbitInternal);
+
+    // Camera viewpoints
+    connect(ui.addViewpoint, &QPushButton::clicked, this,
+            &Internal::addViewpoint);
+    connect(ui.updateViewpoint, &QPushButton::clicked, this,
+            &Internal::updateViewpoint);
+    connect(ui.goToViewpoint, &QPushButton::clicked, this,
+            &Internal::goToViewpoint);
+    connect(ui.removeViewpoint, &QPushButton::clicked, this,
+            &Internal::removeViewpoint);
+    connect(ui.moveViewpointUp, &QPushButton::clicked, this,
+            [this]() { moveViewpoint(-1); });
+    connect(ui.moveViewpointDown, &QPushButton::clicked, this,
+            [this]() { moveViewpoint(1); });
+    connect(ui.viewpointList, &QListWidget::currentRowChanged, this,
+            [this]() {
+              updateSegmentControls();
+              updateEnableStates();
+            });
+    connect(ui.viewpointList, &QListWidget::itemDoubleClicked, this,
+            &Internal::goToViewpoint);
+    connect(ui.segmentDuration,
+            QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
+            &Internal::segmentChanged);
+    connect(ui.segmentEased, &QCheckBox::toggled, this,
+            &Internal::segmentChanged);
+    connect(ui.animateViewpoints, &QPushButton::clicked, this,
+            &Internal::animateViewpointsInternal);
+    // The list is shared with the state file, so it can change while the
+    // dialog is open.
+    connect(&CameraViewpoints::instance(), &CameraViewpoints::changed, this,
+            &Internal::refreshViewpoints);
 
     // Time series
     connect(&activeObjects(),
@@ -116,6 +161,10 @@ public:
     connect(ui.selectedModule,
             QOverload<int>::of(&QComboBox::currentIndexChanged), this,
             &Internal::selectedModuleChanged);
+    connect(ui.animateOpacity, &QCheckBox::toggled, this, [this](bool on) {
+      ui.opacityStart->setEnabled(on);
+      ui.opacityStop->setEnabled(on);
+    });
     connect(ui.addModuleAnimation, &QPushButton::clicked, this,
             &Internal::addModuleAnimation);
     connect(ui.clearModuleAnimations, &QPushButton::clicked, this,
@@ -166,6 +215,7 @@ public:
   {
     linkToScene();
     updateGui();
+    refreshViewpoints();
     refreshModuleRanges();
   }
 
@@ -186,6 +236,14 @@ public:
     } else if (auto* slice = qobject_cast<pipeline::SliceSink*>(node)) {
       if (slice->maxSlice() != ui.sliceStop->maximum()) {
         setupSliceTab(slice);
+      }
+    } else if (auto* clip = qobject_cast<pipeline::ClipSink*>(node)) {
+      // A clip that changed orientation is measured in a different unit
+      // entirely, so the tab has to be rebuilt for that too.
+      bool ortho = clip->isOrtho();
+      if (ortho != clipTabIsOrtho ||
+          (ortho && clip->maxSlice() != ui.clipStop->maximum())) {
+        setupClipTab(clip);
       }
     }
   }
@@ -219,13 +277,19 @@ public:
   {
     cleanupNullAnimations();
 
-    bool hasCameraAnimations = false;
-    for (auto* cue : scene()->getCues()) {
-      if (cue->getSMName().startsWith("CameraAnimationCue")) {
-        hasCameraAnimations = true;
-        break;
+    // The viewpoint list can change while a state file is being loaded,
+    // which is exactly when the session has no scene to ask.
+    bool hasCameraCues = false;
+    if (auto* animationScene = scene()) {
+      for (auto* cue : animationScene->getCues()) {
+        if (cue->getSMName().startsWith("CameraAnimationCue")) {
+          hasCameraCues = true;
+          break;
+        }
       }
     }
+
+    bool hasCameraAnimations = hasCameraCues || !cameraAnimation.isNull();
 
     bool hasTimeSeries = false;
     auto* tk = activeObjects().activeTimeKeeper();
@@ -244,7 +308,20 @@ public:
     bool hasAnyAnimations =
       hasCameraAnimations || timeSeriesEnabled || hasModuleAnimations;
 
+    int viewpointCount = CameraViewpoints::instance().size();
+    int selectedViewpoint = ui.viewpointList->currentRow();
+    bool viewpointSelected = selectedViewpoint >= 0;
+
     ui.clearCameraAnimations->setEnabled(hasCameraAnimations);
+    ui.addViewpoint->setEnabled(renderViewForOrbit() != nullptr);
+    ui.updateViewpoint->setEnabled(viewpointSelected);
+    ui.goToViewpoint->setEnabled(viewpointSelected);
+    ui.removeViewpoint->setEnabled(viewpointSelected);
+    ui.moveViewpointUp->setEnabled(viewpointSelected && selectedViewpoint > 0);
+    ui.moveViewpointDown->setEnabled(viewpointSelected &&
+                                     selectedViewpoint < viewpointCount - 1);
+    // One viewpoint is a camera position, not a path.
+    ui.animateViewpoints->setEnabled(viewpointCount >= 2);
     ui.enableTimeSeriesAnimations->setEnabled(hasTimeSeries);
     ui.addModuleAnimation->setEnabled(moduleSelected);
     ui.selectedDataSource->setEnabled(hasDataSourceOptions);
@@ -258,7 +335,19 @@ public:
   void clearCameraAnimations()
   {
     clearCameraCues();
+    deleteCameraAnimation();
+    // The saved viewpoints are authoring input rather than an animation,
+    // so they survive this: clearing the path should not throw away the
+    // camera positions the user framed to build it.
     updateEnableStates();
+  }
+
+  void deleteCameraAnimation()
+  {
+    if (cameraAnimation) {
+      cameraAnimation->deleteLater();
+      cameraAnimation = nullptr;
+    }
   }
 
   void createCameraOrbitInternal()
@@ -269,7 +358,151 @@ public:
     }
 
     clearCameraCues(renderView->getRenderViewProxy());
+    // The orbit and the viewpoint path both drive the camera every tick.
+    deleteCameraAnimation();
     createCameraOrbit(renderView->getRenderViewProxy());
+
+    updateEnableStates();
+    play();
+  }
+
+  // Camera viewpoints
+  vtkCamera* activeCamera()
+  {
+    auto* renderView = renderViewForOrbit();
+    auto* proxy = renderView ? renderView->getRenderViewProxy() : nullptr;
+    return proxy ? proxy->GetActiveCamera() : nullptr;
+  }
+
+  void refreshViewpoints()
+  {
+    auto& viewpoints = CameraViewpoints::instance();
+
+    QSignalBlocker blocked(ui.viewpointList);
+    int previousRow = ui.viewpointList->currentRow();
+    ui.viewpointList->clear();
+    for (int i = 0; i < viewpoints.size(); ++i) {
+      ui.viewpointList->addItem(QString("Viewpoint %1").arg(i + 1));
+    }
+    if (previousRow >= 0 && previousRow < viewpoints.size()) {
+      ui.viewpointList->setCurrentRow(previousRow);
+    }
+
+    updateSegmentControls();
+    updateEnableStates();
+  }
+
+  // The duration and easing belong to the leg leaving the selected
+  // viewpoint, so the last one in the list has nothing to edit.
+  void updateSegmentControls()
+  {
+    auto& viewpoints = CameraViewpoints::instance();
+    int row = ui.viewpointList->currentRow();
+    bool hasSegment = row >= 0 && row < viewpoints.size() - 1;
+
+    QSignalBlocker blockedDuration(ui.segmentDuration);
+    QSignalBlocker blockedEased(ui.segmentEased);
+    if (hasSegment) {
+      ui.segmentDuration->setValue(viewpoints.at(row).duration);
+      ui.segmentEased->setChecked(viewpoints.at(row).eased);
+    }
+
+    ui.segmentDurationLabel->setEnabled(hasSegment);
+    ui.segmentDuration->setEnabled(hasSegment);
+    ui.segmentEased->setEnabled(hasSegment);
+  }
+
+  void addViewpoint()
+  {
+    auto* camera = activeCamera();
+    if (!camera) {
+      return;
+    }
+
+    Viewpoint viewpoint;
+    viewpoint.readFrom(camera);
+
+    auto& viewpoints = CameraViewpoints::instance();
+    viewpoints.append(viewpoint);
+    ui.viewpointList->setCurrentRow(viewpoints.size() - 1);
+  }
+
+  void updateViewpoint()
+  {
+    auto& viewpoints = CameraViewpoints::instance();
+    int row = ui.viewpointList->currentRow();
+    auto* camera = activeCamera();
+    if (row < 0 || row >= viewpoints.size() || !camera) {
+      return;
+    }
+
+    // Re-frame the viewpoint but leave its place in the path alone.
+    auto viewpoint = viewpoints.at(row);
+    viewpoint.readFrom(camera);
+    viewpoints.replace(row, viewpoint);
+  }
+
+  void goToViewpoint()
+  {
+    auto& viewpoints = CameraViewpoints::instance();
+    int row = ui.viewpointList->currentRow();
+    auto* renderView = renderViewForOrbit();
+    auto* proxy = renderView ? renderView->getRenderViewProxy() : nullptr;
+    auto* camera = proxy ? proxy->GetActiveCamera() : nullptr;
+    if (row < 0 || row >= viewpoints.size() || !camera) {
+      return;
+    }
+
+    viewpoints.at(row).applyTo(camera);
+    if (auto* renderer = proxy->GetRenderer()) {
+      renderer->ResetCameraClippingRange();
+    }
+    renderView->render();
+  }
+
+  void removeViewpoint()
+  {
+    CameraViewpoints::instance().removeAt(ui.viewpointList->currentRow());
+  }
+
+  void moveViewpoint(int offset)
+  {
+    auto& viewpoints = CameraViewpoints::instance();
+    int row = ui.viewpointList->currentRow();
+    int target = row + offset;
+    if (row < 0 || target < 0 || target >= viewpoints.size()) {
+      return;
+    }
+
+    viewpoints.move(row, target);
+    ui.viewpointList->setCurrentRow(target);
+  }
+
+  void segmentChanged()
+  {
+    auto& viewpoints = CameraViewpoints::instance();
+    int row = ui.viewpointList->currentRow();
+    if (row < 0 || row >= viewpoints.size()) {
+      return;
+    }
+
+    auto viewpoint = viewpoints.at(row);
+    viewpoint.duration = ui.segmentDuration->value();
+    viewpoint.eased = ui.segmentEased->isChecked();
+    viewpoints.replace(row, viewpoint);
+  }
+
+  void animateViewpointsInternal()
+  {
+    auto* renderView = renderViewForOrbit();
+    if (!renderView || CameraViewpoints::instance().size() < 2) {
+      return;
+    }
+
+    // Only one animation can own the camera.
+    clearCameraCues(renderView->getRenderViewProxy());
+    deleteCameraAnimation();
+    cameraAnimation = new CameraAnimation(renderView);
 
     updateEnableStates();
     play();
@@ -366,7 +599,8 @@ public:
     QList<pipeline::Node*> sinks;
     for (auto* node : pip->nodes()) {
       if (qobject_cast<pipeline::ContourSink*>(node) ||
-          qobject_cast<pipeline::SliceSink*>(node)) {
+          qobject_cast<pipeline::SliceSink*>(node) ||
+          qobject_cast<pipeline::ClipSink*>(node)) {
         if (findUpstreamSource(node) == source) {
           sinks.append(node);
         }
@@ -381,6 +615,8 @@ public:
           label = "Contour";
         } else if (qobject_cast<pipeline::SliceSink*>(sink)) {
           label = "Slice";
+        } else if (qobject_cast<pipeline::ClipSink*>(sink)) {
+          label = "Clip";
         }
       }
 
@@ -441,10 +677,18 @@ public:
       }
       ui.modulesTabWidget->setCurrentIndex(tabIndex);
       setupSliceTab(slice);
+    } else if (auto* clip = qobject_cast<pipeline::ClipSink*>(node)) {
+      tabIndex = moduleTabTexts().indexOf("Clip");
+      if (tabIndex < 0) {
+        tabIndex = 0;
+      }
+      ui.modulesTabWidget->setCurrentIndex(tabIndex);
+      setupClipTab(clip);
     } else {
       ui.modulesTabWidget->setCurrentIndex(0);
     }
 
+    setupOpacityRow(node);
     updateEnableStates();
   }
 
@@ -504,6 +748,61 @@ public:
             });
   }
 
+  void setupClipTab(pipeline::ClipSink* sink)
+  {
+    clipTabIsOrtho = sink->isOrtho();
+
+    if (clipTabIsOrtho) {
+      double max = sink->maxSlice();
+
+      ui.clipRangeLabel->setText("Slice:");
+      ui.clipStart->setDecimals(0);
+      ui.clipStop->setDecimals(0);
+      ui.clipStart->setRange(0, max);
+      ui.clipStop->setRange(0, max);
+      ui.clipStart->setValue(0);
+      ui.clipStop->setValue(max);
+      return;
+    }
+
+    // A plane at an arbitrary angle has no slices to count, so it is
+    // positioned by how far it sits from the centre of the data along
+    // its own normal.
+    double minDistance = 0;
+    double maxDistance = 0;
+    sink->planeDistanceRange(minDistance, maxDistance);
+
+    ui.clipRangeLabel->setText("Position:");
+    ui.clipStart->setDecimals(2);
+    ui.clipStop->setDecimals(2);
+    ui.clipStart->setRange(minDistance, maxDistance);
+    ui.clipStop->setRange(minDistance, maxDistance);
+    ui.clipStart->setValue(minDistance);
+    ui.clipStop->setValue(maxDistance);
+  }
+
+  void setupOpacityRow(pipeline::Node* node)
+  {
+    bool supported = OpacityAnimation::supports(node);
+
+    if (!supported) {
+      QSignalBlocker blocked(ui.animateOpacity);
+      ui.animateOpacity->setChecked(false);
+    } else {
+      // Fading out from wherever the module sits now is the useful
+      // default; the user can invert it by swapping the two values.
+      QSignalBlocker blockedStart(ui.opacityStart);
+      QSignalBlocker blockedStop(ui.opacityStop);
+      ui.opacityStart->setValue(OpacityAnimation::opacityOf(node));
+      ui.opacityStop->setValue(0.0);
+    }
+
+    bool checked = supported && ui.animateOpacity->isChecked();
+    ui.animateOpacity->setEnabled(supported);
+    ui.opacityStart->setEnabled(checked);
+    ui.opacityStop->setEnabled(checked);
+  }
+
   void addModuleAnimation()
   {
     auto* node = selectedSink();
@@ -525,6 +824,15 @@ public:
       addContourAnimation();
     } else if (qobject_cast<pipeline::SliceSink*>(node)) {
       addSliceAnimation();
+    } else if (qobject_cast<pipeline::ClipSink*>(node)) {
+      addClipAnimation();
+    }
+
+    // Opacity rides along with whatever the module's own animation is,
+    // so a module can move and fade at the same time.
+    if (ui.animateOpacity->isChecked() && OpacityAnimation::supports(node)) {
+      moduleAnimations.append(new OpacityAnimation(
+        node, ui.opacityStart->value(), ui.opacityStop->value()));
     }
 
     updateEnableStates();
@@ -545,6 +853,16 @@ public:
     auto stop = ui.sliceStop->value();
     auto* sink = qobject_cast<pipeline::SliceSink*>(selectedSink());
     moduleAnimations.append(new SliceAnimation(sink, start, stop));
+  }
+
+  void addClipAnimation()
+  {
+    auto start = ui.clipStart->value();
+    auto stop = ui.clipStop->value();
+    auto* sink = qobject_cast<pipeline::ClipSink*>(selectedSink());
+    auto unit =
+      sink->isOrtho() ? ClipAnimation::Slice : ClipAnimation::Distance;
+    moduleAnimations.append(new ClipAnimation(sink, start, stop, unit));
   }
 
   void clearModuleAnimations()

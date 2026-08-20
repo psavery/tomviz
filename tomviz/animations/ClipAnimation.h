@@ -1,0 +1,59 @@
+/* This source file is part of the Tomviz project, https://tomviz.org/.
+   It is released under the 3-Clause BSD License, see "LICENSE". */
+
+#ifndef tomvizClipAnimation_h
+#define tomvizClipAnimation_h
+
+#include "ModuleAnimation.h"
+
+#include "pipeline/sinks/ClipSink.h"
+
+namespace tomviz {
+
+/// Sweeps a clipping plane between two positions along its own normal.
+/// An axis-aligned clip moves by slice index, the unit its own property
+/// panel uses; a custom-oriented clip has no slices, so it moves by
+/// signed distance from the centre of the data instead.
+class ClipAnimation : public ModuleAnimation
+{
+  Q_OBJECT
+
+public:
+  enum Unit
+  {
+    Slice,
+    Distance
+  };
+
+  double startValue = 0;
+  double stopValue = 0;
+  Unit unit = Slice;
+
+  ClipAnimation(pipeline::ClipSink* sink, double start, double stop, Unit u)
+    : ModuleAnimation(sink), startValue(start), stopValue(stop), unit(u)
+  {
+  }
+
+  pipeline::ClipSink* sink()
+  {
+    return qobject_cast<pipeline::ClipSink*>(baseNode.data());
+  }
+
+  void onTimeChanged() override
+  {
+    if (!timeKeeper() || !sink()) {
+      return;
+    }
+
+    double value = (stopValue - startValue) * progress() + startValue;
+    if (unit == Slice) {
+      sink()->setSlice(qRound(value));
+    } else {
+      sink()->setPlaneDistance(value);
+    }
+  }
+};
+
+} // namespace tomviz
+
+#endif
