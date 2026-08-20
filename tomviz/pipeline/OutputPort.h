@@ -130,6 +130,14 @@ public:
   /// data types; the default implementation is a no-op.
   virtual void setIntermediateData(const PortData& data);
 
+  /// Announce that the current payload changed in place (e.g. a
+  /// time-series step switch swapped the VolumeData's image) without
+  /// republishing it. Runs the same refresh path as an
+  /// intermediate-data push - linked sinks re-consume and views
+  /// re-render - but skips the payload replacement and deep copy.
+  /// Thread-safe: the emission is marshaled to the port's thread.
+  void notifyDataMutated();
+
   virtual bool isStale() const;
   void setStale(bool stale);
 

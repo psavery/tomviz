@@ -29,6 +29,7 @@
 #include <QMetaObject>
 #include <QThread>
 
+#include <algorithm>
 #include <array>
 
 
@@ -287,6 +288,14 @@ std::array<double, 2> VolumeData::scalarRange() const
   return range;
 }
 
+std::array<double, 2> VolumeData::colorMapRange() const
+{
+  if (m_timeSteps.isEmpty()) {
+    return scalarRange();
+  }
+  return m_timeSeriesRange;
+}
+
 QString VolumeData::label() const
 {
   return m_label;
@@ -413,7 +422,7 @@ void VolumeData::rescaleColorMap()
     return;
   }
 
-  auto range = scalarRange();
+  auto range = colorMapRange();
   double r[2] = { range[0], range[1] };
 
   vtkSMTransferFunctionProxy::RescaleTransferFunction(m_colorMap, r);
@@ -715,6 +724,28 @@ void VolumeData::setTimeSteps(const QList<TimeStep>& steps)
   if (!steps.isEmpty()) {
     m_currentTimeStep = 0;
     m_imageData = steps[0].image;
+  }
+
+  std::array<double, 2> range = { 0.0, 0.0 };
+  bool first = true;
+  for (const auto& step : steps) {
+    auto* scalars =
+      step.image ? step.image->GetPointData()->GetScalars() : nullptr;
+    if (!scalars) {
+      continue;
+    }
+    double r[2];
+    scalars->GetFiniteRange(r, -1);
+    range[0] = first ? r[0] : std::min(range[0], r[0]);
+    range[1] = first ? r[1] : std::max(range[1], r[1]);
+    first = false;
+  }
+
+  if (range != m_timeSeriesRange) {
+    m_timeSeriesRange = range;
+    // The color map was built for whichever image was loaded first; it
+    // now has to cover every step so the frames stay comparable.
+    rescaleColorMap();
   }
 }
 

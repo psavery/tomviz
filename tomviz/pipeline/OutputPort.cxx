@@ -422,6 +422,11 @@ void OutputPort::setIntermediateData(const PortData& data)
   runOnThread(this, apply);
 }
 
+void OutputPort::notifyDataMutated()
+{
+  runOnThread(this, [this]() { emit intermediateDataApplied(); });
+}
+
 bool OutputPort::isStale() const
 {
   return m_stale;

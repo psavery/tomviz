@@ -2077,7 +2077,13 @@ bool MainWindow::ensureColorMapForPort(pipeline::Node* node,
     }
     created = true;
   }
-  vol->rescaleColorMap();
+  // A time-series step switch replaces the image in place and announces
+  // it with the same signal new data uses. The range that matters spans
+  // the whole series and cannot move with the step, so rescaling here
+  // would only re-stretch the user's window on every frame of playback.
+  if (created || !vol->hasTimeSteps()) {
+    vol->rescaleColorMap();
+  }
   return created;
 }
 

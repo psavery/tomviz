@@ -112,6 +112,16 @@ public:
   /// Get the scalar range [min, max] of the active scalars
   std::array<double, 2> scalarRange() const;
 
+  /// The range the color map should span: scalarRange(), or the union of
+  /// every step's range when this is a time series.
+  ///
+  /// Playback swaps in a different vtkImageData every frame. Scaling the
+  /// color map to the current step's own range would renormalize each
+  /// frame, so a feature that genuinely brightens over time would look
+  /// constant and the steps could not be compared. The series range is
+  /// what actually bounds the data, and it does not move with the step.
+  std::array<double, 2> colorMapRange() const;
+
   // -- Color/Opacity map --
 
   /// Returns true if the color map has been initialized.
@@ -136,7 +146,7 @@ public:
   /// Get the gradient opacity function.
   vtkPiecewiseFunction* gradientOpacity() const;
 
-  /// Rescale the color and opacity maps to the current scalarRange().
+  /// Rescale the color and opacity maps to the current colorMapRange().
   void rescaleColorMap();
 
   /// Copy color/opacity map control points from another VolumeData as-is
@@ -244,6 +254,9 @@ private:
   std::array<double, 3> m_displayOrientation = { 0.0, 0.0, 0.0 };
   QList<TimeStep> m_timeSteps;
   int m_currentTimeStep = 0;
+  /// Union of every time step's scalar range, recomputed by setTimeSteps.
+  /// Only meaningful while m_timeSteps is non-empty.
+  std::array<double, 2> m_timeSeriesRange = { 0.0, 0.0 };
   /// Maps the current display name of each scalar array to the name it
   /// had when the array was first added (usually the on-disk name from
   /// the file or the name assigned by a Python operator). renameScalarArray

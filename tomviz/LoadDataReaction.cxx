@@ -20,6 +20,8 @@
 #include "Utilities.h"
 #include "vtkOMETiffReader.h"
 
+#include "animations/TimeSeriesAnimation.h"
+
 #include "pipeline/OutputPort.h"
 #include "pipeline/Pipeline.h"
 #include "pipeline/PortData.h"
@@ -252,6 +254,10 @@ QList<pipeline::SourceNode*> LoadDataReaction::loadData(bool isTimeSeries)
       }
       firstVol->setTimeSteps(timeSteps);
       sources = { sources[0] };
+
+      // Drive step switching from the animation clock. Self-owned: it
+      // deletes itself when the source node goes away.
+      new TimeSeriesAnimation(sources[0]);
 
       // Set the animation time steps and change the play mode to
       // "Snap To TimeSteps".

@@ -464,6 +464,7 @@ list(APPEND SOURCES
   animations/ModuleAnimation.h
   animations/ContourAnimation.h
   animations/SliceAnimation.h
+  animations/TimeSeriesAnimation.h
 )
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/animations)
 
