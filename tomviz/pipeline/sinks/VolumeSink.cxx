@@ -395,6 +395,7 @@ protected:
       SecondsPerPixel = -1.0;
       Reduction = kProbeReduction;
       DiscardMeasurement = true;
+      ScatteringUnaffordable = false;
     } else if (SecondsPerPixel > 0.0) {
       const double wanted =
         solveReduction(SecondsPerPixel, pixels, kTargetFrameSeconds);
@@ -407,11 +408,21 @@ protected:
                     : std::max(wanted, Reduction / kMaxSharpeningStep);
     }
 
-    // Safety valve: when even the coarsest possible frame blows the budget,
-    // the scattering itself is unaffordable on this configuration - keeping
-    // the process alive beats keeping the look.
-    if (SecondsPerPixel > 0.0 &&
-        SecondsPerPixel * pixels / kMaxReduction > kTargetFrameSeconds) {
+    // Safety valve: when a frame drawn at maximum coarseness still blows the
+    // budget, scattering is unaffordable on this configuration - keeping the
+    // process alive beats keeping the look.
+    //
+    // This is deliberately a measured fact about a frame we actually drew,
+    // never an extrapolation. A probe frame's time is dominated by fixed
+    // per-frame overhead rather than by ray casting - measured here, a
+    // knob-8 frame costs the same as a knob-1 one - so scaling it up by
+    // kMaxReduction turned "the probe took longer than the budget" into
+    // "this volume needs 24 minutes a frame", and fired the valve on volumes
+    // that render perfectly well. Worse, the valve returns before
+    // recordFrameTime(), so that verdict could never be revised: the volume
+    // rendered shaded but shadowless - Simple's look under Full's settings -
+    // until something changed the key.
+    if (ScatteringUnaffordable) {
       SetVolumetricScatteringBlending(0.0f);
       releaseSampleDistances();
       return false;
@@ -473,6 +484,14 @@ protected:
     const double wanted =
       solveReduction(SecondsPerPixel, LastPixels, kTargetFrameSeconds);
     NeedsRefinement = wanted < Reduction * (1.0 - kReductionEpsilon);
+
+    // Drawn as coarsely as we know how and still over budget: there is
+    // nothing cheaper left to try, so stop drawing scattering for this
+    // configuration (see the safety valve above).
+    if (Reduction >= kProbeReduction && measured > kTargetFrameSeconds) {
+      ScatteringUnaffordable = true;
+      NeedsRefinement = false;
+    }
   }
 
   /// Hand sampling back to VTK, undoing whatever applyRenderGuard() set.
@@ -500,6 +519,9 @@ protected:
   // Set when a configuration change sends us back to a probe frame; makes
   // recordFrameTime() skip that frame's one-time costs.
   bool DiscardMeasurement = false;
+  // Set once a probe frame has been measured over budget, cleared by any
+  // configuration change. While set, frames render without scattering.
+  bool ScatteringUnaffordable = false;
   // True while we have shading switched off on the volume property for an
   // interactive frame; the next frame restores it.
   bool ShadeSuppressed = false;
