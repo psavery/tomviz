@@ -3,6 +3,8 @@
 
 #include "MovieExportDialog.h"
 
+#include "animations/ModuleAnimations.h"
+
 #include "ActiveObjects.h"
 #include "Utilities.h"
 
@@ -445,7 +447,13 @@ public:
       // (same dance as pqSaveAnimationReaction).
       auto* pgm = pqApplicationCore::instance()->getProgressManager();
       const auto prev = pgm->unblockEvents(true);
+      // Let the render guard size every frame for the most expensive point
+      // of the animation. Tracking the cost faithfully would be sharper on
+      // average but would change sharpness between frames, which reads as
+      // the picture breathing once the frames are played back.
+      ModuleAnimations::instance().pinExportQuality();
       bool ok = ahProxy->WriteAnimation(writeTarget.toUtf8().data());
+      ModuleAnimations::instance().releaseExportQuality();
       pgm->unblockEvents(prev);
 
       canceled = progress.wasCanceled();

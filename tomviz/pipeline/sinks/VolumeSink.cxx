@@ -282,9 +282,8 @@ const double kMinOpacityCost = 1.0 / 256.0;
 /// roughly proportional to the real cost. It does not have to be better than
 /// that: it only ever rescales a measurement the controller then corrects, and
 /// the correction is applied in the safe direction first.
-double opacityCost(vtkVolumeProperty* property)
+double opacityCost(vtkPiecewiseFunction* opacity)
 {
-  auto* opacity = property ? property->GetScalarOpacity() : nullptr;
   if (!opacity) {
     return 1.0;
   }
@@ -306,6 +305,11 @@ double opacityCost(vtkVolumeProperty* property)
   }
 
   return std::max(kMinOpacityCost, static_cast<double>(solid) / samples);
+}
+
+double opacityCost(vtkVolumeProperty* property)
+{
+  return opacityCost(property ? property->GetScalarOpacity() : nullptr);
 }
 
 /// Cost reduction needed to bring a frame of @a secondsPerPixel (the per-pixel
@@ -389,6 +393,15 @@ public:
     return wanted;
   }
 
+  /// Size frames for @a curve rather than for whatever the volume is
+  /// showing. Used while exporting, where a controller that tracks the
+  /// curve faithfully would vary sharpness from frame to frame and read as
+  /// the picture breathing. Null goes back to tracking.
+  void SetCostCurveOverride(vtkPiecewiseFunction* curve)
+  {
+    CostCurveOverride = curve;
+  }
+
   /// True once a frame drawn at maximum coarseness was measured over
   /// budget, so this configuration renders without scattering until
   /// something changes. Not one-shot: it describes a standing state, and
@@ -465,7 +478,9 @@ protected:
     // us back to a probe frame.
     key.inputPoints = image->GetNumberOfPoints();
 
-    const double cost = opacityCost(property);
+    const double cost = CostCurveOverride
+                          ? opacityCost(CostCurveOverride.Get())
+                          : opacityCost(property);
 
     if (key != Key) {
       Key = key;
@@ -616,6 +631,7 @@ protected:
   /// opacityCost() as it stood when SecondsPerPixel was last measured, so a
   /// change in the curve can be folded in as a ratio.
   double OpacityCost = -1.0;
+  vtkSmartPointer<vtkPiecewiseFunction> CostCurveOverride;
   GuardKey Key;
   bool NeedsRefinement = false;
   // Set when a configuration change sends us back to a probe frame; makes
@@ -1121,6 +1137,16 @@ void VolumeSink::setScatteringAnisotropy(double value)
 bool VolumeSink::smoothNormals() const
 {
   return m_volumeMapper->GetComputeNormalFromOpacity();
+}
+
+double VolumeSink::opacityRenderCost(vtkPiecewiseFunction* curve)
+{
+  return opacityCost(curve);
+}
+
+void VolumeSink::setWorstCaseOpacity(vtkPiecewiseFunction* curve)
+{
+  m_volumeMapper->SetCostCurveOverride(curve);
 }
 
 void VolumeSink::setAnimatedScalarOpacity(vtkPiecewiseFunction* opacity)

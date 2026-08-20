@@ -147,6 +147,54 @@ void ModuleAnimations::prune()
   }
 }
 
+void ModuleAnimations::pinExportQuality()
+{
+  for (const auto& animation : m_animations) {
+    auto* morph = qobject_cast<ScalarOpacityAnimation*>(animation.data());
+    auto* sink = morph ? morph->sink() : nullptr;
+    if (!sink) {
+      continue;
+    }
+
+    // The most expensive curve is not necessarily at either end - a spike
+    // dissolving into a ramp is widest somewhere in the middle - so walk
+    // the blend rather than just comparing the two captures.
+    double range[2] = { 0.0, 1.0 };
+    auto volume = sink->volumeData();
+    if (volume && volume->isValid()) {
+      auto volumeRange = volume->colorMapRange();
+      range[0] = volumeRange[0];
+      range[1] = volumeRange[1];
+    }
+
+    vtkNew<vtkPiecewiseFunction> worst;
+    double worstCost = -1.0;
+    const int steps = 10;
+    for (int i = 0; i <= steps; ++i) {
+      vtkNew<vtkPiecewiseFunction> sample;
+      interpolateOpacity(morph->startCurve(), morph->stopCurve(),
+                         static_cast<double>(i) / steps, range, sample);
+      const double cost = pipeline::VolumeSink::opacityRenderCost(sample);
+      if (cost > worstCost) {
+        worstCost = cost;
+        worst->DeepCopy(sample);
+      }
+    }
+
+    sink->setWorstCaseOpacity(worst);
+  }
+}
+
+void ModuleAnimations::releaseExportQuality()
+{
+  for (const auto& animation : m_animations) {
+    auto* morph = qobject_cast<ScalarOpacityAnimation*>(animation.data());
+    if (auto* sink = morph ? morph->sink() : nullptr) {
+      sink->setWorstCaseOpacity(nullptr);
+    }
+  }
+}
+
 QJsonObject ModuleAnimations::serialize(pipeline::Pipeline* pipeline) const
 {
   QJsonArray array;

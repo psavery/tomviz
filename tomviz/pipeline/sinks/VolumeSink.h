@@ -107,6 +107,16 @@ public:
   /// curve the user authored; passing nullptr hands rendering back to it.
   void setAnimatedScalarOpacity(vtkPiecewiseFunction* opacity);
 
+  /// Roughly what @a curve costs to render, as the share of its domain it
+  /// leaves non-transparent. Only meaningful against another curve on the
+  /// same data, which is enough to pick the most expensive of several.
+  static double opacityRenderCost(vtkPiecewiseFunction* curve);
+
+  /// Size every frame for @a curve rather than for the curve on screen, so
+  /// an exported sequence holds one sharpness throughout instead of
+  /// tracking the cost up and down. Null goes back to tracking.
+  void setWorstCaseOpacity(vtkPiecewiseFunction* curve);
+
   /// Named bundles of the lighting parameters above. The int values match
   /// the preset button indices in VolumeSinkWidget.
   enum class LightingPreset

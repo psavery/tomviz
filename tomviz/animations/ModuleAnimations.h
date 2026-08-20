@@ -51,6 +51,12 @@ public:
 
   /// The pipeline is passed in because nodes are saved by the id it
   /// assigns them, which is the same id the rest of the state file uses.
+  /// Size each volume's render quality for the most expensive opacity
+  /// curve its animation passes through, so an exported sequence holds one
+  /// sharpness throughout. Undone by releaseExportQuality().
+  void pinExportQuality();
+  void releaseExportQuality();
+
   QJsonObject serialize(pipeline::Pipeline* pipeline) const;
 
   /// Rebuild the animations described by `json` against the nodes of
