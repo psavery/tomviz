@@ -101,12 +101,25 @@ struct LightingPresetValues
 // from Soft's 0.08 up to 1.0 moves the image by well under one 8-bit level:
 // the shadow ray saturates almost immediately, so lengthening it finds
 // nothing left to occlude.
+//
+// Which is also why Full shares Soft's reach rather than the 0.2 it shipped
+// with. Reach buys nothing visible - 0.08 against 0.2 on Full's own settings
+// differs by 0.09 of an 8-bit level - but it does cost render time, because
+// a longer shadow ray marches more samples. Under the frame guard that cost
+// is not paid in time, it is paid in sharpness: the controller answers an
+// expensive frame by sampling more coarsely, so the reach was being spent
+// on nothing and taken back out of the picture.
+//
+// Scattering blend is not a cost lever the same way. The shader casts the
+// shadow ray for every shaded sample as soon as the blend is above zero and
+// the value only weights the result, so Full's 1.5 costs what Soft's 1.0
+// does; it is pure look.
 const LightingPresetValues kLightingPresets[] = {
   /* Flat */ { false, 0.1, 0.9, 0.3, 30.0, 0.0, 0.0, 0.0, false },
   /* Simple */ { true, 0.1, 0.9, 0.3, 30.0, 0.0, 0.0, 0.0, false },
   /* Gentle */ { true, 0.35, 0.75, 0.0, 30.0, 0.0, 0.0, 0.0, true },
   /* Soft */ { true, 0.1, 1.0, 0.0, 30.0, 1.0, 0.08, 0.0, true },
-  /* Full */ { true, 0.1, 1.0, 0.3, 40.0, 1.5, 0.2, -0.25, true },
+  /* Full */ { true, 0.1, 1.0, 0.3, 40.0, 1.5, 0.08, -0.25, true },
 };
 
 const int kNumLightingPresets =
