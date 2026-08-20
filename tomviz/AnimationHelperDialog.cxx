@@ -495,6 +495,7 @@ public:
     deleteCameraAnimation();
     createCameraOrbit(renderView->getRenderViewProxy());
 
+    ensureAnimationFrames();
     play();
   }
 
@@ -509,6 +510,14 @@ public:
     clearCameraCues(renderView->getRenderViewProxy());
     deleteCameraAnimation();
     cameraAnimation = new CameraAnimation(renderView);
+
+    ensureAnimationFrames();
+    // Playback that starts at time zero never announces a time change,
+    // because the clock is already there, so the first frame would show
+    // the camera wherever the user left it rather than at the start of
+    // the path. Put it there now, which also previews the path the
+    // moment it is switched on.
+    cameraAnimation->onTimeChanged();
 
     play();
   }
@@ -1248,6 +1257,12 @@ public:
     }
 
     ModuleAnimations::instance().add(animation);
+    ensureAnimationFrames();
+    // Same reason as the camera path: put the module at its starting
+    // value rather than leaving it wherever it was until the clock
+    // first moves.
+    animation->onTimeChanged();
+
     updateEnableStates();
     play();
   }

@@ -197,6 +197,15 @@ void createCameraOrbit(vtkSMRenderViewProxy* renderView);
 // Set the number of frames in the animation scene
 void setAnimationNumberOfFrames(int numFrames);
 
+/// The frame count tomviz gives an animation it starts itself.
+constexpr int defaultAnimationFrames = 200;
+
+/// Raise the scene to defaultAnimationFrames if it still holds too few
+/// frames to show any motion. A scene nothing has configured holds one,
+/// which plays as a single still and reads as the animation having done
+/// nothing at all. Returns true if the count was changed.
+bool ensureAnimationFrames();
+
 // Set the animation time steps and set the play mode to "Snap to TimeSteps"
 // This will also set the "TimeRange".
 // The time steps must be sorted.

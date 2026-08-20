@@ -748,6 +748,26 @@ void createCameraOrbit(vtkSMRenderViewProxy* renderView)
   kf->UpdateVTKObjects();
 }
 
+bool ensureAnimationFrames()
+{
+  pqAnimationScene* scene =
+    pqPVApplicationCore::instance()->animationManager()->getActiveScene();
+  if (!scene) {
+    return false;
+  }
+
+  // Only a count that cannot animate at all is overridden; anything the
+  // user or a data load chose is left alone.
+  if (pqSMAdaptor::getElementProperty(
+        scene->getProxy()->GetProperty("NumberOfFrames"))
+        .toInt() > 1) {
+    return false;
+  }
+
+  setAnimationNumberOfFrames(defaultAnimationFrames);
+  return true;
+}
+
 void setAnimationNumberOfFrames(int numFrames)
 {
   pqAnimationScene* scene =
