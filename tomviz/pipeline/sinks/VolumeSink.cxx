@@ -337,6 +337,13 @@ public:
     return wanted;
   }
 
+  /// True once a frame drawn at maximum coarseness was measured over
+  /// budget, so this configuration renders without scattering until
+  /// something changes. Not one-shot: it describes a standing state, and
+  /// the sink polls it to keep the properties panel honest about why the
+  /// shadows are missing.
+  bool GetScatteringUnaffordable() const { return ScatteringUnaffordable; }
+
   /// True when the frame just drawn was an unlit interactive one - i.e. the
   /// scattering look is currently off screen and a still render is owed.
   /// One-shot, cleared by reading, for the same reason as above.
@@ -674,6 +681,15 @@ void VolumeSink::onRenderFinished()
     return;
   }
 
+  // The guard can decide mid-render that scattering is unaffordable here.
+  // Nothing else would tell the user why the shadows just went away, so
+  // push the change into the panel.
+  const bool overBudget = m_volumeMapper->GetScatteringUnaffordable();
+  if (overBudget != m_scatteringOverBudget) {
+    m_scatteringOverBudget = overBudget;
+    emit lightingStateChanged();
+  }
+
   if (m_volumeMapper->ConsumeSuppressedFrame()) {
     // An unlit interactive frame is on screen. In principle ParaView follows
     // interaction with a still render, which is what brings the scattering
@@ -944,6 +960,11 @@ void VolumeSink::setVolumetricScattering(double value)
 bool VolumeSink::shadowsEnabled() const
 {
   return m_shadowsEnabled;
+}
+
+bool VolumeSink::scatteringOverBudget() const
+{
+  return m_scatteringOverBudget;
 }
 
 void VolumeSink::setShadowsEnabled(bool enabled)
@@ -1332,6 +1353,7 @@ QWidget* VolumeSink::createSinkPropertiesWidget(QWidget* parent)
     widget->setSpecularPower(specularPower());
     widget->setVolumetricScattering(volumetricScattering());
     widget->setShadowsEnabled(shadowsEnabled());
+    widget->setScatteringOverBudget(scatteringOverBudget());
     widget->setShadowReach(shadowReach());
     widget->setAnisotropy(scatteringAnisotropy());
     widget->setSmoothNormals(smoothNormals());

@@ -49,6 +49,9 @@ public:
   void setSpecularPower(const double value);
   void setVolumetricScattering(const double value);
   void setShadowsEnabled(const bool enable);
+  /// Show or hide the explanation for the frame guard having switched
+  /// volumetric shadows off.
+  void setScatteringOverBudget(const bool overBudget);
   void setShadowReach(const double value);
   void setAnisotropy(const double value);
   void setSmoothNormals(const bool enable);

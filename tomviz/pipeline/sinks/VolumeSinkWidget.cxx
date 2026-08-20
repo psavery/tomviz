@@ -205,6 +205,11 @@ void VolumeSinkWidget::setShadowsEnabled(const bool enable)
   updateShadowControlsEnabled();
 }
 
+void VolumeSinkWidget::setScatteringOverBudget(const bool overBudget)
+{
+  m_uiLighting->laOverBudget->setVisible(overBudget);
+}
+
 void VolumeSinkWidget::updateShadowControlsEnabled()
 {
   // Editing a value that cannot show up in the render is just confusing, so

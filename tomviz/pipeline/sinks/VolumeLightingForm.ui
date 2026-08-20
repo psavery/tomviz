@@ -118,6 +118,19 @@
        </widget>
       </item>
       <item>
+       <widget class="QLabel" name="laOverBudget">
+        <property name="text">
+         <string>Shadows were too slow to draw here, so this volume is rendering without them. Cropping the volume or narrowing the opacity map brings them back. Gentle is soft without needing them.</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+        <property name="visible">
+         <bool>false</bool>
+        </property>
+       </widget>
+      </item>
+      <item>
        <widget class="pqExpanderButton" name="expAdvanced">
         <property name="text">
          <string>Advanced</string>

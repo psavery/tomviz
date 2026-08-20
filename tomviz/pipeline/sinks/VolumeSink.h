@@ -83,6 +83,11 @@ public:
   bool shadowsEnabled() const;
   void setShadowsEnabled(bool enabled);
 
+  /// True while the frame guard has given up on scattering for the current
+  /// configuration because even its coarsest frame ran over budget. The
+  /// volume then renders shaded but shadowless until something changes.
+  bool scatteringOverBudget() const;
+
   /// Shadow reach (GlobalIlluminationReach): 0 = local shadows only,
   /// 1 = shadows across the whole volume.
   double shadowReach() const;
@@ -210,6 +215,8 @@ private:
   // survives being switched off, which is what lets a preset stay selected.
   double m_scattering = 0.0;
   bool m_shadowsEnabled = true;
+  // Mirrors the mapper's verdict, so a change can be noticed and shown.
+  bool m_scatteringOverBudget = false;
 
   QPointer<QComboBox> m_scalarsCombo;
   int m_activeScalars = -1;
