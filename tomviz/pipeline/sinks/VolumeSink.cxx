@@ -214,13 +214,20 @@ struct GuardKey
   double reach = -1.0;
   int lights = 0;
   vtkMTimeType propertyTime = 0;
-  vtkMTimeType inputTime = 0;
+  // Voxel count, not the input's MTime. VolumeData::switchTimeStep swaps in
+  // a different vtkImageData for every time step, so keying on identity
+  // sends a playing time series back to a probe frame on every frame and
+  // pins it at maximum coarseness. Voxel count is what actually sets the
+  // cost scale, time steps share it, and a genuinely different dataset
+  // still resets. Same-sized data whose content differs is absorbed by the
+  // controller instead, since coarsening applies immediately.
+  vtkIdType inputPoints = -1;
 
   bool operator==(const GuardKey& o) const
   {
     return scattering == o.scattering && reach == o.reach &&
            lights == o.lights && propertyTime == o.propertyTime &&
-           inputTime == o.inputTime;
+           inputPoints == o.inputPoints;
   }
   bool operator!=(const GuardKey& o) const { return !(*this == o); }
 };
@@ -380,7 +387,7 @@ protected:
     // magnitude, and it lives on the property, so any edit to it has to send
     // us back to a probe frame.
     key.propertyTime = property->GetMTime();
-    key.inputTime = image->GetMTime();
+    key.inputPoints = image->GetNumberOfPoints();
     if (key != Key) {
       Key = key;
       SecondsPerPixel = -1.0;
