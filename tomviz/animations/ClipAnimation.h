@@ -39,6 +39,18 @@ public:
     return qobject_cast<pipeline::ClipSink*>(baseNode.data());
   }
 
+  QString type() const override { return "clip"; }
+
+  QJsonObject serialize() const override
+  {
+    // The unit is saved rather than re-derived on load: a clip whose
+    // direction changed between sessions would otherwise come back
+    // reading slice indices as distances, or the other way around.
+    return { { "start", startValue },
+             { "stop", stopValue },
+             { "unit", unit == Slice ? "slice" : "distance" } };
+  }
+
   void onTimeChanged() override
   {
     if (!timeKeeper() || !sink()) {

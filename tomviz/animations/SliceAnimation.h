@@ -28,6 +28,13 @@ public:
     return qobject_cast<pipeline::SliceSink*>(baseNode.data());
   }
 
+  QString type() const override { return "slice"; }
+
+  QJsonObject serialize() const override
+  {
+    return { { "start", startValue }, { "stop", stopValue } };
+  }
+
   void onTimeChanged() override
   {
     if (!timeKeeper() || !sink()) {

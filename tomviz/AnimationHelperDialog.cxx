@@ -9,6 +9,7 @@
 #include "CameraViewpoints.h"
 #include "ClipAnimation.h"
 #include "ContourAnimation.h"
+#include "ModuleAnimations.h"
 #include "MovieExportDialog.h"
 #include "OpacityAnimation.h"
 #include "SliceAnimation.h"
@@ -70,7 +71,6 @@ public:
   Ui::AnimationHelperDialog ui;
   pqPropertyLinks pqLinks;
   QPointer<AnimationHelperDialog> parent;
-  QList<QPointer<ModuleAnimation>> moduleAnimations;
   QPointer<CameraAnimation> cameraAnimation;
   vtkWeakPointer<vtkSMProxy> linkedScene;
   // Which unit the Clip tab is currently showing. The clip has slices
@@ -126,6 +126,10 @@ public:
     // dialog is open.
     connect(&CameraViewpoints::instance(), &CameraViewpoints::changed, this,
             &Internal::refreshViewpoints);
+    // Visualization animations are shared the same way, and a state file
+    // can bring in a whole set of them at once.
+    connect(&ModuleAnimations::instance(), &ModuleAnimations::changed, this,
+            &Internal::updateEnableStates);
 
     // Time series
     connect(&activeObjects(),
@@ -275,8 +279,6 @@ public:
 
   void updateEnableStates()
   {
-    cleanupNullAnimations();
-
     // The viewpoint list can change while a state file is being loaded,
     // which is exactly when the session has no scene to ask.
     bool hasCameraCues = false;
@@ -303,7 +305,7 @@ public:
     bool hasDataSourceOptions = ui.selectedDataSource->count() != 0;
     bool hasModuleOptions = ui.selectedModule->count() != 0;
     bool moduleSelected = selectedSink() != nullptr;
-    bool hasModuleAnimations = !moduleAnimations.empty();
+    bool hasModuleAnimations = !ModuleAnimations::instance().isEmpty();
 
     bool hasAnyAnimations =
       hasCameraAnimations || timeSeriesEnabled || hasModuleAnimations;
@@ -367,13 +369,6 @@ public:
   }
 
   // Camera viewpoints
-  vtkCamera* activeCamera()
-  {
-    auto* renderView = renderViewForOrbit();
-    auto* proxy = renderView ? renderView->getRenderViewProxy() : nullptr;
-    return proxy ? proxy->GetActiveCamera() : nullptr;
-  }
-
   void refreshViewpoints()
   {
     auto& viewpoints = CameraViewpoints::instance();
@@ -414,7 +409,9 @@ public:
 
   void addViewpoint()
   {
-    auto* camera = activeCamera();
+    auto* renderView = renderViewForOrbit();
+    auto* proxy = renderView ? renderView->getRenderViewProxy() : nullptr;
+    auto* camera = proxy ? proxy->GetActiveCamera() : nullptr;
     if (!camera) {
       return;
     }
@@ -431,7 +428,9 @@ public:
   {
     auto& viewpoints = CameraViewpoints::instance();
     int row = ui.viewpointList->currentRow();
-    auto* camera = activeCamera();
+    auto* renderView = renderViewForOrbit();
+    auto* proxy = renderView ? renderView->getRenderViewProxy() : nullptr;
+    auto* camera = proxy ? proxy->GetActiveCamera() : nullptr;
     if (row < 0 || row >= viewpoints.size() || !camera) {
       return;
     }
@@ -702,7 +701,6 @@ public:
 
   void onNodeRemoved(pipeline::Node*)
   {
-    cleanupNullAnimations();
     updateDataSourceOptions();
     updateModuleOptions();
     updateEnableStates();
@@ -810,15 +808,9 @@ public:
       return;
     }
 
-    for (int i = 0; i < moduleAnimations.size(); ++i) {
-      if (!moduleAnimations[i] || node == moduleAnimations[i]->baseNode) {
-        if (moduleAnimations[i]) {
-          moduleAnimations[i]->deleteLater();
-        }
-        moduleAnimations.removeAt(i);
-        --i;
-      }
-    }
+    // A module carries at most one animation of each kind, so replace
+    // whatever it already had.
+    ModuleAnimations::instance().removeForNode(node);
 
     if (qobject_cast<pipeline::ContourSink*>(node)) {
       addContourAnimation();
@@ -831,7 +823,7 @@ public:
     // Opacity rides along with whatever the module's own animation is,
     // so a module can move and fade at the same time.
     if (ui.animateOpacity->isChecked() && OpacityAnimation::supports(node)) {
-      moduleAnimations.append(new OpacityAnimation(
+      ModuleAnimations::instance().add(new OpacityAnimation(
         node, ui.opacityStart->value(), ui.opacityStop->value()));
     }
 
@@ -844,7 +836,7 @@ public:
     auto start = ui.contourStart->value();
     auto stop = ui.contourStop->value();
     auto* sink = qobject_cast<pipeline::ContourSink*>(selectedSink());
-    moduleAnimations.append(new ContourAnimation(sink, start, stop));
+    ModuleAnimations::instance().add(new ContourAnimation(sink, start, stop));
   }
 
   void addSliceAnimation()
@@ -852,7 +844,7 @@ public:
     auto start = ui.sliceStart->value();
     auto stop = ui.sliceStop->value();
     auto* sink = qobject_cast<pipeline::SliceSink*>(selectedSink());
-    moduleAnimations.append(new SliceAnimation(sink, start, stop));
+    ModuleAnimations::instance().add(new SliceAnimation(sink, start, stop));
   }
 
   void addClipAnimation()
@@ -862,29 +854,13 @@ public:
     auto* sink = qobject_cast<pipeline::ClipSink*>(selectedSink());
     auto unit =
       sink->isOrtho() ? ClipAnimation::Slice : ClipAnimation::Distance;
-    moduleAnimations.append(new ClipAnimation(sink, start, stop, unit));
+    ModuleAnimations::instance().add(new ClipAnimation(sink, start, stop, unit));
   }
 
   void clearModuleAnimations()
   {
-    for (auto animation : moduleAnimations) {
-      if (animation) {
-        animation->deleteLater();
-      }
-    }
-
-    moduleAnimations.clear();
-
+    ModuleAnimations::instance().clear();
     updateEnableStates();
-  }
-
-  void cleanupNullAnimations()
-  {
-    for (int i = moduleAnimations.size() - 1; i >= 0; --i) {
-      if (moduleAnimations[i].isNull()) {
-        moduleAnimations.removeAt(i);
-      }
-    }
   }
 
   // All animations

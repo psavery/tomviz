@@ -24,6 +24,8 @@ set(SOURCES
   AlignWidget.h
   AnimationHelperDialog.cxx
   AnimationHelperDialog.h
+  AnimationSerializer.cxx
+  AnimationSerializer.h
   ArrayWranglerReaction.cxx
   ArrayWranglerReaction.h
   AxesReaction.cxx
@@ -464,6 +466,8 @@ list(APPEND SOURCES
 # animations/
 list(APPEND SOURCES
   animations/ModuleAnimation.h
+  animations/ModuleAnimations.cxx
+  animations/ModuleAnimations.h
   animations/CameraAnimation.h
   animations/CameraViewpoints.cxx
   animations/CameraViewpoints.h

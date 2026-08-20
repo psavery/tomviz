@@ -28,6 +28,13 @@ public:
     return qobject_cast<pipeline::ContourSink*>(baseNode.data());
   }
 
+  QString type() const override { return "contour"; }
+
+  QJsonObject serialize() const override
+  {
+    return { { "start", startValue }, { "stop", stopValue } };
+  }
+
   void onTimeChanged() override
   {
     if (!timeKeeper() || !sink()) {

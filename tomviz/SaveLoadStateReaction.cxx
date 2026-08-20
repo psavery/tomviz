@@ -4,8 +4,8 @@
 #include "SaveLoadStateReaction.h"
 
 #include "ActiveObjects.h"
+#include "AnimationSerializer.h"
 #include "MainWindow.h"
-#include "animations/CameraViewpoints.h"
 #include "pipeline/LegacyStateLoader.h"
 #include "pipeline/Pipeline.h"
 #include "pipeline/PipelineStateIO.h"
@@ -207,17 +207,6 @@ void bindFallbackView(pipeline::Pipeline* pipeline)
   }
 }
 
-/// Saved camera viewpoints belong to the state file, not to the session,
-/// so a file without any leaves an empty list rather than whatever the
-/// previous file happened to put there.
-void restoreCameraViewpoints(const QJsonObject& state)
-{
-  auto& viewpoints = CameraViewpoints::instance();
-  if (!viewpoints.deserialize(state["cameraViewpoints"].toObject())) {
-    viewpoints.clear();
-  }
-}
-
 } // namespace
 
 bool SaveLoadStateReaction::loadTvh5(const QString& filename,
@@ -259,7 +248,7 @@ bool SaveLoadStateReaction::loadTvh5(const QString& filename,
   }
 
   bindFallbackView(pipeline);
-  restoreCameraViewpoints(state);
+  AnimationSerializer::restore(state, pipeline);
   finalizeNewFormatLoad(pipeline, executePipelines);
   return true;
 }
@@ -313,7 +302,7 @@ bool SaveLoadStateReaction::loadTvsm(const QString& filename,
         return false;
       }
       bindFallbackView(pipeline);
-      restoreCameraViewpoints(object);
+      AnimationSerializer::restore(object, pipeline);
       finalizeNewFormatLoad(pipeline, executePipelines);
       return true;
     }
@@ -350,7 +339,7 @@ bool SaveLoadStateReaction::saveTvh5(const QString& fileName)
   }
   QJsonObject extraState;
   ViewsLayoutsSerializer::saveActive(extraState);
-  extraState["cameraViewpoints"] = CameraViewpoints::instance().serialize();
+  AnimationSerializer::save(extraState);
   return Tvh5Format::write(fileName.toStdString(), pip, extraState);
 }
 
@@ -375,7 +364,7 @@ bool SaveLoadStateReaction::saveTvsm(const QString& fileName, bool /*interactive
   // PipelineStateIO leaves views/layouts/palette to the caller;
   // append them via the shared helper.
   ViewsLayoutsSerializer::saveActive(state);
-  state["cameraViewpoints"] = CameraViewpoints::instance().serialize();
+  AnimationSerializer::save(state);
 
   QJsonDocument doc(state);
   return saveFile.write(doc.toJson()) != -1;

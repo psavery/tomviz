@@ -9,8 +9,10 @@
 
 #include <pqTimeKeeper.h>
 
+#include <QJsonObject>
 #include <QObject>
 #include <QPointer>
+#include <QString>
 
 namespace tomviz {
 
@@ -84,6 +86,14 @@ public:
   }
 
   virtual void onTimeChanged() {}
+
+  /// The name this animation is saved under in a state file. Empty means
+  /// it is not saved, because whatever created it rebuilds it instead.
+  virtual QString type() const { return QString(); }
+
+  /// The parameters needed to rebuild this animation. The node it runs
+  /// on is written by the caller, which is the only one holding the ids.
+  virtual QJsonObject serialize() const { return QJsonObject(); }
 };
 
 } // namespace tomviz
