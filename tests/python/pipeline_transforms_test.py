@@ -153,6 +153,69 @@ def test_legacy_python_transform_runs_real_operator():
     np.testing.assert_array_equal(out_arr, np.full_like(arr, 7.0))
 
 
+def _run_rotate(arr, **arguments):
+    """Run the real Rotate operator from tomviz/python/ over `arr`."""
+    from pathlib import Path
+
+    from tomviz.pipeline.transforms.legacy_python import (
+        LegacyPythonTransform,
+    )
+
+    op_dir = (Path(__file__).parent / '..' / '..' / 'tomviz'
+              / 'python').resolve()
+    t = LegacyPythonTransform()
+    t.deserialize({'description': (op_dir / 'Rotate3D.json').read_text(),
+                   'script': (op_dir / 'Rotate3D.py').read_text(),
+                   'arguments': arguments})
+    ds = Dataset({'ImageScalars': arr}, 'ImageScalars')
+    ds.spacing = (1.0, 1.0, 1.0)
+    result = t.transform({'volume': PortData(ds, 'ImageData')})
+    return result[t._primary_output_name].payload.active_scalars
+
+
+def _slab_with_marker():
+    # tomviz arrays are (nx, ny, nz). Put a marker near the top in y.
+    arr = np.zeros((64, 64, 20), dtype=np.float32, order='F')
+    arr[8:56, 8:56, 4:16] = 1.0
+    arr[28:36, 48:54, 8:12] = 5.0
+    return arr
+
+
+def _marker_centre(arr):
+    return np.argwhere(arr > 3.0).mean(axis=0)
+
+
+def test_rotate_in_plane_without_expand_keeps_shape():
+    """An alignment rotation about Z should turn the data within the image
+    plane, leave the dimensions alone, and leave the marker at the top."""
+    arr = _slab_with_marker()
+    before = _marker_centre(arr)
+    out = _run_rotate(arr, rotation_angle=3.0, rotation_axis=2, expand=False)
+
+    assert out.shape == arr.shape
+    after = _marker_centre(out)
+    # Still near the top in y, and still in the same slices.
+    assert after[1] > arr.shape[1] * 0.6
+    assert abs(after[2] - before[2]) < 1.0
+
+
+def test_rotate_expand_pads_the_perpendicular_axis():
+    """Expanding grows the box to hold the rotated volume and zero-pads the
+    corners, so the leading slices of the grown axis are nearly empty. This
+    is why a small rotation can appear to blank the start of a dataset."""
+    arr = _slab_with_marker()
+    out = _run_rotate(arr, rotation_angle=3.0, rotation_axis=0, expand=True)
+
+    # Rotating about x tips y into z, so z grows by about ny * sin(3 deg).
+    assert out.shape[2] > arr.shape[2]
+    filled = [(out[:, :, k] > 0.01).mean() for k in range(out.shape[2])]
+    assert filled[0] < 0.5 * filled[out.shape[2] // 2]
+
+    # Turning expansion off is what avoids that.
+    kept = _run_rotate(arr, rotation_angle=3.0, rotation_axis=0, expand=False)
+    assert kept.shape == arr.shape
+
+
 def test_threshold_produces_binary_mask():
     arr = np.array([[[0, 1, 2], [3, 4, 5]]], dtype=np.float32)
     ds = _make_dataset(arr)
