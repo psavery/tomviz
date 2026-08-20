@@ -6,6 +6,7 @@
 #include "CameraViewpoints.h"
 #include "ContourAnimation.h"
 #include "ModuleAnimations.h"
+#include "OpacityInterpolation.h"
 #include "OpacityAnimation.h"
 #include "Pipeline.h"
 #include "SliceAnimation.h"
@@ -14,6 +15,7 @@
 #include "sinks/SliceSink.h"
 
 #include <vtkCamera.h>
+#include <vtkPiecewiseFunction.h>
 #include <vtkNew.h>
 
 #include <QJsonArray>
@@ -22,6 +24,7 @@
 
 using tomviz::CameraViewpoints;
 using tomviz::ContourAnimation;
+using tomviz::interpolateOpacity;
 using tomviz::ModuleAnimations;
 using tomviz::OpacityAnimation;
 using tomviz::SliceAnimation;
@@ -277,4 +280,119 @@ TEST_F(AnimationTest, SavedAnimationsWithoutTheirVisualizationAreDropped)
   animations.deserialize(QJsonObject(), &pipeline);
   EXPECT_TRUE(animations.animations().isEmpty());
   EXPECT_TRUE(animations.serialize(&pipeline)["modules"].toArray().isEmpty());
+}
+
+namespace {
+
+vtkSmartPointer<vtkPiecewiseFunction> curve(
+  std::initializer_list<std::array<double, 2>> points)
+{
+  auto function = vtkSmartPointer<vtkPiecewiseFunction>::New();
+  for (const auto& point : points) {
+    function->AddPoint(point[0], point[1]);
+  }
+  return function;
+}
+
+} // namespace
+
+TEST_F(AnimationTest, BlendingOpacityCurvesReproducesItsEndpoints)
+{
+  auto from = curve({ { 0, 0 }, { 40, 1 }, { 100, 0 } });
+  auto sparse = curve({ { 0, 0 }, { 100, 1 } });
+  double range[2] = { 0, 100 };
+
+  auto out = vtkSmartPointer<vtkPiecewiseFunction>::New();
+
+  // Matched point counts blend point by point, so the ends come back exactly.
+  auto matched = curve({ { 0, 0.2 }, { 60, 0.5 }, { 100, 0.9 } });
+  interpolateOpacity(from, matched, 0.0, range, out);
+  EXPECT_EQ(out->GetSize(), 3);
+  EXPECT_DOUBLE_EQ(out->GetValue(40), 1.0);
+  interpolateOpacity(from, matched, 1.0, range, out);
+  EXPECT_DOUBLE_EQ(out->GetValue(60), 0.5);
+
+  // Mismatched counts go through a table, so the ends come back to within
+  // the sampling resolution rather than exactly.
+  interpolateOpacity(from, sparse, 0.0, range, out);
+  EXPECT_NEAR(out->GetValue(40), 1.0, 0.02);
+  interpolateOpacity(from, sparse, 1.0, range, out);
+  EXPECT_NEAR(out->GetValue(50), 0.5, 0.02);
+
+  // Out of range values clamp rather than extrapolating off either end.
+  interpolateOpacity(from, matched, 4.0, range, out);
+  EXPECT_DOUBLE_EQ(out->GetValue(60), 0.5);
+}
+
+TEST_F(AnimationTest, BlendingKeepsCurvesEditableWhenItCan)
+{
+  double range[2] = { 0, 100 };
+  auto out = vtkSmartPointer<vtkPiecewiseFunction>::New();
+
+  // Same number of points: the result stays as small as its inputs, and
+  // sharpness carries across instead of being baked into samples.
+  auto from = vtkSmartPointer<vtkPiecewiseFunction>::New();
+  from->AddPoint(0, 0.0, 0.5, 1.0);
+  from->AddPoint(100, 1.0, 0.5, 1.0);
+  auto to = vtkSmartPointer<vtkPiecewiseFunction>::New();
+  to->AddPoint(0, 0.0, 0.5, 0.0);
+  to->AddPoint(100, 1.0, 0.5, 0.0);
+
+  interpolateOpacity(from, to, 0.5, range, out);
+  ASSERT_EQ(out->GetSize(), 2);
+  double node[4];
+  out->GetNodeValue(0, node);
+  EXPECT_DOUBLE_EQ(node[3], 0.5) << "sharpness should blend, not reset";
+
+  // Different counts cannot be paired up, so the result is a sampled curve.
+  auto three = curve({ { 0, 0 }, { 50, 1 }, { 100, 0 } });
+  interpolateOpacity(from, three, 0.5, range, out);
+  EXPECT_GT(out->GetSize(), 3);
+}
+
+TEST_F(AnimationTest, BlendingReadsBothCurvesOverTheSameWindow)
+{
+  // The same shape stored over two different data windows. Blended over one
+  // reference window they agree, so the midpoint matches the endpoints
+  // instead of sliding sideways.
+  auto narrow = curve({ { 0, 0 }, { 10, 1 }, { 20, 0 } });
+  auto wide = curve({ { 0, 0 }, { 50, 1 }, { 100, 0 } });
+  double range[2] = { 0, 100 };
+
+  auto out = vtkSmartPointer<vtkPiecewiseFunction>::New();
+  interpolateOpacity(narrow, wide, 0.5, range, out);
+
+  // Halfway between a peak at 10 and one at 50 is a peak at 30.
+  double node[4];
+  out->GetNodeValue(1, node);
+  EXPECT_DOUBLE_EQ(node[0], 30.0);
+  EXPECT_DOUBLE_EQ(node[1], 1.0);
+}
+
+TEST_F(AnimationTest, BlendingSurvivesEmptyAndDegenerateInput)
+{
+  double range[2] = { 0, 100 };
+  auto out = vtkSmartPointer<vtkPiecewiseFunction>::New();
+  auto real = curve({ { 0, 0 }, { 100, 1 } });
+  auto empty = vtkSmartPointer<vtkPiecewiseFunction>::New();
+
+  // Nothing to blend towards: the curve that exists stands for the whole
+  // animation rather than fading to nothing.
+  interpolateOpacity(real, empty, 0.5, range, out);
+  EXPECT_DOUBLE_EQ(out->GetValue(100), 1.0);
+  interpolateOpacity(empty, real, 0.5, range, out);
+  EXPECT_DOUBLE_EQ(out->GetValue(100), 1.0);
+
+  interpolateOpacity(empty, empty, 0.5, range, out);
+  EXPECT_EQ(out->GetSize(), 0);
+
+  // A collapsed window has nothing to sample over.
+  double collapsed[2] = { 5, 5 };
+  auto three = curve({ { 0, 0 }, { 50, 1 }, { 100, 0 } });
+  interpolateOpacity(real, three, 0.9, collapsed, out);
+  EXPECT_EQ(out->GetSize(), 3) << "should hold the nearer curve";
+
+  // Writing back over an input must not read freed or half-written state.
+  interpolateOpacity(real, three, 0.5, range, real);
+  EXPECT_GT(real->GetSize(), 0);
 }

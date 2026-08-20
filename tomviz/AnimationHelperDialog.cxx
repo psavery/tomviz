@@ -12,6 +12,7 @@
 #include "ModuleAnimations.h"
 #include "MovieExportDialog.h"
 #include "OpacityAnimation.h"
+#include "ScalarOpacityAnimation.h"
 #include "SliceAnimation.h"
 #include "Utilities.h"
 
@@ -20,6 +21,7 @@
 #include "pipeline/sinks/ClipSink.h"
 #include "pipeline/sinks/ContourSink.h"
 #include "pipeline/sinks/SliceSink.h"
+#include "pipeline/sinks/VolumeSink.h"
 
 #include <pqAnimationCue.h>
 #include <pqImageUtil.h>
@@ -34,6 +36,7 @@
 
 #include <vtkCamera.h>
 #include <vtkImageData.h>
+#include <vtkPiecewiseFunction.h>
 #include <vtkRenderer.h>
 #include <vtkSMProxy.h>
 #include <vtkSMRenderViewProxy.h>
@@ -45,6 +48,8 @@
 #include <QImage>
 #include <QListWidget>
 #include <QListWidgetItem>
+#include <QPainter>
+#include <QPainterPath>
 #include <QPixmap>
 #include <QPointer>
 #include <QPushButton>
@@ -74,6 +79,38 @@ pipeline::SourceNode* findUpstreamSource(pipeline::Node* node)
 // Big enough to tell two framings of the same volume apart, small
 // enough that a dozen of them in a state file is not worth noticing.
 const QSize thumbnailSize(128, 96);
+
+// A sparkline of an opacity curve. Two captured curves are hard to tell
+// apart from their point counts, and the whole animation is the difference
+// between them, so draw the shape.
+QPixmap curvePreview(vtkPiecewiseFunction* curve, const double range[2],
+                     const QSize& size, const QPalette& palette)
+{
+  QPixmap preview(size);
+  preview.fill(Qt::transparent);
+  if (!curve || curve->GetSize() == 0 || !(range[1] > range[0])) {
+    return preview;
+  }
+
+  QPainterPath path;
+  for (int x = 0; x < size.width(); ++x) {
+    const double value =
+      range[0] + (range[1] - range[0]) * x / (size.width() - 1.0);
+    const double opacity = qBound(0.0, curve->GetValue(value), 1.0);
+    const QPointF point(x, (1.0 - opacity) * (size.height() - 3) + 1.5);
+    if (x == 0) {
+      path.moveTo(point);
+    } else {
+      path.lineTo(point);
+    }
+  }
+
+  QPainter painter(&preview);
+  painter.setRenderHint(QPainter::Antialiasing);
+  painter.setPen(QPen(palette.highlight().color(), 1.5));
+  painter.drawPath(path);
+  return preview;
+}
 
 // A PNG of what the view currently shows, or empty if it cannot be read.
 QByteArray captureThumbnail(pqRenderView* renderView)
@@ -116,6 +153,9 @@ public:
   // Which unit the Clip tab is currently showing. The clip has slices
   // only while it is axis aligned, and the direction can change under us.
   bool clipTabIsOrtho = true;
+  // Captured opacity curves, held until the animation is added.
+  vtkNew<vtkPiecewiseFunction> capturedOpacityStart;
+  vtkNew<vtkPiecewiseFunction> capturedOpacityStop;
 
   Internal(AnimationHelperDialog* p) : QObject(p), parent(p)
   {
@@ -216,6 +256,10 @@ public:
     connect(ui.selectedModule,
             QOverload<int>::of(&QComboBox::currentIndexChanged), this,
             &Internal::selectedModuleChanged);
+    connect(ui.captureOpacityStart, &QPushButton::clicked, this,
+            [this]() { captureOpacityCurve(capturedOpacityStart); });
+    connect(ui.captureOpacityStop, &QPushButton::clicked, this,
+            [this]() { captureOpacityCurve(capturedOpacityStop); });
     connect(ui.animateOpacity, &QCheckBox::toggled, this, [this](bool on) {
       ui.opacityStart->setEnabled(on);
       ui.opacityStop->setEnabled(on);
@@ -380,6 +424,10 @@ public:
     bool hasDataSourceOptions = ui.selectedDataSource->count() != 0;
     bool hasModuleOptions = ui.selectedModule->count() != 0;
     bool moduleSelected = selectedSink() != nullptr;
+    if (qobject_cast<pipeline::VolumeSink*>(selectedSink())) {
+      moduleSelected = capturedOpacityStart->GetSize() > 0 &&
+                       capturedOpacityStop->GetSize() > 0;
+    }
     bool hasModuleAnimations = !ModuleAnimations::instance().isEmpty();
 
     bool hasAnyAnimations =
@@ -681,7 +729,8 @@ public:
     for (auto* node : pip->nodes()) {
       if (qobject_cast<pipeline::ContourSink*>(node) ||
           qobject_cast<pipeline::SliceSink*>(node) ||
-          qobject_cast<pipeline::ClipSink*>(node)) {
+          qobject_cast<pipeline::ClipSink*>(node) ||
+          qobject_cast<pipeline::VolumeSink*>(node)) {
         if (findUpstreamSource(node) == source) {
           sinks.append(node);
         }
@@ -698,6 +747,8 @@ public:
           label = "Slice";
         } else if (qobject_cast<pipeline::ClipSink*>(sink)) {
           label = "Clip";
+        } else if (qobject_cast<pipeline::VolumeSink*>(sink)) {
+          label = "Volume";
         }
       }
 
@@ -765,6 +816,13 @@ public:
       }
       ui.modulesTabWidget->setCurrentIndex(tabIndex);
       setupClipTab(clip);
+    } else if (qobject_cast<pipeline::VolumeSink*>(node)) {
+      tabIndex = moduleTabTexts().indexOf("Opacity Curve");
+      if (tabIndex < 0) {
+        tabIndex = 0;
+      }
+      ui.modulesTabWidget->setCurrentIndex(tabIndex);
+      refreshOpacityPreviews();
     } else {
       ui.modulesTabWidget->setCurrentIndex(0);
     }
@@ -861,6 +919,77 @@ public:
     ui.clipStop->setValue(maxDistance);
   }
 
+  // The curve the histogram editor is showing for the selected volume,
+  // which is the sink's own if it has been detached and the data's
+  // otherwise.
+  vtkPiecewiseFunction* liveOpacityCurve()
+  {
+    auto* sink = qobject_cast<pipeline::VolumeSink*>(selectedSink());
+    if (!sink) {
+      return nullptr;
+    }
+    auto* proxy = sink->opacityMap();
+    return proxy ? vtkPiecewiseFunction::SafeDownCast(
+                     proxy->GetClientSideObject())
+                 : nullptr;
+  }
+
+  void captureOpacityCurve(vtkPiecewiseFunction* into)
+  {
+    auto* live = liveOpacityCurve();
+    if (!live) {
+      return;
+    }
+
+    into->DeepCopy(live);
+    // The histogram editor parks nodes at the ends of the data range purely
+    // so the chart looks right. Saving them would make a captured curve's
+    // point count depend on what a panel happened to be doing, and the point
+    // count decides whether two curves can be blended point by point.
+    removePlaceholderNodes(into);
+
+    refreshOpacityPreviews();
+    updateEnableStates();
+  }
+
+  void refreshOpacityPreviews()
+  {
+    struct Preview
+    {
+      QLabel* label;
+      vtkPiecewiseFunction* curve;
+    };
+
+    // Both curves are drawn over one window, the same one the blend reads
+    // them over. Drawn over their own ranges instead, a narrow spike and a
+    // full-width ramp look identical.
+    double range[2] = { 0.0, 1.0 };
+    auto* volume = qobject_cast<pipeline::VolumeSink*>(selectedSink());
+    auto volumeData = volume ? volume->volumeData() : nullptr;
+    if (volumeData && volumeData->isValid()) {
+      auto volumeRange = volumeData->colorMapRange();
+      range[0] = volumeRange[0];
+      range[1] = volumeRange[1];
+    }
+
+    for (auto entry : { Preview{ ui.opacityStartPreview, capturedOpacityStart },
+                        Preview{ ui.opacityStopPreview, capturedOpacityStop } }) {
+      if (entry.curve->GetSize() == 0) {
+        entry.label->setPixmap(QPixmap());
+        entry.label->setText("not captured");
+        continue;
+      }
+      entry.label->setText(QString());
+      entry.label->setPixmap(curvePreview(entry.curve, range,
+                                          entry.label->contentsRect().size(),
+                                          parent->palette()));
+    }
+
+    bool isVolume = qobject_cast<pipeline::VolumeSink*>(selectedSink());
+    ui.captureOpacityStart->setEnabled(isVolume && liveOpacityCurve());
+    ui.captureOpacityStop->setEnabled(isVolume && liveOpacityCurve());
+  }
+
   void setupOpacityRow(pipeline::Node* node)
   {
     bool supported = OpacityAnimation::supports(node);
@@ -900,6 +1029,13 @@ public:
       addSliceAnimation();
     } else if (qobject_cast<pipeline::ClipSink*>(node)) {
       addClipAnimation();
+    } else if (auto* volume = qobject_cast<pipeline::VolumeSink*>(node)) {
+      // Nothing to morph between until both ends have been captured.
+      if (capturedOpacityStart->GetSize() > 0 &&
+          capturedOpacityStop->GetSize() > 0) {
+        ModuleAnimations::instance().add(new ScalarOpacityAnimation(
+          volume, capturedOpacityStart, capturedOpacityStop));
+      }
     }
 
     // Opacity rides along with whatever the module's own animation is,

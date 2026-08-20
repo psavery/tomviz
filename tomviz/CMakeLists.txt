@@ -474,6 +474,9 @@ list(APPEND SOURCES
   animations/ModuleAnimation.h
   animations/ModuleAnimations.cxx
   animations/ModuleAnimations.h
+  animations/OpacityInterpolation.cxx
+  animations/OpacityInterpolation.h
+  animations/ScalarOpacityAnimation.h
   animations/CameraAnimation.h
   animations/CameraViewpoints.cxx
   animations/CameraViewpoints.h

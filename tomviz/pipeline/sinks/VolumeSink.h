@@ -102,6 +102,11 @@ public:
   bool smoothNormals() const;
   void setSmoothNormals(bool enabled);
 
+  /// Render with @a opacity instead of the scalar opacity the histogram
+  /// editor owns. An animation sets this so playback does not overwrite the
+  /// curve the user authored; passing nullptr hands rendering back to it.
+  void setAnimatedScalarOpacity(vtkPiecewiseFunction* opacity);
+
   /// Named bundles of the lighting parameters above. The int values match
   /// the preset button indices in VolumeSinkWidget.
   enum class LightingPreset
@@ -202,6 +207,7 @@ private:
   vtkNew<vtkVolume> m_volume;
   vtkNew<vtkVolumeProperty> m_volumeProperty;
   vtkNew<vtkPiecewiseFunction> m_gradientOpacity;
+  vtkSmartPointer<vtkPiecewiseFunction> m_animatedScalarOpacity;
 
   // Watches render completion for onRenderFinished().
   vtkNew<vtkCallbackCommand> m_refinementObserver;

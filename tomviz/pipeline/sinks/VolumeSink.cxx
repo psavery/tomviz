@@ -914,7 +914,12 @@ void VolumeSink::updateColorMap()
   if (ctf) {
     m_volumeProperty->SetColor(ctf);
   }
-  if (opacity) {
+  // An animation supplies its own blended curve while it runs, so that the
+  // one the user authored in the histogram editor is still there when it
+  // stops.
+  if (m_animatedScalarOpacity) {
+    m_volumeProperty->SetScalarOpacity(m_animatedScalarOpacity);
+  } else if (opacity) {
     m_volumeProperty->SetScalarOpacity(opacity);
   }
 
@@ -1116,6 +1121,13 @@ void VolumeSink::setScatteringAnisotropy(double value)
 bool VolumeSink::smoothNormals() const
 {
   return m_volumeMapper->GetComputeNormalFromOpacity();
+}
+
+void VolumeSink::setAnimatedScalarOpacity(vtkPiecewiseFunction* opacity)
+{
+  m_animatedScalarOpacity = opacity;
+  updateColorMap();
+  emit renderNeeded();
 }
 
 void VolumeSink::setSmoothNormals(bool enabled)

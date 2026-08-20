@@ -450,6 +450,84 @@
            </item>
           </layout>
          </widget>
+         <widget class="QWidget" name="Opacity Curve">
+          <attribute name="title">
+           <string>Opacity Curve</string>
+          </attribute>
+          <layout class="QGridLayout" name="gridLayout_8">
+           <item row="0" column="0">
+            <widget class="QPushButton" name="captureOpacityStart">
+             <property name="toolTip">
+              <string>Save the curve currently in the histogram editor as the one this animation starts from.</string>
+             </property>
+             <property name="text">
+              <string>Capture Start</string>
+             </property>
+            </widget>
+           </item>
+           <item row="0" column="1">
+            <widget class="QLabel" name="opacityStartPreview">
+             <property name="minimumSize">
+              <size>
+               <width>150</width>
+               <height>40</height>
+              </size>
+             </property>
+             <property name="frameShape">
+              <enum>QFrame::StyledPanel</enum>
+             </property>
+             <property name="text">
+              <string>not captured</string>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignCenter</set>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="0">
+            <widget class="QPushButton" name="captureOpacityStop">
+             <property name="toolTip">
+              <string>Save the curve currently in the histogram editor as the one this animation ends on.</string>
+             </property>
+             <property name="text">
+              <string>Capture End</string>
+             </property>
+            </widget>
+           </item>
+           <item row="1" column="1">
+            <widget class="QLabel" name="opacityStopPreview">
+             <property name="minimumSize">
+              <size>
+               <width>150</width>
+               <height>40</height>
+              </size>
+             </property>
+             <property name="frameShape">
+              <enum>QFrame::StyledPanel</enum>
+             </property>
+             <property name="text">
+              <string>not captured</string>
+             </property>
+             <property name="alignment">
+              <set>Qt::AlignCenter</set>
+             </property>
+            </widget>
+           </item>
+           <item row="2" column="0" colspan="2">
+            <spacer name="verticalSpacer_7">
+             <property name="orientation">
+              <enum>Qt::Vertical</enum>
+             </property>
+             <property name="sizeHint" stdset="0">
+              <size>
+               <width>20</width>
+               <height>20</height>
+              </size>
+             </property>
+            </spacer>
+           </item>
+          </layout>
+         </widget>
          <widget class="QWidget" name="Clip">
           <attribute name="title">
            <string>Clip</string>
@@ -649,7 +727,7 @@
        <item row="2" column="2" colspan="2">
         <widget class="QComboBox" name="selectedModule">
          <property name="toolTip">
-          <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Select a visualization for animation.&lt;/p&gt;&lt;p&gt;&lt;br/&gt;&lt;/p&gt;&lt;p&gt;Currently supported:&lt;br/&gt;&lt;/p&gt;&lt;p&gt;Contour, Slice, Clip&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
+          <string>&lt;html&gt;&lt;head/&gt;&lt;body&gt;&lt;p&gt;Select a visualization for animation.&lt;/p&gt;&lt;p&gt;&lt;br/&gt;&lt;/p&gt;&lt;p&gt;Currently supported:&lt;br/&gt;&lt;/p&gt;&lt;p&gt;Contour, Slice, Clip, Volume&lt;/p&gt;&lt;/body&gt;&lt;/html&gt;</string>
          </property>
         </widget>
        </item>
@@ -722,6 +800,8 @@
   <tabstop>modulesTabWidget</tabstop>
   <tabstop>contourStart</tabstop>
   <tabstop>contourStop</tabstop>
+  <tabstop>captureOpacityStart</tabstop>
+  <tabstop>captureOpacityStop</tabstop>
   <tabstop>animationSegment</tabstop>
   <tabstop>animateOpacity</tabstop>
   <tabstop>opacityStart</tabstop>

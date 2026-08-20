@@ -7,6 +7,7 @@
 #include "ContourAnimation.h"
 #include "ModuleAnimation.h"
 #include "OpacityAnimation.h"
+#include "ScalarOpacityAnimation.h"
 #include "SliceAnimation.h"
 
 #include "pipeline/Pipeline.h"
@@ -49,6 +50,14 @@ ModuleAnimation* buildAnimation(const QString& type, pipeline::Node* node,
         return nullptr;
       }
       return new ClipAnimation(sink, start, stop, unit);
+    }
+  } else if (type == "scalarOpacity") {
+    if (auto* sink = qobject_cast<pipeline::VolumeSink*>(node)) {
+      vtkNew<vtkPiecewiseFunction> from;
+      vtkNew<vtkPiecewiseFunction> to;
+      tomviz::deserialize(from.Get(), json["from"].toObject());
+      tomviz::deserialize(to.Get(), json["to"].toObject());
+      return new ScalarOpacityAnimation(sink, from, to);
     }
   } else if (type == "opacity") {
     if (OpacityAnimation::supports(node)) {
