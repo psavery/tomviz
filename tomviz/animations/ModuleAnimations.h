@@ -38,6 +38,9 @@ public:
   /// node it animates.
   void add(ModuleAnimation* animation);
 
+  /// Drop one animation. No-op if it is not in the list.
+  void remove(ModuleAnimation* animation);
+
   /// Drop every animation running on `node`. A module can carry more
   /// than one (a property sweep and an opacity ramp), so this removes
   /// all of them rather than just the first.

@@ -53,11 +53,18 @@ ModuleAnimation* buildAnimation(const QString& type, pipeline::Node* node,
     }
   } else if (type == "scalarOpacity") {
     if (auto* sink = qobject_cast<pipeline::VolumeSink*>(node)) {
-      vtkNew<vtkPiecewiseFunction> from;
-      vtkNew<vtkPiecewiseFunction> to;
-      tomviz::deserialize(from.Get(), json["from"].toObject());
-      tomviz::deserialize(to.Get(), json["to"].toObject());
-      return new ScalarOpacityAnimation(sink, from, to);
+      QList<OpacityKeyframe> keyframes;
+      for (const auto& value : json["keyframes"].toArray()) {
+        auto entry = value.toObject();
+        OpacityKeyframe keyframe;
+        keyframe.anchor = entry["anchor"].toInt();
+        keyframe.curve = vtkSmartPointer<vtkPiecewiseFunction>::New();
+        tomviz::deserialize(keyframe.curve.Get(), entry["curve"].toObject());
+        keyframes.append(keyframe);
+      }
+      if (!keyframes.isEmpty()) {
+        return new ScalarOpacityAnimation(sink, keyframes);
+      }
     }
   } else if (type == "opacity") {
     if (OpacityAnimation::supports(node)) {
@@ -85,6 +92,19 @@ void ModuleAnimations::add(ModuleAnimation* animation)
   prune();
   m_animations.append(animation);
   emit changed();
+}
+
+void ModuleAnimations::remove(ModuleAnimation* animation)
+{
+  prune();
+  for (int i = 0; i < m_animations.size(); ++i) {
+    if (m_animations[i] == animation) {
+      m_animations[i]->deleteLater();
+      m_animations.removeAt(i);
+      emit changed();
+      return;
+    }
+  }
 }
 
 void ModuleAnimations::removeForNode(pipeline::Node* node)
@@ -156,9 +176,14 @@ void ModuleAnimations::pinExportQuality()
       continue;
     }
 
-    // The most expensive curve is not necessarily at either end - a spike
-    // dissolving into a ramp is widest somewhere in the middle - so walk
-    // the blend rather than just comparing the two captures.
+    const auto& keyframes = morph->keyframes();
+    if (keyframes.isEmpty()) {
+      continue;
+    }
+
+    // The most expensive curve is not necessarily any of the captures - a
+    // spike dissolving into a ramp is widest somewhere in the middle - so
+    // walk every blend rather than just comparing the keyframes.
     double range[2] = { 0.0, 1.0 };
     auto volume = sink->volumeData();
     if (volume && volume->isValid()) {
@@ -169,15 +194,22 @@ void ModuleAnimations::pinExportQuality()
 
     vtkNew<vtkPiecewiseFunction> worst;
     double worstCost = -1.0;
-    const int steps = 10;
-    for (int i = 0; i <= steps; ++i) {
-      vtkNew<vtkPiecewiseFunction> sample;
-      interpolateOpacity(morph->startCurve(), morph->stopCurve(),
-                         static_cast<double>(i) / steps, range, sample);
-      const double cost = pipeline::VolumeSink::opacityRenderCost(sample);
+    auto consider = [&](vtkPiecewiseFunction* curve) {
+      const double cost = pipeline::VolumeSink::opacityRenderCost(curve);
       if (cost > worstCost) {
         worstCost = cost;
-        worst->DeepCopy(sample);
+        worst->DeepCopy(curve);
+      }
+    };
+
+    consider(keyframes.first().curve);
+    const int steps = 10;
+    for (int pair = 0; pair + 1 < keyframes.size(); ++pair) {
+      for (int i = 1; i <= steps; ++i) {
+        vtkNew<vtkPiecewiseFunction> sample;
+        interpolateOpacity(keyframes[pair].curve, keyframes[pair + 1].curve,
+                           static_cast<double>(i) / steps, range, sample);
+        consider(sample);
       }
     }
 

@@ -30,6 +30,11 @@ public:
 
   QString type() const override { return "contour"; }
 
+  QString describeParameters() const override
+  {
+    return QString("iso value %1 to %2").arg(startValue).arg(stopValue);
+  }
+
   QJsonObject serialize() const override
   {
     return { { "start", startValue }, { "stop", stopValue } };

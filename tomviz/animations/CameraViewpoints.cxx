@@ -4,6 +4,7 @@
 #include "CameraViewpoints.h"
 
 #include <QJsonArray>
+#include <QRegularExpression>
 
 #include <vtkCamera.h>
 #include <vtkCameraInterpolator.h>
@@ -62,6 +63,7 @@ QJsonObject Viewpoint::serialize() const
   json["parallelProjection"] = parallelProjection;
   json["duration"] = duration;
   json["eased"] = eased;
+  json["name"] = name;
   if (!thumbnail.isEmpty()) {
     json["thumbnail"] = QString::fromLatin1(thumbnail.toBase64());
   }
@@ -81,6 +83,7 @@ Viewpoint Viewpoint::deserialize(const QJsonObject& json)
     json["parallelProjection"].toBool(viewpoint.parallelProjection);
   viewpoint.duration = json["duration"].toDouble(viewpoint.duration);
   viewpoint.eased = json["eased"].toBool(viewpoint.eased);
+  viewpoint.name = json["name"].toString();
   viewpoint.thumbnail =
     QByteArray::fromBase64(json["thumbnail"].toString().toLatin1());
   return viewpoint;
@@ -179,6 +182,28 @@ QList<double> CameraViewpoints::stops() const
   stops.last() = 1.0;
 
   return stops;
+}
+
+QString CameraViewpoints::nextDefaultName() const
+{
+  int highest = 0;
+  QRegularExpression pattern("^Viewpoint (\\d+)$");
+  for (const auto& viewpoint : m_viewpoints) {
+    auto match = pattern.match(viewpoint.name);
+    if (match.hasMatch()) {
+      highest = std::max(highest, match.captured(1).toInt());
+    }
+  }
+  return QString("Viewpoint %1").arg(highest + 1);
+}
+
+double CameraViewpoints::anchorTime(int anchor) const
+{
+  auto stopList = stops();
+  if (stopList.size() < 2) {
+    return anchor <= 0 ? 0.0 : 1.0;
+  }
+  return stopList[qBound(0, anchor, static_cast<int>(stopList.size()) - 1)];
 }
 
 double CameraViewpoints::remapProgress(double progress) const
@@ -290,6 +315,11 @@ bool CameraViewpoints::deserialize(const QJsonObject& json)
   m_viewpoints.clear();
   for (const auto& value : json["viewpoints"].toArray()) {
     m_viewpoints.append(Viewpoint::deserialize(value.toObject()));
+    // Files from before viewpoints had names get positional ones.
+    if (m_viewpoints.last().name.isEmpty()) {
+      m_viewpoints.last().name =
+        QString("Viewpoint %1").arg(m_viewpoints.size());
+    }
   }
 
   m_interpolatorStale = true;

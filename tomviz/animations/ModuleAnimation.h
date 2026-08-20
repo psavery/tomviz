@@ -99,6 +99,9 @@ public:
 
   virtual void onTimeChanged() {}
 
+  /// A short phrase for the animation list, e.g. "iso value 120 to 400".
+  virtual QString describeParameters() const { return {}; }
+
   /// The name this animation is saved under in a state file. Empty means
   /// it is not saved, because whatever created it rebuilds it instead.
   virtual QString type() const { return QString(); }

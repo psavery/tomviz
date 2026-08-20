@@ -215,6 +215,7 @@ TEST_F(AnimationTest, ViewpointsSurviveAStateFileRoundTrip)
   saved.parallelProjection = true;
   saved.duration = 2.5;
   saved.eased = false;
+  saved.name = "Money shot";
   saved.thumbnail = QByteArray("not really a png, but it should come back");
 
   viewpoints().append(saved);
@@ -235,6 +236,10 @@ TEST_F(AnimationTest, ViewpointsSurviveAStateFileRoundTrip)
   EXPECT_DOUBLE_EQ(restored.duration, saved.duration);
   EXPECT_FALSE(restored.eased);
   EXPECT_EQ(restored.thumbnail, saved.thumbnail);
+  EXPECT_EQ(restored.name, saved.name);
+  // The second viewpoint was saved without a name, as older files were,
+  // and gets a positional one rather than none.
+  EXPECT_EQ(viewpoints().at(1).name, QString("Viewpoint 2"));
 
   // A state file with no viewpoints in it is not a list of none.
   EXPECT_FALSE(viewpoints().deserialize(QJsonObject()));
@@ -280,6 +285,55 @@ TEST_F(AnimationTest, SavedAnimationsWithoutTheirVisualizationAreDropped)
   animations.deserialize(QJsonObject(), &pipeline);
   EXPECT_TRUE(animations.animations().isEmpty());
   EXPECT_TRUE(animations.serialize(&pipeline)["modules"].toArray().isEmpty());
+}
+
+TEST_F(AnimationTest, DefaultViewpointNamesAreNotReused)
+{
+  auto first = viewpointAt(0, 1.0, true);
+  first.name = viewpoints().nextDefaultName();
+  viewpoints().append(first);
+  EXPECT_EQ(first.name, QString("Viewpoint 1"));
+
+  auto second = viewpointAt(1, 1.0, true);
+  second.name = viewpoints().nextDefaultName();
+  viewpoints().append(second);
+  EXPECT_EQ(second.name, QString("Viewpoint 2"));
+
+  // Deleting the first viewpoint must not hand its name to the next one:
+  // anything referring to "Viewpoint 1" would silently mean a different
+  // camera position.
+  viewpoints().removeAt(0);
+  EXPECT_EQ(viewpoints().nextDefaultName(), QString("Viewpoint 3"));
+
+  // A rename frees nothing; numbering keys off the names still in use.
+  auto renamed = viewpoints().at(0);
+  renamed.name = "Money shot";
+  viewpoints().replace(0, renamed);
+  EXPECT_EQ(viewpoints().nextDefaultName(), QString("Viewpoint 1"));
+}
+
+TEST_F(AnimationTest, CurveAnchorsResolveThroughTheCameraPath)
+{
+  // With no path, anchors still span the animation, so a morph keyed to
+  // them behaves like a plain start-to-end morph.
+  EXPECT_DOUBLE_EQ(viewpoints().anchorTime(0), 0.0);
+  EXPECT_DOUBLE_EQ(viewpoints().anchorTime(1), 1.0);
+  EXPECT_DOUBLE_EQ(viewpoints().anchorTime(5), 1.0);
+
+  viewpoints().append(viewpointAt(0, 1.0, false));
+  viewpoints().append(viewpointAt(1, 3.0, false));
+  viewpoints().append(viewpointAt(2, 1.0, false));
+
+  // Anchored curves land when the camera does, so they follow the same
+  // stops that pace it, retiming and all.
+  EXPECT_DOUBLE_EQ(viewpoints().anchorTime(0), 0.0);
+  EXPECT_DOUBLE_EQ(viewpoints().anchorTime(1), 0.25);
+  EXPECT_DOUBLE_EQ(viewpoints().anchorTime(2), 1.0);
+
+  // Anchors to viewpoints that no longer exist clamp instead of running
+  // off the path.
+  EXPECT_DOUBLE_EQ(viewpoints().anchorTime(9), 1.0);
+  EXPECT_DOUBLE_EQ(viewpoints().anchorTime(-3), 0.0);
 }
 
 namespace {

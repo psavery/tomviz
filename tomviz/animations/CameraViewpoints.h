@@ -38,6 +38,11 @@ struct Viewpoint
   /// each end instead of rounding the corner at full speed.
   bool eased = true;
 
+  /// What the user calls this viewpoint. Stable: renumbering on every
+  /// delete would silently repoint anything that refers to viewpoints by
+  /// name, so default names never reuse a number.
+  QString name;
+
   /// A small PNG of the view this was saved from. "Viewpoint 3" says
   /// nothing about which view it is; the picture does. Captured when the
   /// viewpoint is saved, because it cannot be regenerated later without
@@ -79,6 +84,17 @@ public:
   /// always 1. Empty for fewer than two viewpoints, which have no path
   /// between them.
   QList<double> stops() const;
+
+  /// The next unused default name, "Viewpoint N". Numbers are never
+  /// reused within a session, so deleting Viewpoint 2 does not cause the
+  /// next viewpoint to take its name.
+  QString nextDefaultName() const;
+
+  /// The time at which the path reaches viewpoint `anchor`, in [0, 1].
+  /// With no path (fewer than two viewpoints), anchor 0 is the start of
+  /// the animation and anything later is the end, so a curve keyed to
+  /// anchors still spans the timeline. Out-of-range anchors clamp.
+  double anchorTime(int anchor) const;
 
   /// Map animation progress in [0, 1] onto a time along the path, also
   /// in [0, 1], applying each segment's easing. Segment boundaries are

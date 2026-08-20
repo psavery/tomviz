@@ -41,6 +41,14 @@ public:
 
   QString type() const override { return "clip"; }
 
+  QString describeParameters() const override
+  {
+    return QString("%1 %2 to %3")
+      .arg(unit == Slice ? "slice" : "position")
+      .arg(startValue)
+      .arg(stopValue);
+  }
+
   QJsonObject serialize() const override
   {
     // The unit is saved rather than re-derived on load: a clip whose
