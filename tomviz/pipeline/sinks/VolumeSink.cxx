@@ -144,9 +144,11 @@ const int kNumLightingPresets =
 // of magnitude in both directions - and guessing high wrecks frames that
 // were never in danger.
 //
-// So measure instead. The first scattering frame of a given configuration is
-// rendered deliberately cheaply, timed, and used to solve for the quality
-// that fits the budget; the picture then sharpens over the next frame or two.
+// So measure instead. The first scattering frames of a given configuration
+// are rendered deliberately cheaply and timed, and the measurement is used
+// to solve for the quality that fits the budget; the picture then sharpens
+// over the next frame or two. The very first of those frames is drawn but
+// not timed: see DiscardMeasurement.
 // Cost falls as the fourth power of the degradation factor (fewer rays in
 // each screen axis, and a longer step for both the primary and the shadow
 // rays), so the extrapolation is a single pow().
@@ -392,6 +394,7 @@ protected:
       Key = key;
       SecondsPerPixel = -1.0;
       Reduction = kProbeReduction;
+      DiscardMeasurement = true;
     } else if (SecondsPerPixel > 0.0) {
       const double wanted =
         solveReduction(SecondsPerPixel, pixels, kTargetFrameSeconds);
@@ -444,6 +447,20 @@ protected:
     if (measured <= 0.0 || LastPixels <= 0.0) {
       return;
     }
+    // The first frame of a configuration also uploads the volume texture and
+    // compiles the shader variant that draws it, and both land inside
+    // GetTimeToDraw(). Extrapolating that one-time cost by up to 4096x makes
+    // the volume look unaffordable: the solved reduction pins at the probe
+    // value, so no refinement is requested and the picture is left at
+    // maximum coarseness - a visibly blurry frame that only recovers when
+    // something else forces a re-measure, such as the still render after a
+    // camera move. Draw that frame but do not time it, and ask for one more
+    // at the same (safe) coarseness to measure the steady-state cost.
+    if (DiscardMeasurement) {
+      DiscardMeasurement = false;
+      NeedsRefinement = true;
+      return;
+    }
     // Normalise to what one pixel would cost at full quality, so the estimate
     // survives the viewport changing size - which it does at the start and
     // end of every camera move.
@@ -480,6 +497,9 @@ protected:
   double Reduction = kProbeReduction;
   GuardKey Key;
   bool NeedsRefinement = false;
+  // Set when a configuration change sends us back to a probe frame; makes
+  // recordFrameTime() skip that frame's one-time costs.
+  bool DiscardMeasurement = false;
   // True while we have shading switched off on the volume property for an
   // interactive frame; the next frame restores it.
   bool ShadeSuppressed = false;
