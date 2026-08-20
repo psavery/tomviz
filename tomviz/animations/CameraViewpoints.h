@@ -4,6 +4,7 @@
 #ifndef tomvizCameraViewpoints_h
 #define tomvizCameraViewpoints_h
 
+#include <QByteArray>
 #include <QJsonObject>
 #include <QList>
 #include <QObject>
@@ -36,6 +37,12 @@ struct Viewpoint
   /// Ease in and out of that segment, so the camera slows to a stop at
   /// each end instead of rounding the corner at full speed.
   bool eased = true;
+
+  /// A small PNG of the view this was saved from. "Viewpoint 3" says
+  /// nothing about which view it is; the picture does. Captured when the
+  /// viewpoint is saved, because it cannot be regenerated later without
+  /// moving the camera there and back.
+  QByteArray thumbnail;
 
   void readFrom(vtkCamera* camera);
   void applyTo(vtkCamera* camera) const;

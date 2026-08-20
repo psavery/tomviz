@@ -4,14 +4,27 @@
 #include <gtest/gtest.h>
 
 #include "CameraViewpoints.h"
+#include "ContourAnimation.h"
+#include "ModuleAnimations.h"
+#include "OpacityAnimation.h"
+#include "Pipeline.h"
+#include "SliceAnimation.h"
 #include "sinks/ClipSink.h"
+#include "sinks/ContourSink.h"
+#include "sinks/SliceSink.h"
 
 #include <vtkCamera.h>
 #include <vtkNew.h>
 
+#include <QJsonArray>
+
 #include <cmath>
 
 using tomviz::CameraViewpoints;
+using tomviz::ContourAnimation;
+using tomviz::ModuleAnimations;
+using tomviz::OpacityAnimation;
+using tomviz::SliceAnimation;
 using tomviz::Viewpoint;
 using tomviz::pipeline::planeTravelRange;
 
@@ -32,8 +45,14 @@ Viewpoint viewpointAt(double x, double duration, bool eased)
 class AnimationTest : public ::testing::Test
 {
 protected:
-  void SetUp() override { CameraViewpoints::instance().clear(); }
-  void TearDown() override { CameraViewpoints::instance().clear(); }
+  void SetUp() override { clearAll(); }
+  void TearDown() override { clearAll(); }
+
+  void clearAll()
+  {
+    CameraViewpoints::instance().clear();
+    ModuleAnimations::instance().clear();
+  }
 
   CameraViewpoints& viewpoints() { return CameraViewpoints::instance(); }
 };
@@ -168,6 +187,7 @@ TEST_F(AnimationTest, ViewpointsSurviveAStateFileRoundTrip)
   saved.parallelProjection = true;
   saved.duration = 2.5;
   saved.eased = false;
+  saved.thumbnail = QByteArray("not really a png, but it should come back");
 
   viewpoints().append(saved);
   viewpoints().append(viewpointAt(7, 1.0, true));
@@ -186,7 +206,50 @@ TEST_F(AnimationTest, ViewpointsSurviveAStateFileRoundTrip)
   EXPECT_TRUE(restored.parallelProjection);
   EXPECT_DOUBLE_EQ(restored.duration, saved.duration);
   EXPECT_FALSE(restored.eased);
+  EXPECT_EQ(restored.thumbnail, saved.thumbnail);
 
   // A state file with no viewpoints in it is not a list of none.
   EXPECT_FALSE(viewpoints().deserialize(QJsonObject()));
+}
+
+// Building a live animation needs a running ParaView application (the
+// base class reaches ActiveObjects for the time keeper), so what is
+// checked here is the half that does not: an entry is only rebuilt if
+// the state file still describes something that can carry it.
+TEST_F(AnimationTest, SavedAnimationsWithoutTheirVisualizationAreDropped)
+{
+  tomviz::pipeline::Pipeline pipeline;
+  auto* contour = new tomviz::pipeline::ContourSink();
+  pipeline.addNode(contour);
+  int contourId = pipeline.nodeId(contour);
+
+  QJsonArray entries;
+  // A visualization that is not in this state file.
+  entries.append(QJsonObject({ { "type", "contour" },
+                               { "node", contourId + 100 },
+                               { "start", 0 },
+                               { "stop", 1 } }));
+  // A kind of animation this build does not have.
+  entries.append(QJsonObject({ { "type", "hologram" },
+                               { "node", contourId },
+                               { "start", 0 },
+                               { "stop", 1 } }));
+  // An animation on a visualization of the wrong type.
+  entries.append(QJsonObject({ { "type", "clip" },
+                               { "node", contourId },
+                               { "start", 0 },
+                               { "stop", 1 },
+                               { "unit", "slice" } }));
+
+  QJsonObject json;
+  json["modules"] = entries;
+
+  auto& animations = ModuleAnimations::instance();
+  animations.deserialize(json, &pipeline);
+  EXPECT_TRUE(animations.animations().isEmpty());
+
+  // A state file with no animation section leaves nothing behind.
+  animations.deserialize(QJsonObject(), &pipeline);
+  EXPECT_TRUE(animations.animations().isEmpty());
+  EXPECT_TRUE(animations.serialize(&pipeline)["modules"].toArray().isEmpty());
 }

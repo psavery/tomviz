@@ -62,6 +62,9 @@ QJsonObject Viewpoint::serialize() const
   json["parallelProjection"] = parallelProjection;
   json["duration"] = duration;
   json["eased"] = eased;
+  if (!thumbnail.isEmpty()) {
+    json["thumbnail"] = QString::fromLatin1(thumbnail.toBase64());
+  }
   return json;
 }
 
@@ -78,6 +81,8 @@ Viewpoint Viewpoint::deserialize(const QJsonObject& json)
     json["parallelProjection"].toBool(viewpoint.parallelProjection);
   viewpoint.duration = json["duration"].toDouble(viewpoint.duration);
   viewpoint.eased = json["eased"].toBool(viewpoint.eased);
+  viewpoint.thumbnail =
+    QByteArray::fromBase64(json["thumbnail"].toString().toLatin1());
   return viewpoint;
 }
 

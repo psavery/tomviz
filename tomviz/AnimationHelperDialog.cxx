@@ -22,6 +22,7 @@
 #include "pipeline/sinks/SliceSink.h"
 
 #include <pqAnimationCue.h>
+#include <pqImageUtil.h>
 #include <pqAnimationManager.h>
 #include <pqAnimationScene.h>
 #include <pqApplicationCore.h>
@@ -32,12 +33,19 @@
 #include <pqServerManagerModel.h>
 
 #include <vtkCamera.h>
+#include <vtkImageData.h>
 #include <vtkRenderer.h>
 #include <vtkSMProxy.h>
 #include <vtkSMRenderViewProxy.h>
+#include <vtkSmartPointer.h>
 #include <vtkWeakPointer.h>
 
+#include <QBuffer>
+#include <QIcon>
+#include <QImage>
 #include <QListWidget>
+#include <QListWidgetItem>
+#include <QPixmap>
 #include <QPointer>
 #include <QPushButton>
 #include <QSignalBlocker>
@@ -63,6 +71,38 @@ pipeline::SourceNode* findUpstreamSource(pipeline::Node* node)
   return nullptr;
 }
 
+// Big enough to tell two framings of the same volume apart, small
+// enough that a dozen of them in a state file is not worth noticing.
+const QSize thumbnailSize(128, 96);
+
+// A PNG of what the view currently shows, or empty if it cannot be read.
+QByteArray captureThumbnail(pqRenderView* renderView)
+{
+  auto* proxy = renderView ? renderView->getRenderViewProxy() : nullptr;
+  if (!proxy) {
+    return {};
+  }
+
+  // CaptureWindow hands back a reference that is ours to release.
+  vtkSmartPointer<vtkImageData> image;
+  image.TakeReference(proxy->CaptureWindow(1));
+  if (!image) {
+    return {};
+  }
+
+  QImage captured;
+  if (!pqImageUtil::fromImageData(image, captured) || captured.isNull()) {
+    return {};
+  }
+
+  QByteArray png;
+  QBuffer buffer(&png);
+  buffer.open(QIODevice::WriteOnly);
+  captured.scaled(thumbnailSize, Qt::KeepAspectRatio, Qt::SmoothTransformation)
+    .save(&buffer, "PNG");
+  return png;
+}
+
 } // anonymous namespace
 
 class AnimationHelperDialog::Internal : public QObject
@@ -82,6 +122,13 @@ public:
     ui.setupUi(p);
 
     ui.modulesTabWidget->tabBar()->hide();
+
+    ui.viewpointList->setViewMode(QListView::IconMode);
+    ui.viewpointList->setIconSize(thumbnailSize);
+    ui.viewpointList->setGridSize(thumbnailSize + QSize(12, 22));
+    ui.viewpointList->setResizeMode(QListView::Adjust);
+    ui.viewpointList->setMovement(QListView::Static);
+    ui.viewpointList->setWordWrap(false);
 
     updateGui();
     setupConnections();
@@ -377,7 +424,12 @@ public:
     int previousRow = ui.viewpointList->currentRow();
     ui.viewpointList->clear();
     for (int i = 0; i < viewpoints.size(); ++i) {
-      ui.viewpointList->addItem(QString("Viewpoint %1").arg(i + 1));
+      auto* item = new QListWidgetItem(QString("Viewpoint %1").arg(i + 1));
+      QPixmap thumbnail;
+      if (thumbnail.loadFromData(viewpoints.at(i).thumbnail, "PNG")) {
+        item->setIcon(QIcon(thumbnail));
+      }
+      ui.viewpointList->addItem(item);
     }
     if (previousRow >= 0 && previousRow < viewpoints.size()) {
       ui.viewpointList->setCurrentRow(previousRow);
@@ -418,6 +470,7 @@ public:
 
     Viewpoint viewpoint;
     viewpoint.readFrom(camera);
+    viewpoint.thumbnail = captureThumbnail(renderView);
 
     auto& viewpoints = CameraViewpoints::instance();
     viewpoints.append(viewpoint);
@@ -438,6 +491,7 @@ public:
     // Re-frame the viewpoint but leave its place in the path alone.
     auto viewpoint = viewpoints.at(row);
     viewpoint.readFrom(camera);
+    viewpoint.thumbnail = captureThumbnail(renderView);
     viewpoints.replace(row, viewpoint);
   }
 
