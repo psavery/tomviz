@@ -35,7 +35,9 @@ class VolumeData
 public:
   VolumeData();
   explicit VolumeData(vtkSmartPointer<vtkImageData> imageData);
-  ~VolumeData();
+  /// Virtual so LabelMapData can extend the payload; port data is always
+  /// shared as VolumeDataPtr, so subclasses are destroyed through this.
+  virtual ~VolumeData();
 
   // Non-copyable: the volume data can be large and the vtkNew member is not
   // copyable anyway. Use the explicit copyColorMapFrom() helper or share via
@@ -238,8 +240,10 @@ public:
   /// (spacing, origin), display transform (position, orientation),
   /// color map, and gradient opacity. Does NOT serialize the underlying
   /// voxel data — that lives in the file format (EMD / HDF5 group).
-  QJsonObject serialize() const;
-  bool deserialize(const QJsonObject& json);
+  /// Virtual so subclasses can add their own state (LabelMapData adds
+  /// the label table); OutputPort routes through the base pointer.
+  virtual QJsonObject serialize() const;
+  virtual bool deserialize(const QJsonObject& json);
 
 private:
   vtkSmartPointer<vtkImageData> m_imageData;

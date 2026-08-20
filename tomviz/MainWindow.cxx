@@ -1653,6 +1653,13 @@ void MainWindow::initPipeline()
       if (!pipeline::isVolumeType(port->type()) || !port->hasData()) {
         continue;
       }
+      // A LabelMap's transfer functions carry one band per label, in
+      // data coordinates. Rescaling them to the data range is at best a
+      // no-op and, once the label set shrinks, actively wrong: the
+      // bands would be stretched onto values no label holds.
+      if (port->type() == pipeline::PortType::LabelMap) {
+        continue;
+      }
       pipeline::VolumeDataPtr vol;
       try {
         vol = port->data().value<pipeline::VolumeDataPtr>();
@@ -2040,13 +2047,13 @@ bool MainWindow::ensureColorMapForPort(pipeline::Node* node,
     return false;
   }
 
-  // LabelMap ports never inherit a colormap: each execution gets a
-  // freshly-built segmentation preset based on its own label set. Skip
-  // rescale too — the segmentation preset's node positions are already
-  // in data-coordinate space and rescaling would shift them.
+  // LabelMap ports never inherit a colormap: their colors come from
+  // their own label table, reconciled against the label set this
+  // execution produced. Skip rescale too — the per-label node positions
+  // are already in data-coordinate space and rescaling would shift them.
   if (port->type() == pipeline::PortType::LabelMap) {
     bool created = !vol->hasColorMap();
-    pipeline::applySegmentationColorMap(*vol);
+    pipeline::applyLabelMapColors(vol);
     return created;
   }
 

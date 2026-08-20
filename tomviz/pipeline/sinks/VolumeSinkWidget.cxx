@@ -8,6 +8,7 @@
 #include "vtkVolumeMapper.h"
 
 #include <QPushButton>
+#include <QVBoxLayout>
 
 namespace tomviz {
 
@@ -430,5 +431,29 @@ void VolumeSinkWidget::onRgbaMappingMaxChanged(double v)
 QFormLayout* VolumeSinkWidget::formLayout()
 {
   return m_ui->formLayout;
+}
+
+QVBoxLayout* VolumeSinkWidget::mainLayout()
+{
+  return qobject_cast<QVBoxLayout*>(QWidget::layout());
+}
+
+void VolumeSinkWidget::setCategoricalMode(const bool categorical)
+{
+  // Blending averages, maximizes or sums the scalars along the ray;
+  // done to label numbers that produces a label nothing in the data
+  // carries. Composite is the only mode that means anything here.
+  m_ui->label_4->setVisible(!categorical);
+  m_ui->cbBlending->setVisible(!categorical);
+  if (categorical) {
+    m_ui->cbBlending->setCurrentIndex(vtkVolumeMapper::COMPOSITE_BLEND);
+  }
+
+  // Linear interpolation samples between neighboring voxels, which for
+  // labels 2 and 6 yields 4 -- a different label's color, drawn along
+  // every boundary. VolumeSink pins the setting to nearest for a label
+  // map; hide the control rather than offer a choice that is wrong.
+  m_ui->label_5->setVisible(!categorical);
+  m_ui->cbInterpolation->setVisible(!categorical);
 }
 } // namespace tomviz

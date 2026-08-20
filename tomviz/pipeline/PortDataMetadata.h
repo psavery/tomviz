@@ -9,12 +9,15 @@
 #include <QMap>
 #include <QString>
 
+#include <memory>
+
 class QObject;
 
 namespace tomviz {
 namespace pipeline {
 
 class VolumeData;
+using VolumeDataPtr = std::shared_ptr<VolumeData>;
 
 /// Build and apply a fresh segmentation-style colormap to @a vol based
 /// on its current active scalars. Used for LabelMap outputs, where the
@@ -23,6 +26,18 @@ class VolumeData;
 ///
 /// Returns true if a segmentation preset was applied.
 bool applySegmentationColorMap(VolumeData& vol);
+
+/// Bring a LabelMap payload's colors up to date with its voxel data:
+/// rescan the label set, reconcile it against the label table (so a
+/// color or visibility the user chose survives a re-execution), and
+/// project the table onto the color and opacity maps.
+///
+/// Falls back to applySegmentationColorMap() when @a vol is not a
+/// LabelMapData, which is what a state file written before label maps
+/// had their own payload type restores.
+///
+/// Returns true if colors were applied.
+bool applyLabelMapColors(const VolumeDataPtr& vol);
 
 /// Copy presentation metadata (e.g. colormap, gradient opacity) from
 /// each input PortData onto the matching output PortData whenever the

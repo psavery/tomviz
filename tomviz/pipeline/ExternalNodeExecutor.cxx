@@ -16,6 +16,7 @@
 #include "SourceNode.h"
 
 #include "Tvh5Format.h"
+#include "data/LabelMapData.h"
 #include "data/VolumeData.h"
 
 #include <vtkImageData.h>
@@ -173,7 +174,7 @@ QString ExternalNodeExecutor::writeShimTvh5(Node* target,
           copy->DeepCopy(inputVol->imageData());
           copy->GetPointData()->SetActiveScalars(
             preferredActive.toUtf8().constData());
-          auto overriddenVol = std::make_shared<VolumeData>(copy.Get());
+          auto overriddenVol = makeVolumeData(copy.Get(), payload.type());
           payload = PortData(std::any(overriddenVol), payload.type());
         }
       } catch (const std::bad_any_cast&) {

@@ -197,6 +197,14 @@ private:
   void addLink(Link* link);
   void removeLink(Link* link);
 
+  /// Hand the label table of the payload being replaced to @a incoming,
+  /// when both are label maps. A label map's per-label colors and
+  /// visibility are the user's choices, not the data's, and every
+  /// execution publishes a fresh payload that would otherwise start
+  /// from defaults. Data-only: no ParaView proxies are touched, so this
+  /// is safe on whichever thread published.
+  void carryOverLabelTable(const PortData& incoming);
+
   /// For OnDisk-mode persistence: when the last shared_ptr to this
   /// port's PortData is destroyed, the universal deleter calls this to
   /// serialize the payload into m_diskFile and flip m_onDisk to true.

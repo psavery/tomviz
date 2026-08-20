@@ -14,6 +14,7 @@
 #include "VolumeOutputPort.h"
 #include "PythonNodeEditorWidget.h"
 #include "NodePropertiesWidget.h"
+#include "data/LabelMapData.h"
 #include "data/VolumeData.h"
 
 // Qt defines 'slots' as a macro which conflicts with Python's object.h.
@@ -665,13 +666,14 @@ QMap<QString, PortData> LegacyPythonTransform::transform(
       }
     }
 
-    auto volume = std::make_shared<VolumeData>(outputData);
-    volume->setLabel(inputVolume->label());
-    volume->setUnits(inputVolume->units());
-
     auto* outPort = outputPort(m_primaryOutputName);
     PortType outType =
       outPort ? outPort->declaredType() : PortType::ImageData;
+
+    auto volume = makeVolumeData(outputData, outType);
+    volume->setLabel(inputVolume->label());
+    volume->setUnits(inputVolume->units());
+
     result[m_primaryOutputName] = PortData(std::any(volume), outType);
 
     // Extract result outputs (tables, molecules) from Python return dict

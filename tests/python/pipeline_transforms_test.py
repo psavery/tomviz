@@ -160,9 +160,11 @@ def test_threshold_produces_binary_mask():
     t.deserialize({'minValue': 1.5, 'maxValue': 3.5})
     out = _run(t, ds)
     mask = out['mask'].payload.active_scalars
-    expected = ((arr >= 1.5) & (arr <= 3.5)).astype(np.float32)
+    expected = ((arr >= 1.5) & (arr <= 3.5)).astype(np.uint8)
     np.testing.assert_array_equal(mask, expected)
-    assert mask.dtype == np.float32
+    # The port is typed LabelMap, so the mask has to be integral for its
+    # two states to be enumerable as labels.
+    assert mask.dtype == np.uint8
 
 
 # ---- CylindricalCrop (legacy operator) ------------------------------------

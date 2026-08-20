@@ -12,6 +12,8 @@
 #include "pipeline/InputPort.h"
 #include "pipeline/SinkGroupNode.h"
 #include "pipeline/sinks/LegacyModuleSink.h"
+#include "pipeline/data/LabelMapData.h"
+#include "pipeline/sinks/LabelMapSink.h"
 #include "pipeline/sinks/VolumeSink.h"
 #include "pipeline/sinks/SliceSink.h"
 #include "pipeline/sinks/ContourSink.h"
@@ -153,8 +155,9 @@ PipelineModuleMenu::~PipelineModuleMenu() = default;
 
 QList<QString> PipelineModuleMenu::sinkTypes()
 {
-  return { "Volume", "Outline", "Slice", "Contour", "Threshold", "Clip",
-           "Ruler", "Scale Cube", "Molecule", "Plot" };
+  return { "Volume", "Label Map", "Outline", "Slice", "Contour",
+           "Threshold", "Clip", "Ruler", "Scale Cube", "Molecule",
+           "Plot" };
 }
 
 QIcon PipelineModuleMenu::sinkIcon(const QString& type)
@@ -162,6 +165,7 @@ QIcon PipelineModuleMenu::sinkIcon(const QString& type)
   // Icon paths must match the legacy Module::icon() implementations
   static QMap<QString, QString> iconMap = {
     { "Volume", ":/icons/pqVolumeData.png" },
+    { "Label Map", ":/pipeline/port_labelmap.svg" },
     { "Outline", ":/pqWidgets/Icons/pqProbeLocation.svg" },
     { "Slice", ":/icons/orthoslice.svg" },
     { "Contour", ":pqWidgets/Icons/pqIsosurface.svg" },
@@ -182,7 +186,47 @@ pipeline::PortTypes PipelineModuleMenu::sinkAcceptedTypes(const QString& type)
     return pipeline::PortType::Table;
   if (type == "Molecule")
     return pipeline::PortType::Molecule;
+  if (type == "Label Map")
+    return pipeline::PortType::LabelMap;
   return pipeline::PortType::ImageData;
+}
+
+bool PipelineModuleMenu::sinkSuitsPort(const QString& type,
+                                       pipeline::OutputPort* port)
+{
+  if (!port) {
+    return false;
+  }
+
+  const auto portType = port->type();
+
+  // Label Map is worth offering for any volume whose values read as
+  // labels, not only for a port already typed as one. A segmentation
+  // loaded from a TIFF or an EMD arrives as an ordinary volume, since
+  // the reader has no way to know the numbers are labels, and there
+  // would otherwise be no way to say so.
+  if (type == "Label Map" && portType != pipeline::PortType::LabelMap) {
+    if (!pipeline::isVolumeType(portType) || !port->hasData()) {
+      return false;
+    }
+    return pipeline::canInterpretAsLabelMap(
+      port->data().value<pipeline::VolumeDataPtr>());
+  }
+
+  if (!pipeline::isPortTypeCompatible(portType, sinkAcceptedTypes(type))) {
+    return false;
+  }
+  // Volume accepts ImageData, and LabelMap is one of its subtypes, so
+  // the compatibility check alone would keep offering the plain volume
+  // rendering for a segmentation. Label Map is the one to reach for
+  // there: it renders the same way and adds the per-label controls.
+  //
+  // Only for a port actually typed as a label map: a plain volume that
+  // merely could be read as one is far more often just a volume.
+  if (type == "Volume" && portType == pipeline::PortType::LabelMap) {
+    return false;
+  }
+  return true;
 }
 
 bool PipelineModuleMenu::eventFilter(QObject* obj, QEvent* event)
@@ -213,9 +257,7 @@ void PipelineModuleMenu::updateEnableState()
       action->setEnabled(m_ctrlHeld);
       continue;
     }
-    action->setEnabled(
-      pipeline::isPortTypeCompatible(tipPort->type(),
-                                     sinkAcceptedTypes(type)));
+    action->setEnabled(sinkSuitsPort(type, tipPort));
   }
 }
 
@@ -223,6 +265,8 @@ pipeline::LegacyModuleSink* PipelineModuleMenu::createSink(const QString& type)
 {
   if (type == "Volume") {
     return new pipeline::VolumeSink();
+  } else if (type == "Label Map") {
+    return new pipeline::LabelMapSink();
   } else if (type == "Outline") {
     return new pipeline::OutlineSink();
   } else if (type == "Slice") {

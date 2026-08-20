@@ -6,6 +6,7 @@
 #include "ColorMap.h"
 #include "PortType.h"
 #include "ThreadUtils.h"
+#include "data/LabelMapData.h"
 #include "data/VolumeData.h"
 
 #include <QObject>
@@ -54,13 +55,33 @@ bool applySegmentationColorMap(VolumeData& vol)
   return applied;
 }
 
+bool applyLabelMapColors(const VolumeDataPtr& vol)
+{
+  if (!vol) {
+    return false;
+  }
+  auto labelMap = labelMapData(vol);
+  if (!labelMap) {
+    return applySegmentationColorMap(*vol);
+  }
+  if (!labelMap->labelsSupported()) {
+    return false;
+  }
+  labelMap->refreshLabels();
+  if (labelMap->labels().isEmpty()) {
+    return false;
+  }
+  labelMap->applyLabels();
+  return true;
+}
+
 namespace {
 
 /// Volume-specific inheritance: copy colormap + gradient opacity from
 /// the first volume-typed input that has them onto each volume-typed
 /// output that doesn't. LabelMap outputs are handled separately —
-/// they always get a freshly-built segmentation colormap from their
-/// own scalars, never an inherited one.
+/// their colors come from their own label table, reconciled against
+/// the scalars they just produced, never inherited from upstream.
 void inheritVolumeMetadata(const QMap<QString, PortData>& inputs,
                            const QMap<QString, PortData>& outputs)
 {
@@ -79,7 +100,7 @@ void inheritVolumeMetadata(const QMap<QString, PortData>& inputs,
       continue;
     }
     if (outIt.value().type() == PortType::LabelMap) {
-      applySegmentationColorMap(*outVolume);
+      applyLabelMapColors(outVolume);
       continue;
     }
     if (outVolume->hasColorMap()) {

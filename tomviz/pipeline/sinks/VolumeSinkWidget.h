@@ -9,6 +9,7 @@
 
 class QFormLayout;
 class QPushButton;
+class QVBoxLayout;
 
 /**
  * \brief UI layer of VolumeSink.
@@ -74,6 +75,14 @@ public:
   void setAllowMultiVolume(const bool allow);
   void setEnableAllowMultiVolume(const bool enable);
   QFormLayout* formLayout();
+  /// The top-level vertical layout, so a sink can slot controls of its
+  /// own in among the volume ones.
+  QVBoxLayout* mainLayout();
+  /// Hide the controls that only make sense for a continuous scalar
+  /// field, for a sink rendering categorical data (a label map):
+  /// blending, which averages or maximizes label numbers, and
+  /// interpolation, whose linear setting invents values between labels.
+  void setCategoricalMode(const bool categorical);
   //@}
 
 signals:

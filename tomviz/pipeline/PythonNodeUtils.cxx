@@ -5,6 +5,7 @@
 
 #include "OutputPort.h"
 #include "PortType.h"
+#include "data/LabelMapData.h"
 #include "data/VolumeData.h"
 
 #pragma push_macro("slots")
@@ -170,7 +171,7 @@ PortData pythonValueToPortData(py::object pyValue, OutputPort* port)
   if (isVolumeType(type)) {
     if (auto* image =
           vtkImageData::SafeDownCast(static_cast<vtkObjectBase*>(raw))) {
-      auto vol = std::make_shared<VolumeData>(image);
+      auto vol = makeVolumeData(image, type);
       return PortData(std::any(vol), type);
     }
   } else if (type == PortType::Table) {

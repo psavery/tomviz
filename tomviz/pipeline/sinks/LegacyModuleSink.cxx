@@ -450,7 +450,7 @@ void LegacyModuleSink::prepareConsume(
   const QMap<QString, PortData>& inputs)
 {
   for (auto* port : inputPorts()) {
-    if (!port->acceptedTypes().testFlag(PortType::ImageData)) {
+    if (!acceptsVolumeType(port->acceptedTypes())) {
       continue;
     }
     auto it = inputs.constFind(port->name());

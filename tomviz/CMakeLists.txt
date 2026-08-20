@@ -281,6 +281,8 @@ set(SOURCES
   pipeline/ThreadedExecutor.h
   pipeline/data/VolumeData.cxx
   pipeline/data/VolumeData.h
+  pipeline/data/LabelMapData.cxx
+  pipeline/data/LabelMapData.h
   pipeline/sources/SphereSource.cxx
   pipeline/sources/SphereSource.h
   pipeline/sources/ReaderSourceNode.cxx
@@ -315,6 +317,10 @@ set(SOURCES
   pipeline/sinks/LegacyModuleSink.h
   pipeline/sinks/VolumeSink.cxx
   pipeline/sinks/VolumeSink.h
+  pipeline/sinks/LabelMapSink.cxx
+  pipeline/sinks/LabelMapSink.h
+  pipeline/sinks/LabelTableWidget.cxx
+  pipeline/sinks/LabelTableWidget.h
   pipeline/sinks/VolumeBricking.cxx
   pipeline/sinks/VolumeBricking.h
   pipeline/sinks/SliceSink.cxx

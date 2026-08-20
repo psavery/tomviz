@@ -2,8 +2,8 @@
 # This source file is part of the Tomviz project, https://tomviz.org/.
 # It is released under the 3-Clause BSD License, see "LICENSE".
 ###############################################################################
-"""Threshold — produces a binary float32 mask from the active scalar
-array, with 1.0 inside [minValue, maxValue] and 0.0 outside. Mirrors
+"""Threshold — produces a binary uint8 label map from the active scalar
+array, with 1 inside [minValue, maxValue] and 0 outside. Mirrors
 C++ ThresholdTransform.
 
 Note: the C++ class does not currently serialize its min/max values
@@ -47,7 +47,7 @@ class ThresholdTransform(TransformNode):
             return {}
         mask = np.where(
             (active >= self._min_value) & (active <= self._max_value),
-            np.float32(1.0), np.float32(0.0))
+            np.uint8(1), np.uint8(0))
 
         out = Dataset({'Mask': mask}, 'Mask')
         out.spacing = src.spacing
