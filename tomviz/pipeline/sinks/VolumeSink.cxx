@@ -164,9 +164,18 @@ const int kNumLightingPresets =
 // than from surface shading - Phong renders them dim and harsh, unlit stays
 // bright and even. The still render brings the real look back on release.
 
-// What one frame should cost, still or moving. Well under any GPU watchdog,
-// with room for the estimate to be off by several times and still not hang.
-const double kTargetFrameSeconds = 0.35;
+// What one still frame should cost. Camera moves render unlit and are not
+// guarded at all, so this bounds stills only.
+//
+// Set against the tightest watchdog we ship under - Windows' TDR default of
+// 2 s - leaving room for the estimate to be off by 2x and still not trip it.
+// It is also what sets how sharp a still can get: the controller settles at
+// reduction = full-quality cost / this, and the sampling knob is its fourth
+// root, so a volume that would take 5 s at full quality is ray cast at 1/1.5
+// of screen resolution and upscaled. Raising this further buys little
+// sharpness for the margin it spends - the fourth root means 2 s would look
+// only 16% sharper while sitting exactly on the TDR limit.
+const double kTargetFrameSeconds = 1.0;
 // Quality is expressed as a cost-reduction factor: 1 is full quality, 100
 // means the frame is drawn for a hundredth of what it would otherwise cost.
 // It is spent evenly across the two knobs VTK offers, because each distorts
