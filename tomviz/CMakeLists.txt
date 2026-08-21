@@ -263,6 +263,8 @@ set(SOURCES
   pipeline/ExternalNodeExecutor.h
   pipeline/NodeExecutorFactory.cxx
   pipeline/NodeExecutorFactory.h
+  pipeline/AutoExecuteController.cxx
+  pipeline/AutoExecuteController.h
   pipeline/ProgressReader.cxx
   pipeline/ProgressReader.h
   pipeline/PythonNodeWrapper.cxx

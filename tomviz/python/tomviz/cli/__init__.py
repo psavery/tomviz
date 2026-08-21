@@ -118,13 +118,40 @@ def _configure_logging():
                    'output_state.tvh5 bundling the schema-v2 state '
                    'with embedded volume payloads. "state+port" → '
                    'both.')
+@click.option('--node-state', 'node_state_file',
+              type=click.Path(exists=True, dir_okay=False), default=None,
+              help='JSON file carrying per-node runtime state '
+                   '({"nodes": {"<id>": {...}}}). Installed as each '
+                   'node\'s state bag (self.state in node scripts) '
+                   'before running; the updated bags are written back '
+                   'to <output-dir>/node_state.json.')
+@click.option('--check-auto-execute', 'check_node_id', type=int,
+              default=None, metavar='NODE_ID',
+              help='Do not execute the pipeline. Instead evaluate node '
+                   'NODE_ID\'s should_auto_execute hook and write the '
+                   'verdict to <output-dir>/auto_execute.json (plus '
+                   'the updated state bags to node_state.json).')
 def main(state_file, output_dir, progress_method, progress_path,
-         inputs, run_prefix, output_format):
+         inputs, run_prefix, output_format, node_state_file,
+         check_node_id):
     """Execute a tomviz pipeline state file headlessly."""
     _configure_logging()
 
     state_path = Path(state_file)
     out_dir = Path(output_dir)
+
+    if check_node_id is not None:
+        from tomviz.pipeline.runner import check_auto_execute
+        try:
+            should = check_auto_execute(
+                state_path, out_dir, check_node_id,
+                node_state_file=node_state_file)
+        except (ValueError, TypeError) as e:
+            click.echo(f'Error: {e}', err=True)
+            sys.exit(2)
+        logger.info('should_auto_execute(node %d) -> %s',
+                    check_node_id, should)
+        return
 
     inputs_arg = _build_inputs_arg(list(inputs)) if inputs else None
 
@@ -137,6 +164,7 @@ def main(state_file, output_dir, progress_method, progress_path,
             output_format=output_format,
             progress_method=progress_method,
             progress_path=progress_path,
+            node_state_file=node_state_file,
         )
     except (ValueError, TypeError) as e:
         click.echo(f'Error: {e}', err=True)

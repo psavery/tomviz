@@ -61,6 +61,22 @@ QVariant resolveEnumValue(const QJsonValue& value,
 /// matching the legacy behavior.
 pybind11::object qvariantToPython(const QVariant& value);
 
+/// Convert a Python value into a QVariant restricted to the
+/// JSON-compatible types the node user-state bag supports (None, bool,
+/// int, float, str, plus lists/tuples and string-keyed dicts thereof).
+/// When the value — or anything nested in it — has no mapping, @a ok
+/// (if given) is set to false and an invalid QVariant is returned.
+QVariant pythonToQVariant(pybind11::handle value, bool* ok = nullptr);
+
+/// Convert a Python dict into a QVariantMap via pythonToQVariant.
+/// Entries with non-string keys or non-convertible values are dropped
+/// with a warning naming the key.
+QVariantMap pyDictToVariantMap(pybind11::dict dict);
+
+/// Convert a QVariantMap into a Python dict via qvariantToPython.
+/// Invalid QVariants map to None.
+pybind11::dict variantMapToPyDict(const QVariantMap& map);
+
 /// Load Python source code as a fresh ModuleType and exec the source
 /// inside the module's namespace. @a name is stamped onto the module's
 /// ``__name__`` so tracebacks point at it; the module is *not*

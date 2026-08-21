@@ -84,6 +84,24 @@ py::object portDataToPython(const PortData& data, py::object datasetCls)
   return py::none();
 }
 
+/// Copy the instance's `self.state` dict back onto the host node's
+/// user-state bag. A rebound non-dict state is rejected with a
+/// warning rather than clobbering the existing bag.
+void harvestUserState(Node* host, py::object instance)
+{
+  if (!py::hasattr(instance, "state")) {
+    return;
+  }
+  py::object state = instance.attr("state");
+  if (!py::isinstance<py::dict>(state)) {
+    qWarning("PythonNodeBackend: self.state must be a dict; ignoring "
+             "the non-dict value it was rebound to");
+    return;
+  }
+  host->setUserState(
+    PythonNodeUtils::pyDictToVariantMap(state.cast<py::dict>()));
+}
+
 } // namespace
 
 PythonNodeBackend::PythonNodeBackend() = default;
@@ -373,6 +391,73 @@ QMap<QString, PortData> PythonNodeBackend::runSource(Node* host)
   return runImpl(host, {}, /*isSource=*/true);
 }
 
+bool PythonNodeBackend::runShouldAutoExecute(Node* host)
+{
+  if (!host) {
+    return false;
+  }
+
+  if (!Py_IsInitialized()) {
+    py::initialize_interpreter();
+  }
+
+  const bool isSource = !isTransformShape();
+  try {
+    py::gil_scoped_acquire gil;
+
+    py::module_::import("tomviz.utils");
+    py::module_ nodesMod = py::module_::import("tomviz.nodes");
+    py::object baseClass =
+      nodesMod.attr(isSource ? kSourceBaseAttr : kTransformBaseAttr);
+
+    py::object scriptModule =
+      PythonNodeUtils::loadScriptAsModule(m_operatorName, m_script);
+    py::object userClass =
+      PythonNodeUtils::findNodeClass(scriptModule, baseClass);
+    if (userClass.is_none()) {
+      qWarning("PythonNodeBackend: no %s subclass found in script",
+               isSource ? "SourceNode" : "TransformNode");
+      return false;
+    }
+
+    // Same instantiation as runImpl so __init__ and the hook can use
+    // self.progress / self.canceled / self.completed / self.state.
+    py::object wrapper = createNodeWrapper(host, primaryOutputName());
+    py::object instance = userClass.attr("__new__")(userClass);
+    instance.attr("_operator_wrapper") = wrapper;
+    userClass.attr("__init__")(instance);
+    instance.attr("state") =
+      PythonNodeUtils::variantMapToPyDict(host->userState());
+
+    // Scripts written against a tomviz.nodes that predates the hook
+    // simply never auto-execute.
+    if (!py::hasattr(instance, "should_auto_execute")) {
+      return false;
+    }
+
+    py::dict kwargs;
+    for (auto it = m_parameters.constBegin();
+         it != m_parameters.constEnd(); ++it) {
+      kwargs[py::str(it.key().toStdString())] =
+        PythonNodeUtils::qvariantToPython(it.value());
+    }
+
+    py::object pyResult = instance.attr("should_auto_execute")(**kwargs);
+
+    // The hook may legitimately update self.state even when it answers
+    // "no" (e.g. remembering the timestamp it just inspected).
+    harvestUserState(host, instance);
+
+    return PyObject_IsTrue(pyResult.ptr()) == 1;
+  } catch (const py::error_already_set& e) {
+    qWarning("PythonNodeBackend should_auto_execute Python error: %s",
+             e.what());
+  } catch (const std::exception& e) {
+    qWarning("PythonNodeBackend should_auto_execute error: %s", e.what());
+  }
+  return false;
+}
+
 QMap<QString, PortData> PythonNodeBackend::runImpl(
   Node* host, const QMap<QString, PortData>& inputs, bool isSource)
 {
@@ -422,6 +507,13 @@ QMap<QString, PortData> PythonNodeBackend::runImpl(
     instance.attr("_operator_wrapper") = wrapper;
     userClass.attr("__init__")(instance);
 
+    // Hand the node's user-state bag to the instance as `self.state`.
+    // The instance is rebuilt every run, so this is how state survives
+    // between executions; it is harvested back after the user method
+    // returns.
+    instance.attr("state") =
+      PythonNodeUtils::variantMapToPyDict(host->userState());
+
     // Build kwargs from current parameters.
     py::dict kwargs;
     for (auto it = m_parameters.constBegin();
@@ -445,6 +537,12 @@ QMap<QString, PortData> PythonNodeBackend::runImpl(
       pyResult =
         instance.attr("transform")(inputsDict, **kwargs);
     }
+
+    // Harvest state mutations before any early return below: a
+    // canceled or output-less run still keeps what the user method
+    // recorded. (If the method raised, the mutations are lost — the
+    // exception unwinds past this point.)
+    harvestUserState(host, instance);
 
     if (host->isCanceled()) {
       return result;

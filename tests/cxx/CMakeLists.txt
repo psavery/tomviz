@@ -57,6 +57,7 @@ add_cxx_test(Utilities)
 add_cxx_test(VolumeBricking)
 add_cxx_test(SAM2SeedWidget)
 add_cxx_test(ExternalEnvPersistence)
+add_cxx_test(AutoExecute)
 add_cxx_test(NodeDefinition)
 # AcquisitionClient needs the `bottle` Python package (acquisition/requirements-dev.txt)
 # to start its test server; not part of the conda build env, so disabled here.

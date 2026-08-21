@@ -26,6 +26,7 @@
 #include <QTextBlock>
 #include <QTimer>
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDir>
 #include <QFile>
@@ -43,6 +44,7 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QSettings>
+#include <QSpinBox>
 #include <QStandardItemModel>
 #include <QTabWidget>
 #include <QTextEdit>
@@ -368,6 +370,40 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
   execGrid->addWidget(m_envPathLabel, 1, 0);
   execGrid->addWidget(m_envPathRow, 1, 1);
 
+  // Row 2: periodic execution — schema-v2 nodes only.
+  // The legacy (v1) operator API has no should_auto_execute hook, so
+  // the controls are omitted entirely rather than shown disabled.
+  // Schema is frozen for a live node (the Definition-tab validator
+  // rejects v1↔v2 migration), so this can't become wrong mid-edit.
+  if (definitionSchema(m_jsonDescription) == DefinitionSchema::V2) {
+    auto* autoExecLabel =
+      new QLabel(tr("Periodic Execution"), execGridContainer);
+    auto* autoExecRow = new QWidget(execGridContainer);
+    auto* autoExecLayout = new QHBoxLayout(autoExecRow);
+    autoExecLayout->setContentsMargins(0, 0, 0, 0);
+    m_autoExecCheck = new QCheckBox(tr("every"), autoExecRow);
+    m_autoExecCheck->setObjectName("autoExecuteCheck");
+    m_autoExecIntervalSpin = new QSpinBox(autoExecRow);
+    m_autoExecIntervalSpin->setObjectName("autoExecuteIntervalSpin");
+    m_autoExecIntervalSpin->setRange(1, 86400);
+    m_autoExecIntervalSpin->setSuffix(tr(" s"));
+    m_autoExecIntervalSpin->setValue(m_node->autoExecuteIntervalSeconds());
+    m_autoExecCheck->setChecked(m_node->autoExecuteEnabled());
+    m_autoExecIntervalSpin->setEnabled(m_autoExecCheck->isChecked());
+    const QString autoExecTip =
+      tr("Periodically check whether this node should re-execute.");
+    m_autoExecCheck->setToolTip(autoExecTip);
+    m_autoExecIntervalSpin->setToolTip(autoExecTip);
+    connect(m_autoExecCheck, &QCheckBox::toggled,
+            m_autoExecIntervalSpin, &QWidget::setEnabled);
+    autoExecLayout->addWidget(m_autoExecCheck);
+    autoExecLayout->addWidget(m_autoExecIntervalSpin);
+    autoExecLayout->addStretch();
+    autoExecLabel->setBuddy(autoExecRow);
+    execGrid->addWidget(autoExecLabel, 2, 0);
+    execGrid->addWidget(autoExecRow, 2, 1);
+  }
+
   execLayout->addWidget(execGridContainer);
   execLayout->addStretch();
   m_tabWidget->addTab(execTab, tr("Execution"));
@@ -627,6 +663,11 @@ void PythonNodeEditorWidget::applyChangesToOperator()
   edits.executorType = m_executorCombo->currentData().toString();
   edits.executorEnvPath =
     edits.executorType.isEmpty() ? QString() : m_envPathEdit->text();
+  if (m_autoExecCheck && m_autoExecIntervalSpin) {
+    edits.autoExecuteEdited = true;
+    edits.autoExecuteEnabled = m_autoExecCheck->isChecked();
+    edits.autoExecuteIntervalSeconds = m_autoExecIntervalSpin->value();
+  }
 
   // The Definition tab can rewrite both "externalOnly" and "name", so
   // re-read them from what is being committed rather than from what the

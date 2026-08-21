@@ -92,6 +92,7 @@ def run(
     output_format: str = 'port',
     progress_method: str = 'tqdm',
     progress_path: str | None = None,
+    node_state_file: str | None = None,
 ) -> list[Path]:
     """Run a pipeline once or many times.
 
@@ -126,6 +127,14 @@ def run(
         ``'state+port'`` — both: tvh5 plus the typed per-port files.
     progress_method, progress_path:
         Forwarded to :func:`tomviz.pipeline.progress.make_progress`.
+    node_state_file:
+        Optional JSON file ``{"nodes": {"<id>": {...}}}`` carrying
+        per-node runtime state bags. Installed as each node's
+        ``user_state`` (surfaced to schema-v2 scripts as
+        ``self.state``) before running; after all runs, the updated
+        bags are written back to ``<output_dir>/node_state.json``.
+        The external node executor uses this to round-trip node state
+        across the process boundary.
 
     Returns
     -------
@@ -140,6 +149,7 @@ def run(
     write_state = output_format in ('state', 'state+port')
 
     pipeline = load_state(state_path)
+    _apply_node_states(pipeline, node_state_file)
 
     target_nodes, expanded, runs_count = _resolve_overrides(pipeline, inputs)
 
@@ -215,7 +225,92 @@ def run(
 
         written_dirs.append(run_dir)
 
+    # Only when the caller opted into state round-tripping: nothing
+    # reads the file otherwise.
+    if node_state_file is not None:
+        _write_node_states(pipeline, output_dir)
+
     return written_dirs
+
+
+def check_auto_execute(state_path, output_dir, node_id: int,
+                       node_state_file: str | None = None) -> bool:
+    """Evaluate one node's ``should_auto_execute`` hook without
+    executing the pipeline.
+
+    Writes ``<output_dir>/auto_execute.json`` (``{"shouldExecute":
+    bool}``) with the verdict, and ``<output_dir>/node_state.json``
+    with every node's updated ``user_state`` bag so the caller can
+    round-trip state mutations the hook made. Any error — unknown node
+    id, a node type without the hook — answers ``False``."""
+    pipeline = load_state(state_path)
+    _apply_node_states(pipeline, node_state_file)
+
+    should = False
+    node = pipeline.node_by_id(node_id)
+    if node is None:
+        logger.error('check-auto-execute: no node with id %s', node_id)
+    else:
+        backend = getattr(node, '_backend', None)
+        run_check = getattr(backend, 'run_should_auto_execute', None)
+        if run_check is None:
+            logger.error(
+                'check-auto-execute: node %s (%s) has no '
+                'should_auto_execute support', node_id,
+                type(node).__name__)
+        else:
+            should = bool(run_check(node))
+
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    _write_node_states(pipeline, out_dir)
+    with open(out_dir / 'auto_execute.json', 'w') as f:
+        json.dump({'shouldExecute': should}, f)
+    return should
+
+
+def _apply_node_states(pipeline: Pipeline, node_state_file) -> None:
+    """Read a ``{"nodes": {"<id>": {...}}}`` JSON file and install each
+    entry as the matching node's runtime ``user_state`` bag."""
+    if not node_state_file:
+        return
+    try:
+        with open(node_state_file) as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        logger.exception('Failed to read node-state file %s',
+                         node_state_file)
+        return
+    for sid, state in (data.get('nodes') or {}).items():
+        try:
+            node = pipeline.node_by_id(int(sid))
+        except (TypeError, ValueError):
+            continue
+        if node is not None and isinstance(state, dict):
+            node.user_state = dict(state)
+
+
+def _write_node_states(pipeline: Pipeline, out_dir) -> None:
+    """Write every node's non-empty ``user_state`` to
+    ``<out_dir>/node_state.json`` (the shape ``_apply_node_states``
+    reads). A bag that isn't JSON-serializable is dropped with an
+    error rather than failing the run."""
+    states = {}
+    for node in pipeline.nodes:
+        state = getattr(node, 'user_state', None)
+        if not state:
+            continue
+        try:
+            json.dumps(state)
+        except (TypeError, ValueError):
+            logger.error(
+                'Node %s user state is not JSON-serializable; dropping '
+                'it from node_state.json. Keep self.state values to '
+                'bool/int/float/str, lists, and dicts.', node.id)
+            continue
+        states[str(node.id)] = state
+    with open(Path(out_dir) / 'node_state.json', 'w') as f:
+        json.dump({'nodes': states}, f)
 
 
 def _patch_state(raw_state: dict, per_run_files: dict) -> dict:

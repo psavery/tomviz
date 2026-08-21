@@ -13,6 +13,7 @@
 #include <QJsonObject>
 #include <QList>
 #include <QMap>
+#include <QMutex>
 #include <QObject>
 #include <QString>
 #include <QVariant>
@@ -124,6 +125,33 @@ public:
   NodeExecutor* nodeExecutor() const;
   void setNodeExecutor(NodeExecutor* executor);
 
+  static constexpr int kDefaultAutoExecuteIntervalSeconds = 30;
+
+  /// Periodic execution (schema-v2 Python nodes). When enabled, the
+  /// application polls queryShouldAutoExecute() every intervalSeconds
+  /// — through the node's executor, so external nodes are asked in
+  /// their external environment — and re-executes the pipeline when
+  /// the answer is true. Off by default.
+  bool autoExecuteEnabled() const;
+  void setAutoExecuteEnabled(bool enabled);
+  int autoExecuteIntervalSeconds() const;
+  void setAutoExecuteIntervalSeconds(int seconds);
+
+  /// Ask the node's implementation whether a periodic execution
+  /// should happen now. Runs user code (the schema-v2 Python
+  /// should_auto_execute hook), so call it from a worker thread, never
+  /// while the node is executing. The base implementation never
+  /// requests a re-run.
+  virtual bool queryShouldAutoExecute();
+
+  /// Free-form state bag surfaced to schema-v2 Python node code as
+  /// `self.state`. Preserved across executions within a session but
+  /// deliberately not serialized. Values are restricted to the
+  /// JSON-compatible types so the bag can cross the external-executor
+  /// process boundary. Thread-safe (accessors copy under a lock).
+  QVariantMap userState() const;
+  void setUserState(const QVariantMap& state);
+
   /// Apply a batch of intermediate (live preview) updates to this
   /// node's output ports. Each entry maps an output port name to the
   /// new payload; missing port names are ignored. Routes through
@@ -221,6 +249,11 @@ signals:
   /// connect this to pipeline re-execution.
   void parametersApplied();
 
+  /// Emitted when the auto-execute setting (enabled flag or interval)
+  /// changes. The AutoExecuteController re-syncs its timer for this
+  /// node on it.
+  void autoExecuteChanged();
+
 public:
   /// Reset the canceled/completed flags. Public so a NodeExecutor can
   /// prime them at the start of an execution.
@@ -267,6 +300,12 @@ private:
   std::atomic<bool> m_canceled{false};
   std::atomic<bool> m_completed{false};
   NodeExecutor* m_nodeExecutor = nullptr;
+  bool m_autoExecuteEnabled = false;
+  int m_autoExecuteIntervalS = kDefaultAutoExecuteIntervalSeconds;
+  /// Guards m_userState: executions and auto-execute queries touch it
+  /// from worker threads.
+  mutable QMutex m_userStateMutex;
+  QVariantMap m_userState;
 };
 
 } // namespace pipeline

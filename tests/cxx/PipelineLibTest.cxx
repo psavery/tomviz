@@ -45,6 +45,7 @@
 #include "sources/ReaderSourceNode.h"
 #include "transforms/ThresholdTransform.h"
 #include "transforms/LegacyPythonTransform.h"
+#include "AutoExecuteController.h"
 #include "ExternalNodeExecutor.h"
 #include "transforms/PythonTransform.h"
 #include "PipelineStripWidget.h"
@@ -58,7 +59,10 @@
 #include <QSignalSpy>
 #include <QTemporaryDir>
 #include <QTemporaryFile>
+#include <QTest>
 #include <QTextStream>
+
+#include <atomic>
 
 #include <h5cpp/h5readwrite.h>
 
@@ -4306,6 +4310,197 @@ TEST_F(PipelineLibTest, SaveDataWritesTableAndMolecule)
   QFile xyz(entries.last().path);
   ASSERT_TRUE(xyz.open(QIODevice::ReadOnly | QIODevice::Text));
   EXPECT_TRUE(QString(xyz.readAll()).startsWith("2\n"));
+}
+
+// --- Periodic execution (should_auto_execute hook + controller) ---
+
+namespace {
+
+// Source whose poll/execute behavior the test scripts directly. The
+// poll runs on the controller's worker thread, so its bookkeeping is
+// atomic; execute() runs on the GUI thread via DefaultExecutor.
+class AutoAnswerSource : public SourceNode
+{
+public:
+  AutoAnswerSource() : SourceNode()
+  {
+    addOutput("out", PortType::ImageData);
+  }
+
+  bool execute() override
+  {
+    executeCount++;
+    // setOutputData marks this node Current and downstream stale.
+    setOutputData("out",
+                  PortData(std::any(executeCount), PortType::ImageData));
+    return true;
+  }
+
+  bool queryShouldAutoExecute() override
+  {
+    pollCount.fetch_add(1);
+    return answer.load();
+  }
+
+  int executeCount = 0;
+  std::atomic<int> pollCount{ 0 };
+  std::atomic<bool> answer{ false };
+};
+
+} // namespace
+
+TEST_F(PipelinePythonTest, ShouldAutoExecuteHookAndState)
+{
+  QString jsonStr = R"({
+    "schemaVersion": 2,
+    "name": "Watcher",
+    "outputs": [{"name": "volume", "type": "ImageData"}],
+    "parameters": [
+      {"name": "value", "type": "double", "default": 0.0}
+    ]
+  })";
+  // The hook counts its own invocations in self.state and starts
+  // answering True on the second poll; it also sees the current
+  // parameter values under their declared names.
+  QString scriptStr = R"(
+import tomviz.nodes
+
+class Watcher(tomviz.nodes.SourceNode):
+    def produce(self, value=0.0):
+        return None
+
+    def should_auto_execute(self, value=0.0):
+        if value != 7.5:
+            raise ValueError('parameters not forwarded')
+        polls = self.state.get('polls', 0) + 1
+        self.state['polls'] = polls
+        return polls >= 2
+)";
+
+  auto* source = new PythonSource();
+  source->setJSONDescription(jsonStr);
+  source->setScript(scriptStr);
+  source->setParameter("value", 7.5);
+  pipeline->addNode(source);
+
+  // First poll answers no, but its state mutation is kept.
+  EXPECT_FALSE(source->queryShouldAutoExecute());
+  EXPECT_EQ(source->userState().value("polls").toInt(), 1);
+
+  // Second poll sees polls==1 in state and answers yes.
+  EXPECT_TRUE(source->queryShouldAutoExecute());
+  EXPECT_EQ(source->userState().value("polls").toInt(), 2);
+}
+
+TEST_F(PipelinePythonTest, ShouldAutoExecuteDefaultsFalse)
+{
+  QString jsonStr = R"({
+    "schemaVersion": 2,
+    "name": "Quiet",
+    "outputs": [{"name": "volume", "type": "ImageData"}]
+  })";
+  // No should_auto_execute override: the tomviz.nodes.Node base
+  // answers False.
+  QString scriptStr = R"(
+import tomviz.nodes
+
+class Quiet(tomviz.nodes.SourceNode):
+    def produce(self):
+        return None
+)";
+
+  auto* source = new PythonSource();
+  source->setJSONDescription(jsonStr);
+  source->setScript(scriptStr);
+  pipeline->addNode(source);
+
+  EXPECT_FALSE(source->queryShouldAutoExecute());
+  EXPECT_TRUE(source->userState().isEmpty());
+}
+
+TEST_F(PipelinePythonTest, UserStatePersistsAcrossTransformRuns)
+{
+  QString jsonStr = R"({
+    "schemaVersion": 2,
+    "name": "CountingPass",
+    "inputs":  [{"name": "volume", "type": "ImageData"}],
+    "outputs": [{"name": "volume", "type": "ImageData", "persistent": true}]
+  })";
+  // A fresh instance runs each time, so the run counter only grows if
+  // self.state actually round-trips through the host node.
+  QString scriptStr = R"(
+import tomviz.nodes
+
+class CountingPass(tomviz.nodes.TransformNode):
+    def transform(self, inputs):
+        self.state['runs'] = self.state.get('runs', 0) + 1
+        return {"volume": inputs["volume"]}
+
+    def should_auto_execute(self):
+        return self.state.get('runs', 0) > 0
+)";
+
+  auto* source = new SphereSource();
+  source->setDimensions(4, 4, 4);
+  pipeline->addNode(source);
+
+  auto* transform = new PythonTransform();
+  transform->setJSONDescription(jsonStr);
+  transform->setScript(scriptStr);
+  pipeline->addNode(transform);
+  pipeline->createLink(source->outputPort("volume"),
+                       transform->inputPort("volume"));
+
+  pipeline->execute();
+  EXPECT_EQ(transform->state(), NodeState::Current);
+  EXPECT_EQ(transform->userState().value("runs").toInt(), 1);
+
+  transform->markStale();
+  pipeline->execute();
+  EXPECT_EQ(transform->userState().value("runs").toInt(), 2);
+
+  // The hook shares the same state the runs recorded.
+  EXPECT_TRUE(transform->queryShouldAutoExecute());
+}
+
+TEST_F(PipelineLibTest, AutoExecuteControllerTriggersExecution)
+{
+  auto* source = new AutoAnswerSource();
+  pipeline->addNode(source);
+  auto* controller = new AutoExecuteController(pipeline, pipeline);
+
+  source->execute();
+  EXPECT_EQ(source->executeCount, 1);
+  EXPECT_EQ(source->state(), NodeState::Current);
+
+  // Enabled with a "no" answer: polls happen, nothing re-executes.
+  source->setAutoExecuteEnabled(true);
+  source->setAutoExecuteIntervalSeconds(1);
+  for (int i = 0; i < 100 && source->pollCount.load() < 1; ++i) {
+    QTest::qWait(100);
+  }
+  ASSERT_GE(source->pollCount.load(), 1);
+  QTest::qWait(200); // let a (wrong) execution land before checking
+  EXPECT_EQ(source->executeCount, 1);
+
+  // Flip to "yes": the next poll marks the node stale and re-executes.
+  source->answer.store(true);
+  for (int i = 0; i < 100 && source->executeCount < 2; ++i) {
+    QTest::qWait(100);
+  }
+  EXPECT_GE(source->executeCount, 2);
+  EXPECT_EQ(source->state(), NodeState::Current);
+
+  // Disabling tears the timer down; polling stops.
+  source->setAutoExecuteEnabled(false);
+  QTest::qWait(300); // drain any in-flight poll
+  int polls = source->pollCount.load();
+  int executions = source->executeCount;
+  QTest::qWait(1500);
+  EXPECT_EQ(source->pollCount.load(), polls);
+  EXPECT_EQ(source->executeCount, executions);
+
+  delete controller; // joins the worker thread
 }
 
 int main(int argc, char** argv)

@@ -342,3 +342,195 @@ def test_python_transform_v2_persistent_explicit_true():
                      'persistent': True}],
     }))
     assert transform.output_port('volume').persistent is True
+
+
+# ============================================================
+# Periodic execution: self.state + should_auto_execute
+# ============================================================
+
+
+_COUNTING_SOURCE_SCRIPT = """
+import numpy as np
+import tomviz.nodes
+from tomviz.external_dataset import Dataset
+
+
+class CountingSource(tomviz.nodes.SourceNode):
+    def produce(self, value=0.0):
+        self.state['runs'] = self.state.get('runs', 0) + 1
+        arr = np.full((2, 2, 2), value, dtype=np.float32)
+        return {"volume": Dataset({"Scalars": arr}, active="Scalars")}
+"""
+
+
+_WATCHER_SCRIPT = """
+import tomviz.nodes
+
+
+class Watcher(tomviz.nodes.SourceNode):
+    def produce(self, value=0.0):
+        return None
+
+    def should_auto_execute(self, value=0.0):
+        if value != 7.5:
+            raise ValueError('parameters not forwarded')
+        polls = self.state.get('polls', 0) + 1
+        self.state['polls'] = polls
+        return polls >= 2
+"""
+
+
+def test_v2_state_persists_across_runs():
+    """A fresh user instance runs each execution, so the counter only
+    grows if self.state round-trips through the host node."""
+    source = PythonSource()
+    source.set_json_description(_constant_source_description())
+    source.script = _COUNTING_SOURCE_SCRIPT
+
+    assert source.execute() is True
+    assert source.user_state == {'runs': 1}
+    assert source.execute() is True
+    assert source.user_state == {'runs': 2}
+
+
+def test_should_auto_execute_default_false():
+    """Scripts without the hook fall back to the base class's False."""
+    source = PythonSource()
+    source.set_json_description(_constant_source_description())
+    source.script = _CONSTANT_SOURCE_SCRIPT
+
+    assert source._backend.run_should_auto_execute(source) is False
+    assert source.user_state == {}
+
+
+def test_should_auto_execute_hook_and_state():
+    source = PythonSource()
+    source.set_json_description(_constant_source_description())
+    source.script = _WATCHER_SCRIPT
+    source._backend.parameters['value'] = 7.5
+
+    # First poll answers no, but its state mutation is kept.
+    assert source._backend.run_should_auto_execute(source) is False
+    assert source.user_state == {'polls': 1}
+
+    # Second poll sees the previous state and answers yes.
+    assert source._backend.run_should_auto_execute(source) is True
+    assert source.user_state == {'polls': 2}
+
+
+def test_should_auto_execute_exception_answers_false():
+    source = PythonSource()
+    source.set_json_description(_constant_source_description())
+    source.script = _WATCHER_SCRIPT
+    # Default value=0.0 trips the hook's parameter check.
+
+    assert source._backend.run_should_auto_execute(source) is False
+
+
+def test_should_auto_execute_rebound_state_is_harvested():
+    """Rebinding self.state (rather than mutating it) must land too."""
+    source = PythonSource()
+    source.set_json_description(_constant_source_description())
+    source.script = """
+import tomviz.nodes
+
+class Rebinder(tomviz.nodes.SourceNode):
+    def produce(self, value=0.0):
+        return None
+
+    def should_auto_execute(self, value=0.0):
+        self.state = {'fresh': True}
+        return False
+"""
+    assert source._backend.run_should_auto_execute(source) is False
+    assert source.user_state == {'fresh': True}
+
+
+def _watcher_state_file(tmp_path):
+    state = {
+        'schemaVersion': 2,
+        'pipeline': {
+            'nextNodeId': 2,
+            'nodes': [{
+                'id': 1,
+                'type': 'source.python',
+                'label': 'Watcher',
+                'description': _constant_source_description(),
+                'script': _WATCHER_SCRIPT,
+                'arguments': {'value': 7.5},
+            }],
+            'links': [],
+        },
+    }
+    path = tmp_path / 'state.tvsm'
+    path.write_text(json.dumps(state))
+    return path
+
+
+def test_check_auto_execute_round_trip(tmp_path):
+    """The CLI check mode the external executor drives: evaluate the
+    hook without executing, write the verdict and the updated state
+    bags, and accept a prior bag via node_state_file."""
+    from tomviz.pipeline.runner import check_auto_execute
+
+    state_path = _watcher_state_file(tmp_path)
+
+    out1 = tmp_path / 'out1'
+    assert check_auto_execute(state_path, out1, 1) is False
+    verdict = json.loads((out1 / 'auto_execute.json').read_text())
+    assert verdict == {'shouldExecute': False}
+    bags = json.loads((out1 / 'node_state.json').read_text())
+    assert bags == {'nodes': {'1': {'polls': 1}}}
+
+    # Feeding the first poll's state back makes the second answer yes —
+    # exactly the round trip the parent app performs between polls.
+    out2 = tmp_path / 'out2'
+    assert check_auto_execute(
+        state_path, out2, 1,
+        node_state_file=str(out1 / 'node_state.json')) is True
+    bags2 = json.loads((out2 / 'node_state.json').read_text())
+    assert bags2 == {'nodes': {'1': {'polls': 2}}}
+
+
+def test_check_auto_execute_unknown_node_answers_false(tmp_path):
+    from tomviz.pipeline.runner import check_auto_execute
+
+    state_path = _watcher_state_file(tmp_path)
+    out = tmp_path / 'out'
+    assert check_auto_execute(state_path, out, 99) is False
+    verdict = json.loads((out / 'auto_execute.json').read_text())
+    assert verdict == {'shouldExecute': False}
+
+
+def test_run_writes_node_state_file(tmp_path):
+    """`run --node-state`: bags are installed before the run and the
+    updated bags are written back next to the outputs."""
+    from tomviz.pipeline.runner import run
+
+    state = {
+        'schemaVersion': 2,
+        'pipeline': {
+            'nextNodeId': 2,
+            'nodes': [{
+                'id': 1,
+                'type': 'source.python',
+                'label': 'Counter',
+                'description': _constant_source_description(),
+                'script': _COUNTING_SOURCE_SCRIPT,
+                'arguments': {'value': 1.0},
+            }],
+            'links': [],
+        },
+    }
+    state_path = tmp_path / 'state.tvsm'
+    state_path.write_text(json.dumps(state))
+
+    in_bag = tmp_path / 'node_state_in.json'
+    in_bag.write_text(json.dumps({'nodes': {'1': {'runs': 41}}}))
+
+    out = tmp_path / 'out'
+    run(state_path, out, output_format='port',
+        node_state_file=str(in_bag))
+
+    bags = json.loads((out / 'node_state.json').read_text())
+    assert bags == {'nodes': {'1': {'runs': 42}}}

@@ -42,16 +42,30 @@ from tomviz.operators import Progress
 class Node:
     """Base class for all schema-v2 tomviz nodes.
 
-    Provides ``self.progress``, ``self.canceled``, and
-    ``self.completed``. Don't subclass directly — subclass
+    Provides ``self.progress``, ``self.canceled``, ``self.completed``,
+    and ``self.state``. Don't subclass directly — subclass
     :class:`SourceNode` or :class:`TransformNode` instead so the C++
     factory can dispatch correctly.
+
+    ``self.state`` is a dict the framework preserves across executions
+    of the node (a fresh instance is created for every run, so plain
+    instance attributes do not survive). It is shared by ``produce`` /
+    ``transform`` and :meth:`should_auto_execute`, works under both
+    internal and external execution, and is intentionally *not* saved
+    into state files — every session starts with an empty dict. Keep
+    its values JSON-serializable (bool/int/float/str, lists and
+    string-keyed dicts thereof); anything else is dropped with a
+    warning when the framework collects the dict after a run.
     """
 
     def __new__(cls, *args, **kwargs):
         """:meta private:"""
         obj = super().__new__(cls)
         obj.progress = Progress(obj)
+        # Placeholder so __init__ can touch self.state; the runtime
+        # replaces it with the node's persistent bag before calling
+        # produce/transform/should_auto_execute.
+        obj.state = {}
         return obj
 
     @property
@@ -68,6 +82,25 @@ class Node:
         Iterative ``produce`` / ``transform`` implementations should
         poll this and return what they have."""
         return self._operator_wrapper.completed
+
+    def should_auto_execute(self, **parameters) -> bool:
+        """Decide whether a periodic execution should happen now.
+
+        When the user enables "Periodic Execution" for a node (Execution
+        tab), the application periodically calls this hook with the
+        node's current parameter values — the same keyword names
+        ``produce`` / ``transform`` receive. Return ``True`` to request
+        that the node be marked stale and the pipeline re-executed.
+
+        The hook should be cheap: it runs on a timer, and its job is
+        deciding, not computing. Use ``self.state`` for the bookkeeping
+        the decision needs (e.g. the modification time of the file that
+        was last processed); mutations made here are preserved even
+        when ``False`` is returned.
+
+        The default implementation never requests a re-run.
+        """
+        return False
 
     @staticmethod
     def create_dataset() -> 'Dataset':  # noqa: F821

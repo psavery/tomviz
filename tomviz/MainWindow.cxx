@@ -45,6 +45,7 @@
 #include "LoadStackReaction.h"
 #include "LoadTimeSeriesReaction.h"
 #include "PipelineModuleMenu.h"
+#include "pipeline/AutoExecuteController.h"
 #include "pipeline/Pipeline.h"
 #include "pipeline/PipelineExecutor.h"
 #include "pipeline/ThreadedExecutor.h"
@@ -1581,6 +1582,9 @@ void MainWindow::initPipeline()
 {
   auto* p = new pipeline::Pipeline(this);
   p->setExecutor(new pipeline::ThreadedExecutor(p));
+  // Owns the per-node periodic-execution timers; parented to the pipeline
+  // so its lifetime (and its worker thread's) tracks it exactly.
+  new pipeline::AutoExecuteController(p, p);
   m_pipeline = p;
   m_pipelineStrip->setPipeline(p);
   m_pipelineControls->setPipeline(p);
