@@ -180,6 +180,16 @@ EditNodeWidget* PythonTransform::createPropertiesWidget(Pipeline* pipeline,
               }
             }
 
+            // The auto-execute setting doesn't affect the node's data,
+            // so it deliberately doesn't set `changed` — no pipeline
+            // re-execution is warranted for toggling it. The setters
+            // emit autoExecuteChanged for the controller.
+            if (edits.autoExecuteEdited) {
+              setAutoExecuteEnabled(edits.autoExecuteEnabled);
+              setAutoExecuteIntervalSeconds(
+                edits.autoExecuteIntervalSeconds);
+            }
+
             if (changed) {
               emit parametersApplied();
             }
@@ -230,6 +240,11 @@ QMap<QString, PortData> PythonTransform::transform(
   const QMap<QString, PortData>& inputs)
 {
   return m_backend.runTransform(this, inputs);
+}
+
+bool PythonTransform::queryShouldAutoExecute()
+{
+  return m_backend.runShouldAutoExecute(this);
 }
 
 } // namespace pipeline

@@ -271,6 +271,8 @@ class PythonNodeBackend:
         else:
             instance._operator_wrapper = OperatorWrapper(None)
 
+        self._inject_state(host, instance)
+
         kwargs = dict(self.parameters)
 
         try:
@@ -288,6 +290,8 @@ class PythonNodeBackend:
         except Exception:
             logger.exception("Operator '%s' raised", self.operator_name)
             return {}
+        finally:
+            self._harvest_state(host, instance)
 
         # None is the documented signal for "cancel or error" per
         # tomviz.nodes — the user's transform/produce returned without
@@ -300,6 +304,80 @@ class PythonNodeBackend:
             if name in result:
                 outputs[name] = PortData(result[name], ptype)
         return outputs
+
+    def run_should_auto_execute(self, host) -> bool:
+        """Run the user's ``should_auto_execute`` hook and return its
+        answer. Mirrors ``_run_impl``'s instantiation (wrapper +
+        ``self.state`` injection) but calls the hook instead of
+        ``produce``/``transform``. Any error answers ``False``; state
+        mutations made by the hook are harvested either way."""
+        from tomviz import nodes
+        base_class = (nodes.TransformNode if self.is_transform_shape()
+                      else nodes.SourceNode)
+
+        module = self._load_script_module()
+        if module is None:
+            return False
+        try:
+            user_class = _find_node_class(module, base_class)
+        except ValueError:
+            logger.exception(
+                'Multiple node classes found in script for %s',
+                self.operator_name)
+            return False
+        if user_class is None:
+            logger.error('No node class found in script for %s',
+                         self.operator_name)
+            return False
+
+        instance = user_class()
+        instance._operator_wrapper = OperatorWrapper(None)
+        self._inject_state(host, instance)
+
+        method = getattr(instance, 'should_auto_execute', None)
+        if not callable(method):
+            # Script written against a tomviz.nodes predating the hook.
+            return False
+        try:
+            result = method(**dict(self.parameters))
+        except Exception:
+            logger.exception("should_auto_execute for '%s' raised",
+                             self.operator_name)
+            return False
+        finally:
+            self._harvest_state(host, instance)
+        return bool(result)
+
+    @staticmethod
+    def _inject_state(host, instance):
+        """Hand the host node's persistent state bag to the user
+        instance as ``self.state``. The dict object itself is shared,
+        so in-place mutations land on the host immediately;
+        ``_harvest_state`` covers rebinding (``self.state = {...}``)."""
+        state = getattr(host, 'user_state', None)
+        if not isinstance(state, dict):
+            state = {}
+            try:
+                host.user_state = state
+            except Exception:
+                pass
+        instance.state = state
+
+    @staticmethod
+    def _harvest_state(host, instance):
+        """Copy ``self.state`` back onto the host node. A rebound
+        non-dict state is rejected with a warning rather than
+        clobbering the existing bag."""
+        state = getattr(instance, 'state', None)
+        if isinstance(state, dict):
+            try:
+                host.user_state = state
+            except Exception:
+                pass
+        elif state is not None:
+            logger.warning(
+                'self.state must be a dict; ignoring the %s it was '
+                'rebound to', type(state).__name__)
 
     def _load_script_module(self):
         """Materialize self.script as a temp .py and import it. Returns

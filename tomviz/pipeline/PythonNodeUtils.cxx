@@ -87,11 +87,16 @@ QVariant resolveEnumValue(const QJsonValue& value, const QJsonArray& options)
 
 py::object qvariantToPython(const QVariant& value)
 {
+  if (!value.isValid()) {
+    return py::none();
+  }
   switch (value.typeId()) {
     case QMetaType::Double:
       return py::float_(value.toDouble());
     case QMetaType::Int:
       return py::int_(value.toInt());
+    case QMetaType::LongLong:
+      return py::int_(value.toLongLong());
     case QMetaType::Bool:
       return py::bool_(value.toBool());
     case QMetaType::QString:
@@ -103,6 +108,8 @@ py::object qvariantToPython(const QVariant& value)
       }
       return pyList;
     }
+    case QMetaType::QVariantMap:
+      return variantMapToPyDict(value.toMap());
     default:
       // Defensive fallback: cast to float. Operator parameters are
       // always one of the listed types in practice (loaded from JSON +
@@ -111,6 +118,100 @@ py::object qvariantToPython(const QVariant& value)
       // here for parity.
       return py::float_(value.toDouble());
   }
+}
+
+QVariant pythonToQVariant(py::handle value, bool* ok)
+{
+  if (ok) {
+    *ok = true;
+  }
+  if (value.is_none()) {
+    return QVariant();
+  }
+  // bool first: a Python bool is also an int.
+  if (py::isinstance<py::bool_>(value)) {
+    return QVariant(value.cast<bool>());
+  }
+  if (py::isinstance<py::int_>(value)) {
+    return QVariant(value.cast<qlonglong>());
+  }
+  if (py::isinstance<py::float_>(value)) {
+    return QVariant(value.cast<double>());
+  }
+  if (py::isinstance<py::str>(value)) {
+    return QVariant(QString::fromStdString(value.cast<std::string>()));
+  }
+  if (py::isinstance<py::list>(value) || py::isinstance<py::tuple>(value)) {
+    QVariantList list;
+    for (auto item : value.cast<py::sequence>()) {
+      bool itemOk = true;
+      QVariant v = pythonToQVariant(item, &itemOk);
+      if (!itemOk) {
+        if (ok) {
+          *ok = false;
+        }
+        return QVariant();
+      }
+      list.append(v);
+    }
+    return list;
+  }
+  if (py::isinstance<py::dict>(value)) {
+    QVariantMap map;
+    for (auto item : value.cast<py::dict>()) {
+      if (!py::isinstance<py::str>(item.first)) {
+        if (ok) {
+          *ok = false;
+        }
+        return QVariant();
+      }
+      bool itemOk = true;
+      QVariant v = pythonToQVariant(item.second, &itemOk);
+      if (!itemOk) {
+        if (ok) {
+          *ok = false;
+        }
+        return QVariant();
+      }
+      map[QString::fromStdString(item.first.cast<std::string>())] = v;
+    }
+    return map;
+  }
+  if (ok) {
+    *ok = false;
+  }
+  return QVariant();
+}
+
+QVariantMap pyDictToVariantMap(py::dict dict)
+{
+  QVariantMap map;
+  for (auto item : dict) {
+    if (!py::isinstance<py::str>(item.first)) {
+      qWarning("PythonNodeUtils: dropping state entry with non-string key");
+      continue;
+    }
+    QString key = QString::fromStdString(item.first.cast<std::string>());
+    bool ok = true;
+    QVariant v = pythonToQVariant(item.second, &ok);
+    if (!ok) {
+      qWarning("PythonNodeUtils: state value for key '%s' is not "
+               "JSON-serializable; dropping it",
+               qPrintable(key));
+      continue;
+    }
+    map[key] = v;
+  }
+  return map;
+}
+
+py::dict variantMapToPyDict(const QVariantMap& map)
+{
+  py::dict dict;
+  for (auto it = map.constBegin(); it != map.constEnd(); ++it) {
+    dict[py::str(it.key().toStdString())] = qvariantToPython(it.value());
+  }
+  return dict;
 }
 
 py::object loadScriptAsModule(const QString& name, const QString& script)

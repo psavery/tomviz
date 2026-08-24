@@ -47,6 +47,15 @@ public:
   void cancel(Node* node) override;
   void complete(Node* node) override;
 
+  /// Auto-execute poll: spawns `tomviz-pipeline --check-auto-execute`
+  /// in the configured env so the node's should_auto_execute hook runs
+  /// with the same imports execute() would have. The node's user-state
+  /// bag rides a JSON sidecar in both directions. Blocks (bounded by a
+  /// kill timeout) — call from a worker thread. Any failure — missing
+  /// CLI, an env whose tomviz package predates the check mode, a
+  /// timeout — answers false.
+  bool shouldAutoExecute(Node* node) override;
+
   QString type() const override;
   QJsonObject serialize() const override;
   bool deserialize(const QJsonObject& json) override;
@@ -65,6 +74,13 @@ private:
   /// absolute path on success, an empty string on failure.
   QString writeShimTvh5(Node* target, const QTemporaryDir& dir,
                         int& targetNodeId) const;
+
+  /// Minimal state file for the auto-execute poll: just a clone of
+  /// @a target (no inputs, no payloads — the hook receives neither),
+  /// so polling never serializes input volumes to disk. Returns the
+  /// absolute path on success, an empty string on failure.
+  QString writeCheckStateFile(Node* target, const QTemporaryDir& dir,
+                              int& targetNodeId) const;
 
   /// Read `output_state.tvh5` produced by the subprocess and copy each
   /// output port payload onto the matching port of @a target.

@@ -154,6 +154,14 @@ public:
   /// map.
   QMap<QString, PortData> runSource(Node* host);
 
+  /// Run the user's should_auto_execute hook (the auto-execute poll)
+  /// and return its answer. Same instantiation as runSource /
+  /// runTransform — the wrapper and the host's user-state bag are
+  /// injected, and state mutations made by the hook are harvested back
+  /// onto the host — but no inputs are converted and no outputs are
+  /// produced. Any error answers false.
+  bool runShouldAutoExecute(Node* host);
+
   // ---- input/output declarations (parsed from description) ----------
   /// Names of input ports declared in the description, in declaration
   /// order. Mirror of what was passed to addInput in

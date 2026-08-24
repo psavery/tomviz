@@ -16,9 +16,11 @@
 #include <functional>
 #include <memory>
 
+class QCheckBox;
 class QComboBox;
 class QLineEdit;
 class QLabel;
+class QSpinBox;
 class QTabWidget;
 class QTextEdit;
 class QVBoxLayout;
@@ -48,6 +50,12 @@ struct PythonNodeEdits
   QString executorType;
   /// Type-specific executor configuration (currently the env path).
   QString executorEnvPath;
+  /// True when the editor exposed the auto-execute controls (schema-v2
+  /// nodes only). The two fields below are meaningful only then; a
+  /// false value tells the node to leave its setting untouched.
+  bool autoExecuteEdited = false;
+  bool autoExecuteEnabled = false;
+  int autoExecuteIntervalSeconds = 30;
 };
 
 /// Tabbed editor widget for Python source / transform nodes.
@@ -160,6 +168,8 @@ private:
   QLabel* m_envPathLabel = nullptr;
   QWidget* m_envPathRow = nullptr;
   QLineEdit* m_envPathEdit = nullptr;
+  QCheckBox* m_autoExecCheck = nullptr;
+  QSpinBox* m_autoExecIntervalSpin = nullptr;
 
   /// Holds OnDisk-evicted upstream payloads in memory while the editor
   /// is shown, so the custom widget can read from the input ports.

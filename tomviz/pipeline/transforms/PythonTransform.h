@@ -61,6 +61,9 @@ public:
   QJsonObject serialize() const override;
   bool deserialize(const QJsonObject& json) override;
 
+  /// Auto-execute poll: runs the script's should_auto_execute hook.
+  bool queryShouldAutoExecute() override;
+
 protected:
   QMap<QString, PortData> transform(
     const QMap<QString, PortData>& inputs) override;

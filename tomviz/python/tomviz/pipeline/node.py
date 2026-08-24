@@ -95,6 +95,10 @@ class Node:
         self.state: NodeState = NodeState.New
         self.breakpoint: bool = False
         self.properties: dict[str, Any] = {}
+        # Runtime-only per-node state bag, surfaced to schema-v2 node
+        # scripts as `self.state`. Mirrors the C++ Node::userState():
+        # preserved across executions, deliberately never serialized.
+        self.user_state: dict = {}
         self.type_inference_sources: dict[str, str] = {}
         self._input_ports: list[InputPort] = []
         self._output_ports: list[OutputPort] = []
