@@ -102,8 +102,6 @@ set(SOURCES
   ImageStackDialog.cxx
   ImageStackModel.h
   ImageStackModel.cxx
-  InternalPythonHelper.h
-  InternalPythonHelper.cxx
   IntSliderWidget.cxx
   IntSliderWidget.h
   ListEditorWidget.cxx
