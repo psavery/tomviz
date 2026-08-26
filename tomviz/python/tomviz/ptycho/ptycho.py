@@ -123,7 +123,7 @@ def locate_ptycho_hyan_file(sid: int, version: str,
 
     for match in matches:
         try:
-            with open(match.resolve(), 'r') as rf:
+            with open(match.resolve(), 'r', encoding='utf-8') as rf:
                 if 'angle =' in rf.read():
                     return match.resolve()
         except Exception:
@@ -193,7 +193,7 @@ def filter_sid_list(sid_list: list[int], filter_string: str) -> list[int]:
 
 
 def fetch_angle_from_ptycho_hyan_file(filepath: PathLike) -> float | None:
-    with open(filepath, 'r') as rf:
+    with open(filepath, 'r', encoding='utf-8') as rf:
         for line in rf:
             line = line.lstrip()
             if line.startswith('angle = '):
@@ -218,7 +218,7 @@ def fetch_pixel_sizes_from_ptycho_hyan_file(
     vars_requested = vars_required + list(alternatives.values())
     results = {}
     try:
-        with open(filepath, 'r') as rf:
+        with open(filepath, 'r', encoding='utf-8') as rf:
             for line in rf:
                 if '=' not in line:
                     continue

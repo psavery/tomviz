@@ -111,7 +111,7 @@ def _operator_description(operator_dir, filename):
     if os.path.exists(json_filepath):
         description['jsonPath'] = json_filepath
         try:
-            with open(json_filepath) as fp:
+            with open(json_filepath, encoding='utf-8') as fp:
                 operator_json = json.load(fp)
             description['label'] = operator_json.get('label', name)
             description['type'] = _classify_from_json(operator_json)
