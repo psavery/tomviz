@@ -7,7 +7,7 @@ ENV PYTHONUNBUFFERED=ON
 # The pipeline runtime is the standalone tomviz-pipeline package. scipy
 # is not a dependency of the engine but is widely used by operator
 # scripts.
-RUN pip install "tomviz-pipeline>=3.1.1" scipy
+RUN pip install "tomviz-pipeline>=3.1.3" scipy
 
 ENTRYPOINT ["tomviz-pipeline"]
 

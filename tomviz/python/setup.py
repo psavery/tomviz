@@ -18,7 +18,7 @@ setup(
     ],
     python_requires='>=3.9',
     packages=find_packages(),
-    install_requires=['tomviz-pipeline>=3.1.1', 'tqdm', 'h5py', 'numpy',
+    install_requires=['tomviz-pipeline>=3.1.3', 'tqdm', 'h5py', 'numpy',
                       'scipy'],
     extras_require={
         'itk': ['itk'],

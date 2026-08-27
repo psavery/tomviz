@@ -4830,6 +4830,174 @@ class CountingPass(tomviz.nodes.TransformNode):
   EXPECT_TRUE(transform->queryShouldAutoExecute());
 }
 
+// --- Kernel parameter write-back (self.set_parameter) ---
+
+namespace {
+
+const char* kWriteBackDescription = R"({
+  "schemaVersion": 2,
+  "name": "WriteBack",
+  "outputs": [{"name": "volume", "type": "ImageData"}],
+  "parameters": [
+    {"name": "value", "type": "double", "default": 0.0},
+    {"name": "frame", "type": "int", "default": 0},
+    {"name": "mode", "type": "enumeration", "default": 0,
+     "options": [{"Fast": "fast"}, {"Slow": "slow"}]}
+  ]
+})";
+
+// produce() advances `frame` and publishes `value` (as a string, to
+// exercise coercion); the hook flips `mode` and answers from `frame`.
+const char* kWriteBackScript = R"(
+import numpy as np
+import tomviz.nodes
+
+
+class WriteBack(tomviz.nodes.SourceNode):
+    def produce(self, value=0.0, frame=0, mode='fast'):
+        self.set_parameter('frame', frame + 1)
+        self.set_parameter('value', '2.5')
+        if self.parameter('frame') != frame + 1:
+            raise AssertionError('parameter() does not see the update')
+        ds = self.create_dataset()
+        ds.set_scalars('Scalars', np.full((2, 2, 2), value, dtype=np.float32))
+        return {'volume': ds}
+
+    def should_auto_execute(self, value=0.0, frame=0, mode='fast'):
+        self.set_parameter('mode', 'slow')
+        return frame >= 1
+)";
+
+} // namespace
+
+TEST_F(PipelinePythonTest, SetParameterLandsOnNodeQuietly)
+{
+  auto* source = new PythonSource();
+  source->setJSONDescription(kWriteBackDescription);
+  source->setScript(kWriteBackScript);
+  pipeline->addNode(source);
+
+  QSignalSpy updated(source, &Node::parametersUpdated);
+  QSignalSpy applied(source, &Node::parametersApplied);
+
+  pipeline->execute();
+  EXPECT_EQ(source->state(), NodeState::Current);
+  EXPECT_EQ(source->parameter("frame").toInt(), 1);
+  EXPECT_DOUBLE_EQ(source->parameter("value").toDouble(), 2.5);
+  EXPECT_EQ(source->parameter("mode").toString(), QString("fast"));
+
+  ASSERT_EQ(updated.count(), 1);
+  auto changed = updated.takeFirst().at(0).toMap();
+  EXPECT_EQ(changed.size(), 2);
+  EXPECT_EQ(changed.value("frame").toInt(), 1);
+  EXPECT_DOUBLE_EQ(changed.value("value").toDouble(), 2.5);
+  // The quiet path: no editor-style apply, no re-execution.
+  EXPECT_EQ(applied.count(), 0);
+
+  // The next run receives the new values; `value` is 2.5 again and is
+  // not reported a second time.
+  source->markStale();
+  pipeline->execute();
+  EXPECT_EQ(source->parameter("frame").toInt(), 2);
+  ASSERT_EQ(updated.count(), 1);
+  changed = updated.takeFirst().at(0).toMap();
+  EXPECT_EQ(changed.keys(), QStringList{ "frame" });
+
+  // Serialized `arguments` carry the written-back values.
+  auto json = source->serialize();
+  EXPECT_EQ(json.value("arguments").toObject().value("frame").toInt(), 2);
+}
+
+TEST_F(PipelinePythonTest, SetParameterInShouldAutoExecute)
+{
+  auto* source = new PythonSource();
+  source->setJSONDescription(kWriteBackDescription);
+  source->setScript(kWriteBackScript);
+  pipeline->addNode(source);
+  QSignalSpy updated(source, &Node::parametersUpdated);
+
+  // The hook's write-back lands even when it answers "no"; the answer
+  // alone decides whether a run happens.
+  EXPECT_FALSE(source->queryShouldAutoExecute());
+  EXPECT_EQ(source->parameter("mode").toString(), QString("slow"));
+  EXPECT_EQ(updated.count(), 1);
+  EXPECT_EQ(source->state(), NodeState::New);
+
+  source->setParameter("frame", 3);
+  EXPECT_TRUE(source->queryShouldAutoExecute());
+  EXPECT_EQ(updated.count(), 1); // mode is already 'slow'
+}
+
+TEST_F(PipelinePythonTest, SetParameterUnknownNameFailsRunKeepsEarlier)
+{
+  QString scriptStr = R"(
+import tomviz.nodes
+
+class Bad(tomviz.nodes.SourceNode):
+    def produce(self, value=0.0, frame=0, mode='fast'):
+        self.set_parameter('frame', 5)
+        self.set_parameter('nope', 1)
+        return None
+)";
+  auto* source = new PythonSource();
+  source->setJSONDescription(kWriteBackDescription);
+  source->setScript(scriptStr);
+  pipeline->addNode(source);
+
+  EXPECT_FALSE(source->execute());
+  // Harvested even though produce() raised — parity with self.state
+  // under the Python runtime.
+  EXPECT_EQ(source->parameter("frame").toInt(), 5);
+  EXPECT_FALSE(source->parameters().contains("nope"));
+}
+
+TEST_F(PipelinePythonTest, SetParameterRejectsUndeclaredEnumValue)
+{
+  QString scriptStr = R"(
+import tomviz.nodes
+
+class Bad(tomviz.nodes.SourceNode):
+    def produce(self, value=0.0, frame=0, mode='fast'):
+        self.set_parameter('mode', 'medium')
+        return None
+)";
+  auto* source = new PythonSource();
+  source->setJSONDescription(kWriteBackDescription);
+  source->setScript(scriptStr);
+  pipeline->addNode(source);
+
+  EXPECT_FALSE(source->execute());
+  EXPECT_EQ(source->parameter("mode").toString(), QString("fast"));
+}
+
+TEST_F(PipelineLibTest, ApplyParameterUpdatesIsQuiet)
+{
+  auto* source = new PythonSource();
+  source->setJSONDescription(kWriteBackDescription);
+  pipeline->addNode(source);
+  QSignalSpy updated(source, &Node::parametersUpdated);
+  QSignalSpy applied(source, &Node::parametersApplied);
+
+  // Only values that differ are written and reported; nothing goes
+  // stale (the external executor takes this path after a child run).
+  source->applyParameterUpdates({ { "frame", 0 }, { "value", 1.0 } });
+  EXPECT_EQ(source->state(), NodeState::New);
+  EXPECT_DOUBLE_EQ(source->parameter("value").toDouble(), 1.0);
+  ASSERT_EQ(updated.count(), 1);
+  EXPECT_EQ(updated.takeFirst().at(0).toMap().keys(), QStringList{ "value" });
+  EXPECT_EQ(applied.count(), 0);
+
+  source->applyParameterUpdates({ { "value", 1.0 } });
+  EXPECT_EQ(updated.count(), 0);
+
+  // Nodes without parameters ignore the map.
+  auto* plain = new SourceNode();
+  pipeline->addNode(plain);
+  QSignalSpy plainUpdated(plain, &Node::parametersUpdated);
+  plain->applyParameterUpdates({ { "x", 1 } });
+  EXPECT_EQ(plainUpdated.count(), 0);
+}
+
 TEST_F(PipelineLibTest, AutoExecuteControllerTriggersExecution)
 {
   auto* source = new AutoAnswerSource();

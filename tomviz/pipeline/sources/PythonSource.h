@@ -65,6 +65,10 @@ public:
   /// Auto-execute poll: runs the script's should_auto_execute hook.
   bool queryShouldAutoExecute() override;
 
+  /// Kernel write-back (`self.set_parameter`): install the values on
+  /// the backend and emit parametersUpdated for those that changed.
+  void applyParameterUpdates(const QVariantMap& updates) override;
+
 private:
   PythonNodeBackend m_backend;
 };

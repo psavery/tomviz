@@ -309,6 +309,10 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
   });
   connect(m_pipeline, &Pipeline::executionFinished,
           this, &PythonNodeEditorWidget::onExecutionFinished);
+  // Auto connection: the node emits this from the pipeline worker
+  // thread mid-run, so the refresh is queued onto the GUI thread.
+  connect(m_node, &Node::parametersUpdated, this,
+          &PythonNodeEditorWidget::onNodeParametersUpdated);
 
   m_paramsTabIndex = m_tabWidget->addTab(m_paramsTab, tr("Parameters"));
 
@@ -563,6 +567,11 @@ void PythonNodeEditorWidget::rebuildParametersTab(const QString& json)
     }
   }
 
+  reinstallParametersWidget();
+}
+
+void PythonNodeEditorWidget::reinstallParametersWidget()
+{
   while (QLayoutItem* item = m_paramsLayout->takeAt(0)) {
     if (auto* widget = item->widget()) {
       widget->hide();
@@ -579,6 +588,39 @@ void PythonNodeEditorWidget::rebuildParametersTab(const QString& json)
   } else {
     installNotReadyWidget();
   }
+}
+
+void PythonNodeEditorWidget::onNodeParametersUpdated(const QVariantMap& changed)
+{
+  if (m_customFactory) {
+    for (auto it = changed.constBegin(); it != changed.constEnd(); ++it) {
+      m_currentValues[it.key()] = it.value();
+    }
+    if (m_customParamsWidget) {
+      m_customParamsWidget->setValues(m_currentValues);
+    }
+    return;
+  }
+
+  // Keep what the user has typed into the form, then let the node's
+  // write-backs win for the parameters it changed. (Deliberately not
+  // rebuildParametersTab(): that merges the live form values *last*,
+  // which would put the stale ones back.)
+  if (m_paramsWidget) {
+    const auto live = m_paramsWidget->values();
+    for (auto it = live.constBegin(); it != live.constEnd(); ++it) {
+      m_currentValues[it.key()] = it.value();
+    }
+  }
+  for (auto it = changed.constBegin(); it != changed.constEnd(); ++it) {
+    m_currentValues[it.key()] = it.value();
+  }
+  if (!m_paramsWidget) {
+    // The not-ready widget is up; the form picks the values up when
+    // it is eventually built from m_currentValues.
+    return;
+  }
+  reinstallParametersWidget();
 }
 
 void PythonNodeEditorWidget::installNotReadyWidget()

@@ -43,7 +43,7 @@ Tomviz python library itself.
 
 ```bash
 conda install -y --override-channels -c conda-forge --file tomviz/.github/workflows/runtime_requirements.txt
-pip install --no-deps -U "tomviz-pipeline>=3.1.1"
+pip install --no-deps -U "tomviz-pipeline>=3.1.3"
 pip install --no-build-isolation --no-deps -U tomviz/tomviz/python
 ```
 
@@ -83,6 +83,6 @@ bash tomviz/.github/workflows/scripts/build_tomviz.sh
 
 # Install runtime dependencies
 conda install -y --override-channels -c conda-forge --file tomviz/.github/workflows/runtime_requirements.txt
-pip install --no-deps -U "tomviz-pipeline>=3.1.1"
+pip install --no-deps -U "tomviz-pipeline>=3.1.3"
 pip install --no-build-isolation --no-deps -U tomviz/tomviz/python
 ```
