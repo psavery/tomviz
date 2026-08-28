@@ -11,6 +11,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QMap>
+#include <QMutex>
 #include <QString>
 #include <QStringList>
 #include <QVariant>
@@ -114,9 +115,21 @@ public:
   bool externalOnly() const;
 
   // ---- parameters ---------------------------------------------------
+  /// Accessors copy / write under a lock: a running kernel may write
+  /// back parameters from the pipeline worker thread (see
+  /// applyParameterUpdates) while the GUI reads them.
   void setParameter(const QString& name, const QVariant& value);
   QVariant parameter(const QString& name) const;
   QMap<QString, QVariant> parameters() const;
+
+  /// Install values the kernel changed through `self.set_parameter`
+  /// (harvested after produce / transform / should_auto_execute, or
+  /// read back from an external run). Only entries whose value
+  /// actually differs are written; returns those, so the host shell
+  /// can emit Node::parametersUpdated. Never marks anything stale —
+  /// see Node::applyParameterUpdates for the rationale.
+  QMap<QString, QVariant> applyParameterUpdates(
+    const QMap<QString, QVariant>& updates);
 
   /// Bindings declared via the JSON `bindToSink` hint, parsed at
   /// description time. Resolved to live signal/slot wiring at
@@ -210,7 +223,14 @@ private:
   QMap<QString, QVariant> m_parameters;
   QMap<QString, QString> m_parameterTypes;
   QMap<QString, QJsonArray> m_enumOptions;
+  // name -> the description's parameter entry, verbatim. Handed to the
+  // kernel instance as `_parameter_spec` so `self.set_parameter` can
+  // validate names and coerce values against the declared types.
+  QMap<QString, QJsonObject> m_parameterSpecs;
   QMap<QString, ParameterBinding> m_parameterBindings;
+  /// Guards m_parameters: executions write back kernel updates from a
+  /// worker thread while the GUI reads the current values.
+  mutable QMutex m_parametersMutex;
 };
 
 } // namespace pipeline

@@ -19,6 +19,19 @@
 #include "pybind11/PybindVTKTypeCaster.h"
 #pragma pop_macro("slots")
 
+// Python transforms run on pipeline worker threads (ThreadedExecutor)
+// while the main thread may enter Python through VTK/ParaView, which use
+// PyGILState_Ensure. pybind11's default GIL management keeps its own
+// thread-state accounting that diverges from CPython's gilstate under
+// the app's external Py_Initialize, corrupting the worker's
+// PyThreadState (SIGSEGV). The build defines PYBIND11_SIMPLE_GIL_-
+// MANAGEMENT (top-level CMakeLists.txt) to route gil_scoped_* through
+// PyGILState_Ensure/Release. Fail loudly if that define is ever dropped.
+#ifndef PYBIND11_SIMPLE_GIL_MANAGEMENT
+#  error "tomviz requires PYBIND11_SIMPLE_GIL_MANAGEMENT (see CMakeLists.txt): \
+threaded Python execution corrupts CPython thread state otherwise."
+#endif
+
 #include <vtkImageData.h>
 #include <vtkMolecule.h>
 #include <vtkNew.h>
@@ -44,12 +57,12 @@ constexpr const char* kSourceBaseAttr = "SourceNode";
 constexpr const char* kTransformBaseAttr = "TransformNode";
 
 /// Convert a PortData payload into a Python object suitable for the
-/// inputs dict. ImageData/Volume/TiltSeries get wrapped in a fresh
-/// internal_dataset.Dataset (around a deep copy of the input vtkImageData, so
-/// in-place mutations by the user's transform don't corrupt the
-/// upstream port's payload). Tables/molecules pass through as raw
-/// vtkObjects via vtkPythonUtil.
-py::object portDataToPython(const PortData& data, py::object datasetCls)
+/// inputs dict. ImageData/Volume/TiltSeries get wrapped in a numpy-
+/// backed tomviz_pipeline Dataset (around a deep copy of the input
+/// vtkImageData, so in-place mutations by the user's transform don't
+/// corrupt the upstream port's payload). Tables/molecules convert to
+/// the library's pure Table/Molecule payloads.
+py::object portDataToPython(const PortData& data, py::object boundary)
 {
   if (!data.isValid()) {
     return py::none();
@@ -60,26 +73,32 @@ py::object portDataToPython(const PortData& data, py::object datasetCls)
     if (!vol || !vol->isValid()) {
       return py::none();
     }
+    // Deep copy for isolation, then wrap in a numpy-backed
+    // tomviz_pipeline Dataset whose arrays are views over the copy.
     vtkNew<vtkImageData> copy;
     copy->DeepCopy(vol->imageData());
-    return datasetCls(py::cast(static_cast<vtkImageData*>(copy.Get()),
-                               py::return_value_policy::reference));
+    return boundary.attr("wrap_vtk_image")(
+      py::cast(static_cast<vtkImageData*>(copy.Get()),
+               py::return_value_policy::reference),
+      /*legacy=*/false);
   }
   if (type == PortType::Table) {
     auto sp = data.value<vtkSmartPointer<vtkTable>>();
     if (!sp) {
       return py::none();
     }
-    return py::reinterpret_steal<py::object>(
-      vtkPythonUtil::GetObjectFromPointer(sp.GetPointer()));
+    return boundary.attr("vtk_table_to_table")(
+      py::reinterpret_steal<py::object>(
+        vtkPythonUtil::GetObjectFromPointer(sp.GetPointer())));
   }
   if (type == PortType::Molecule) {
     auto sp = data.value<vtkSmartPointer<vtkMolecule>>();
     if (!sp) {
       return py::none();
     }
-    return py::reinterpret_steal<py::object>(
-      vtkPythonUtil::GetObjectFromPointer(sp.GetPointer()));
+    return boundary.attr("vtk_molecule_to_molecule")(
+      py::reinterpret_steal<py::object>(
+        vtkPythonUtil::GetObjectFromPointer(sp.GetPointer())));
   }
   return py::none();
 }
@@ -100,6 +119,47 @@ void harvestUserState(Node* host, py::object instance)
   }
   host->setUserState(
     PythonNodeUtils::pyDictToVariantMap(state.cast<py::dict>()));
+}
+
+/// Give the kernel instance what `self.set_parameter` /
+/// `self.parameter` need: the declared parameter specs (validation and
+/// coercion) and the current values. Nothing is shared with the
+/// backend — updates are collected afterwards by
+/// harvestParameterUpdates. Mirrors the Python runtime's
+/// PythonNodeBackend._inject_parameter_api.
+void injectParameterApi(py::object instance,
+                        const QMap<QString, QJsonObject>& specs,
+                        const QMap<QString, QVariant>& values)
+{
+  py::dict spec;
+  for (auto it = specs.constBegin(); it != specs.constEnd(); ++it) {
+    spec[py::str(it.key().toStdString())] =
+      PythonNodeUtils::variantMapToPyDict(it.value().toVariantMap());
+  }
+  instance.attr("_parameter_spec") = spec;
+  instance.attr("_parameter_values") =
+    PythonNodeUtils::variantMapToPyDict(values);
+  instance.attr("_parameter_updates") = py::dict();
+}
+
+/// Install the parameter values the kernel changed through
+/// `self.set_parameter` on the host node — quietly, through
+/// Node::applyParameterUpdates. A kernel base class predating the
+/// feature has no `_parameter_updates`; nothing to do then.
+void harvestParameterUpdates(Node* host, py::object instance)
+{
+  if (!py::hasattr(instance, "_parameter_updates")) {
+    return;
+  }
+  py::object updates = instance.attr("_parameter_updates");
+  if (!py::isinstance<py::dict>(updates)) {
+    return;
+  }
+  QVariantMap map =
+    PythonNodeUtils::pyDictToVariantMap(updates.cast<py::dict>());
+  if (!map.isEmpty()) {
+    host->applyParameterUpdates(map);
+  }
 }
 
 } // namespace
@@ -163,17 +223,36 @@ bool PythonNodeBackend::externalOnly() const
 void PythonNodeBackend::setParameter(const QString& name,
                                      const QVariant& value)
 {
+  QMutexLocker locker(&m_parametersMutex);
   m_parameters[name] = value;
 }
 
 QVariant PythonNodeBackend::parameter(const QString& name) const
 {
+  QMutexLocker locker(&m_parametersMutex);
   return m_parameters.value(name);
 }
 
 QMap<QString, QVariant> PythonNodeBackend::parameters() const
 {
+  QMutexLocker locker(&m_parametersMutex);
   return m_parameters;
+}
+
+QMap<QString, QVariant> PythonNodeBackend::applyParameterUpdates(
+  const QMap<QString, QVariant>& updates)
+{
+  QMap<QString, QVariant> changed;
+  QMutexLocker locker(&m_parametersMutex);
+  for (auto it = updates.constBegin(); it != updates.constEnd(); ++it) {
+    auto existing = m_parameters.constFind(it.key());
+    if (existing != m_parameters.constEnd() && existing.value() == it.value()) {
+      continue;
+    }
+    m_parameters[it.key()] = it.value();
+    changed[it.key()] = it.value();
+  }
+  return changed;
 }
 
 QMap<QString, ParameterBinding> PythonNodeBackend::parameterBindings() const
@@ -220,6 +299,7 @@ void PythonNodeBackend::parseDescription()
   m_parameters.clear();
   m_parameterTypes.clear();
   m_enumOptions.clear();
+  m_parameterSpecs.clear();
   m_parameterBindings.clear();
 
   QJsonDocument doc = QJsonDocument::fromJson(m_jsonDescription.toUtf8());
@@ -289,6 +369,7 @@ void PythonNodeBackend::parseDescription()
       continue;
     }
     m_parameterTypes[name] = type;
+    m_parameterSpecs[name] = param;
 
     if (type == QLatin1String("enumeration")) {
       QJsonArray options = param.value(QStringLiteral("options")).toArray();
@@ -342,9 +423,9 @@ QJsonObject PythonNodeBackend::serializeInto(QJsonObject base) const
 {
   base[QStringLiteral("description")] = m_jsonDescription;
   base[QStringLiteral("script")] = m_script;
-  if (!m_parameters.isEmpty()) {
-    base[QStringLiteral("arguments")] =
-      QJsonObject::fromVariantMap(m_parameters);
+  const auto params = parameters();
+  if (!params.isEmpty()) {
+    base[QStringLiteral("arguments")] = QJsonObject::fromVariantMap(params);
   }
   return base;
 }
@@ -428,6 +509,8 @@ bool PythonNodeBackend::runShouldAutoExecute(Node* host)
     userClass.attr("__init__")(instance);
     instance.attr("state") =
       PythonNodeUtils::variantMapToPyDict(host->userState());
+    const auto params = parameters();
+    injectParameterApi(instance, m_parameterSpecs, params);
 
     // Scripts written against a tomviz.nodes that predates the hook
     // simply never auto-execute.
@@ -436,17 +519,27 @@ bool PythonNodeBackend::runShouldAutoExecute(Node* host)
     }
 
     py::dict kwargs;
-    for (auto it = m_parameters.constBegin();
-         it != m_parameters.constEnd(); ++it) {
+    for (auto it = params.constBegin(); it != params.constEnd(); ++it) {
       kwargs[py::str(it.key().toStdString())] =
         PythonNodeUtils::qvariantToPython(it.value());
     }
 
-    py::object pyResult = instance.attr("should_auto_execute")(**kwargs);
+    py::object pyResult;
+    try {
+      pyResult = instance.attr("should_auto_execute")(**kwargs);
+    } catch (...) {
+      // Like self.state, parameter write-backs made before the hook
+      // raised still count (the Python runtime harvests in a finally).
+      harvestUserState(host, instance);
+      harvestParameterUpdates(host, instance);
+      throw;
+    }
 
-    // The hook may legitimately update self.state even when it answers
-    // "no" (e.g. remembering the timestamp it just inspected).
+    // The hook may legitimately update self.state — and its parameters
+    // — even when it answers "no" (e.g. remembering the timestamp it
+    // just inspected). The answer alone decides whether a run happens.
     harvestUserState(host, instance);
+    harvestParameterUpdates(host, instance);
 
     return PyObject_IsTrue(pyResult.ptr()) == 1;
   } catch (const py::error_already_set& e) {
@@ -480,8 +573,7 @@ QMap<QString, PortData> PythonNodeBackend::runImpl(
     // importing it (legacy carry-over).
     py::module_::import("tomviz.utils");
 
-    py::module_ datasetMod = py::module_::import("tomviz.internal_dataset");
-    py::object datasetCls = datasetMod.attr("Dataset");
+    py::module_ boundary = py::module_::import("tomviz._boundary");
 
     py::module_ nodesMod = py::module_::import("tomviz.nodes");
     py::object baseClass =
@@ -513,36 +605,48 @@ QMap<QString, PortData> PythonNodeBackend::runImpl(
     // returns.
     instance.attr("state") =
       PythonNodeUtils::variantMapToPyDict(host->userState());
+    // Snapshot the parameters once: kwargs and the kernel's
+    // `self.parameter()` view must agree, and the GUI may apply new
+    // values while this run is in flight.
+    const auto params = parameters();
+    injectParameterApi(instance, m_parameterSpecs, params);
 
     // Build kwargs from current parameters.
     py::dict kwargs;
-    for (auto it = m_parameters.constBegin();
-         it != m_parameters.constEnd(); ++it) {
+    for (auto it = params.constBegin(); it != params.constEnd(); ++it) {
       kwargs[py::str(it.key().toStdString())] =
         PythonNodeUtils::qvariantToPython(it.value());
     }
 
     py::object pyResult;
-    if (isSource) {
-      pyResult = instance.attr("produce")(**kwargs);
-    } else {
-      // Convert each input PortData to the right Python representation.
-      // Volume-shaped inputs get a deep-copied internal_dataset.Dataset wrapper
-      // so user mutation doesn't leak upstream.
-      py::dict inputsDict;
-      for (auto it = inputs.constBegin(); it != inputs.constEnd(); ++it) {
-        inputsDict[py::str(it.key().toStdString())] =
-          portDataToPython(it.value(), datasetCls);
+    try {
+      if (isSource) {
+        pyResult = instance.attr("produce")(**kwargs);
+      } else {
+        // Convert each input PortData to the right Python
+        // representation. Volume-shaped inputs get a numpy Dataset over
+        // a deep copy so user mutation doesn't leak upstream.
+        py::dict inputsDict;
+        for (auto it = inputs.constBegin(); it != inputs.constEnd(); ++it) {
+          inputsDict[py::str(it.key().toStdString())] =
+            portDataToPython(it.value(), boundary);
+        }
+        pyResult = instance.attr("transform")(inputsDict, **kwargs);
       }
-      pyResult =
-        instance.attr("transform")(inputsDict, **kwargs);
+    } catch (...) {
+      // A raising user method still keeps the state and parameter
+      // write-backs it made before failing — parity with the Python
+      // runtime, which harvests in a finally.
+      harvestUserState(host, instance);
+      harvestParameterUpdates(host, instance);
+      throw;
     }
 
     // Harvest state mutations before any early return below: a
     // canceled or output-less run still keeps what the user method
-    // recorded. (If the method raised, the mutations are lost — the
-    // exception unwinds past this point.)
+    // recorded.
     harvestUserState(host, instance);
+    harvestParameterUpdates(host, instance);
 
     if (host->isCanceled()) {
       return result;

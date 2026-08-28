@@ -83,6 +83,14 @@ QMap<QString, QVariant> PythonTransform::parameters() const
   return m_backend.parameters();
 }
 
+void PythonTransform::applyParameterUpdates(const QVariantMap& updates)
+{
+  auto changed = m_backend.applyParameterUpdates(updates);
+  if (!changed.isEmpty()) {
+    emit parametersUpdated(changed);
+  }
+}
+
 QString PythonTransform::operatorName() const
 {
   return m_backend.operatorName();

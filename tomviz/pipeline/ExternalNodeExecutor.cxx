@@ -97,6 +97,29 @@ void applyNodeStateFile(Node* node, int nodeId, const QString& path)
   }
 }
 
+/// Read the node_parameters.json the CLI writes when the child's kernel
+/// changed parameters through `self.set_parameter` (same
+/// {"nodes": {"<nodeId>": {...}}} shape as the state sidecar, written
+/// only when something changed) and install the entry for @a nodeId
+/// through Node::applyParameterUpdates — quietly, no staleness. Missing
+/// file or entry is a no-op: nothing changed, or the env's package
+/// predates the file.
+void applyNodeParametersFile(Node* node, int nodeId, const QString& path)
+{
+  QFile file(path);
+  if (!file.open(QIODevice::ReadOnly)) {
+    return;
+  }
+  QJsonDocument doc = QJsonDocument::fromJson(file.readAll());
+  QJsonValue entry = doc.object()
+                       .value(QStringLiteral("nodes"))
+                       .toObject()
+                       .value(QString::number(nodeId));
+  if (entry.isObject() && !entry.toObject().isEmpty()) {
+    node->applyParameterUpdates(entry.toObject().toVariantMap());
+  }
+}
+
 } // namespace
 
 ExternalNodeExecutor::ExternalNodeExecutor(QObject* parent)
@@ -635,6 +658,9 @@ bool ExternalNodeExecutor::execute(Node* node)
                        QDir(outDir).filePath(
                          QStringLiteral("node_state.json")));
   }
+  applyNodeParametersFile(
+    node, kShimTargetId,
+    QDir(outDir).filePath(QStringLiteral("node_parameters.json")));
 
   if (node->isCanceled()) {
     node->setExecState(NodeExecState::Canceled);
@@ -744,10 +770,14 @@ bool ExternalNodeExecutor::shouldAutoExecute(Node* node)
     qDebug().noquote() << childErr.trimmed();
   }
 
-  // State mutations made by the hook count even when it answered "no".
+  // State mutations made by the hook count even when it answered "no";
+  // so do parameter write-backs.
   applyNodeStateFile(node, targetNodeId,
                      QDir(outDir).filePath(
                        QStringLiteral("node_state.json")));
+  applyNodeParametersFile(
+    node, targetNodeId,
+    QDir(outDir).filePath(QStringLiteral("node_parameters.json")));
 
   if (process.exitStatus() != QProcess::NormalExit ||
       process.exitCode() != 0) {

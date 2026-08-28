@@ -390,6 +390,8 @@ void Node::setUserState(const QVariantMap& state)
   m_userState = state;
 }
 
+void Node::applyParameterUpdates(const QVariantMap& /*updates*/) {}
+
 int Node::totalProgressSteps() const
 {
   return m_totalProgressSteps;

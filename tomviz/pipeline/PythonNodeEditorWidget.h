@@ -135,6 +135,14 @@ private:
   void installJsonFormWidget();
   void installNotReadyWidget();
   void rebuildParametersTab(const QString& json);
+  /// Tear down whatever the Parameters tab holds (form or not-ready
+  /// widget) and install the right one for m_jsonDescription /
+  /// m_currentValues.
+  void reinstallParametersWidget();
+  /// The node wrote back to its own parameters while running (kernel
+  /// `self.set_parameter`): show the new values without discarding the
+  /// user's other in-progress edits.
+  void onNodeParametersUpdated(const QVariantMap& changed);
   /// Write the script text to a user-chosen .py file, with the current
   /// JSON description saved beside it as <name>.json. Both come from the
   /// editor's widgets, so unapplied edits are included.

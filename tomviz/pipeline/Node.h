@@ -152,6 +152,19 @@ public:
   QVariantMap userState() const;
   void setUserState(const QVariantMap& state);
 
+  /// Install parameter values the node's *own implementation* changed
+  /// while running — a schema-v2 kernel's `self.set_parameter()`,
+  /// harvested by PythonNodeBackend after the user method returns, or
+  /// read back from an external run's node_parameters.json. The quiet
+  /// counterpart of the editor's apply path: nothing is marked stale
+  /// and parametersApplied is NOT emitted (that one re-executes the
+  /// pipeline, which from inside a run would cancel the run itself).
+  /// The run that made the change is deemed to have consumed it; the
+  /// node's next run receives the new values. Implementations emit
+  /// parametersUpdated for the values that actually differ. The base
+  /// implementation (nodes without parameters) ignores the map.
+  virtual void applyParameterUpdates(const QVariantMap& updates);
+
   /// Apply a batch of intermediate (live preview) updates to this
   /// node's output ports. Each entry maps an output port name to the
   /// new payload; missing port names are ignored. Routes through
@@ -253,6 +266,13 @@ signals:
   /// changes. The AutoExecuteController re-syncs its timer for this
   /// node on it.
   void autoExecuteChanged();
+
+  /// Emitted by applyParameterUpdates() with the values that changed:
+  /// the node's own implementation wrote back to its parameters during
+  /// a run. Nothing is stale and no re-execution is warranted — an
+  /// editor showing this node refreshes its Parameters tab. May be
+  /// emitted from a pipeline worker thread.
+  void parametersUpdated(const QVariantMap& changed);
 
 public:
   /// Reset the canceled/completed flags. Public so a NodeExecutor can

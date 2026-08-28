@@ -130,6 +130,10 @@ public:
   public:
     List(PyObject* obj);
     List(const List& other);
+    // Shares the reference. Without this overload a List built from an
+    // Object went through operator PyObject*() into List(PyObject*),
+    // which takes ownership of a reference the Object still owns.
+    List(const Object& obj);
     Object operator[](int index);
     int length();
     Variant toVariant() override;
