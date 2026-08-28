@@ -259,6 +259,8 @@ set(SOURCES
   pipeline/InternalNodeExecutor.h
   pipeline/ExternalNodeExecutor.cxx
   pipeline/ExternalNodeExecutor.h
+  pipeline/PythonEnvironmentCheck.cxx
+  pipeline/PythonEnvironmentCheck.h
   pipeline/NodeExecutorFactory.cxx
   pipeline/NodeExecutorFactory.h
   pipeline/AutoExecuteController.cxx
@@ -741,6 +743,7 @@ set(tomviz_python_modules
   __init__.py
   _boundary.py
   _internal.py
+  _pipeline_requirement.py
   dataset.py
   fix_pdb.py
   nodes.py
@@ -858,6 +861,24 @@ include_directories(
   ${CMAKE_CURRENT_SOURCE_DIR}
   ${CMAKE_CURRENT_SOURCE_DIR}/core
   ${CMAKE_CURRENT_SOURCE_DIR}/pipeline)
+
+# The tomviz-pipeline version this app depends on lives in
+# python/tomviz/_pipeline_requirement.py (also read by setup.py) and is
+# surfaced to the C++ external-environment check via tomvizConfig.h.
+set(_pipeline_requirement_py
+  "${CMAKE_CURRENT_SOURCE_DIR}/python/tomviz/_pipeline_requirement.py")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+  "${_pipeline_requirement_py}")
+file(STRINGS "${_pipeline_requirement_py}" _pipeline_requirement_line
+  REGEX "^TOMVIZ_PIPELINE_MIN_VERSION[ ]*=[ ]*['\"]")
+string(REGEX REPLACE
+  "^TOMVIZ_PIPELINE_MIN_VERSION[ ]*=[ ]*['\"]([^'\"]+)['\"].*$" "\\1"
+  tomviz_pipeline_min_version "${_pipeline_requirement_line}")
+if(NOT tomviz_pipeline_min_version MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+")
+  message(FATAL_ERROR
+    "Could not read TOMVIZ_PIPELINE_MIN_VERSION from ${_pipeline_requirement_py}")
+endif()
+message(STATUS "Required tomviz-pipeline version: ${tomviz_pipeline_min_version}")
 
 configure_file(tomvizConfig.h.in tomvizConfig.h @ONLY)
 configure_file(tomvizPythonConfig.h.in tomvizPythonConfig.h @ONLY)
