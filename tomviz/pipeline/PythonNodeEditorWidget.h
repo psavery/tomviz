@@ -20,6 +20,7 @@ class QCheckBox;
 class QComboBox;
 class QLineEdit;
 class QLabel;
+class QTimer;
 class QSpinBox;
 class QTabWidget;
 class QTextEdit;
@@ -35,6 +36,8 @@ class Node;
 class NodeDefinitionWidget;
 class NodePropertiesWidget;
 class Pipeline;
+class PythonEnvironmentCheck;
+struct PythonEnvironmentInfo;
 
 /// Everything one Apply/OK commits back to a Python node, in the order
 /// the node must apply it: the description first (it decides which
@@ -148,6 +151,16 @@ private:
   /// editor's widgets, so unapplied edits are included.
   void saveScript();
   bool inputsInMemory() const;
+  /// Debounced entry point for env-path edits: (re)starts the timer
+  /// that triggers runEnvironmentCheck(), or clears the status when
+  /// the Internal executor is selected.
+  void scheduleEnvironmentCheck();
+  /// Validate the env path asynchronously (PythonEnvironmentCheck)
+  /// and show "Checking..." meanwhile.
+  void runEnvironmentCheck();
+  /// Show the verdict under the env row. When the path pointed at
+  /// <env>/bin or the interpreter, rewrite it to the environment root.
+  void showEnvironmentStatus(const PythonEnvironmentInfo& info);
 
   Node* m_node;
   Pipeline* m_pipeline;
@@ -176,6 +189,9 @@ private:
   QLabel* m_envPathLabel = nullptr;
   QWidget* m_envPathRow = nullptr;
   QLineEdit* m_envPathEdit = nullptr;
+  QLabel* m_envStatusLabel = nullptr;
+  PythonEnvironmentCheck* m_envCheck = nullptr;
+  QTimer* m_envCheckTimer = nullptr;
   QCheckBox* m_autoExecCheck = nullptr;
   QSpinBox* m_autoExecIntervalSpin = nullptr;
 

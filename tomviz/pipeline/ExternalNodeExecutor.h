@@ -100,8 +100,9 @@ private:
   QMap<QString, PortData> decodeTvh5Outputs(Node* target, int targetNodeId,
                                             const QString& tvh5Path) const;
 
-  /// Locate the `tomviz-pipeline` script next to the configured
-  /// interpreter. Returns an empty string if missing.
+  /// Locate the `tomviz-pipeline` script in the configured environment
+  /// (see PythonEnvironmentCheck::resolveEnvironmentRoot). Returns an
+  /// empty string if missing.
   QString findCliExecutable() const;
 
   /// Forward a control message ("cancel" / "complete") to the

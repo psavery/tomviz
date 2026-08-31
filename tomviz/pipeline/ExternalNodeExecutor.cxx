@@ -11,6 +11,7 @@
 #include "Pipeline.h"
 #include "PortData.h"
 #include "PortDataMetadata.h"
+#include "PythonEnvironmentCheck.h"
 #include "ProgressReader.h"
 #include "ThreadUtils.h"
 #include "SourceNode.h"
@@ -170,19 +171,10 @@ bool ExternalNodeExecutor::deserialize(const QJsonObject& json)
 
 QString ExternalNodeExecutor::findCliExecutable() const
 {
-  if (m_envPath.isEmpty()) {
-    return QString();
-  }
-  QDir envDir(m_envPath);
-#if defined(Q_OS_WIN)
-  QFileInfo info(envDir.filePath(QStringLiteral("Scripts/tomviz-pipeline.exe")));
-#else
-  QFileInfo info(envDir.filePath(QStringLiteral("bin/tomviz-pipeline")));
-#endif
-  if (!info.exists() || !info.isExecutable()) {
-    return QString();
-  }
-  return info.absoluteFilePath();
+  // Resolved the same way the editor's environment check does, so a
+  // path that pointed at <env>/bin or the interpreter still runs.
+  return PythonEnvironmentCheck::findCliExecutable(
+    PythonEnvironmentCheck::resolveEnvironmentRoot(m_envPath));
 }
 
 QString ExternalNodeExecutor::writeShimTvh5(Node* target,
@@ -446,13 +438,14 @@ bool ExternalNodeExecutor::execute(Node* node)
 
   QString cli = findCliExecutable();
   if (cli.isEmpty()) {
-    QString msg = m_envPath.isEmpty()
-      ? QStringLiteral("No external Python environment selected. Choose an "
-                       "environment containing tomviz-pipeline in the "
-                       "Execution tab.")
-      : QStringLiteral("tomviz-pipeline was not found in '%1'. Select a "
-                       "Python environment containing tomviz-pipeline in "
-                       "the Execution tab.").arg(m_envPath);
+    // check() needs no subprocess here: the CLI is missing, so it
+    // stops at the filesystem steps and says which one failed.
+    QString msg =
+      m_envPath.isEmpty()
+        ? QStringLiteral("No external Python environment selected. Choose "
+                         "one containing tomviz-pipeline in the Execution "
+                         "tab.")
+        : PythonEnvironmentCheck::check(m_envPath).message;
     qWarning() << "ExternalNodeExecutor:" << msg;
     node->setProgressMessage(msg);
     node->setExecState(NodeExecState::Failed);
@@ -546,12 +539,8 @@ bool ExternalNodeExecutor::execute(Node* node)
   QProcess process;
   m_process = &process;
 
-  QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-  env.remove(QStringLiteral("TOMVIZ_APPLICATION"));
-  env.remove(QStringLiteral("PYTHONHOME"));
-  env.remove(QStringLiteral("PYTHONPATH"));
-  env.insert(QStringLiteral("PYTHONUNBUFFERED"), QStringLiteral("ON"));
-  process.setProcessEnvironment(env);
+  process.setProcessEnvironment(
+    PythonEnvironmentCheck::childProcessEnvironment());
 
   QStringList args;
   args << QStringLiteral("-s") << shimPath
@@ -670,6 +659,14 @@ bool ExternalNodeExecutor::execute(Node* node)
   if (failed) {
     qWarning() << "ExternalNodeExecutor: subprocess failed (exit=" << exitCode
                << ", status=" << exitStatus << ").";
+    // Only a failed run pays for an environment check: a stale or
+    // incompatible tomviz-pipeline is a likely cause the exit code
+    // alone doesn't name.
+    PythonEnvironmentInfo info = PythonEnvironmentCheck::check(m_envPath);
+    if (!info.ok()) {
+      qWarning() << "ExternalNodeExecutor:" << info.message;
+      node->setProgressMessage(info.message);
+    }
     node->setExecState(NodeExecState::Failed);
     return false;
   }
@@ -737,12 +734,8 @@ bool ExternalNodeExecutor::shouldAutoExecute(Node* node)
   // Deliberately local (not m_process/m_reader): a check may not
   // interfere with the members an in-flight execute() is using.
   QProcess process;
-  QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
-  env.remove(QStringLiteral("TOMVIZ_APPLICATION"));
-  env.remove(QStringLiteral("PYTHONHOME"));
-  env.remove(QStringLiteral("PYTHONPATH"));
-  env.insert(QStringLiteral("PYTHONUNBUFFERED"), QStringLiteral("ON"));
-  process.setProcessEnvironment(env);
+  process.setProcessEnvironment(
+    PythonEnvironmentCheck::childProcessEnvironment());
 
   QStringList args;
   args << QStringLiteral("-s") << statePath

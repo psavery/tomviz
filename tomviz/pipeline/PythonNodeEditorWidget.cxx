@@ -15,6 +15,7 @@
 #include "OutputPort.h"
 #include "ParameterInterfaceBuilder.h"
 #include "Pipeline.h"
+#include "PythonEnvironmentCheck.h"
 #include "SourceNode.h"
 #include "Utilities.h"
 #include "data/VolumeData.h"
@@ -374,7 +375,28 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
   execGrid->addWidget(m_envPathLabel, 1, 0);
   execGrid->addWidget(m_envPathRow, 1, 1);
 
-  // Row 2: periodic execution — schema-v2 nodes only.
+  // Verdict of the environment check (is it an env, is tomviz-pipeline
+  // installed, is its version compatible). Advisory only: Apply stays
+  // enabled so the user can fix the environment afterwards.
+  m_envStatusLabel = new QLabel(execGridContainer);
+  m_envStatusLabel->setObjectName("executorEnvStatusLabel");
+  m_envStatusLabel->setWordWrap(true);
+  m_envStatusLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+  m_envStatusLabel->hide();
+  execGrid->addWidget(m_envStatusLabel, 2, 1);
+
+  m_envCheck = new PythonEnvironmentCheck(this);
+  connect(m_envCheck, &PythonEnvironmentCheck::finished, this,
+          &PythonNodeEditorWidget::showEnvironmentStatus);
+  m_envCheckTimer = new QTimer(this);
+  m_envCheckTimer->setSingleShot(true);
+  m_envCheckTimer->setInterval(400);
+  connect(m_envCheckTimer, &QTimer::timeout, this,
+          &PythonNodeEditorWidget::runEnvironmentCheck);
+  connect(m_envPathEdit, &QLineEdit::textChanged, this,
+          &PythonNodeEditorWidget::scheduleEnvironmentCheck);
+
+  // Row 3: periodic execution — schema-v2 nodes only.
   // The legacy (v1) operator API has no should_auto_execute hook, so
   // the controls are omitted entirely rather than shown disabled.
   // Schema is frozen for a live node (the Definition-tab validator
@@ -404,8 +426,8 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
     autoExecLayout->addWidget(m_autoExecIntervalSpin);
     autoExecLayout->addStretch();
     autoExecLabel->setBuddy(autoExecRow);
-    execGrid->addWidget(autoExecLabel, 2, 0);
-    execGrid->addWidget(autoExecRow, 2, 1);
+    execGrid->addWidget(autoExecLabel, 3, 0);
+    execGrid->addWidget(autoExecRow, 3, 1);
   }
 
   execLayout->addWidget(execGridContainer);
@@ -432,6 +454,7 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
             QString type = m_executorCombo->currentData().toString();
             m_envPathLabel->setEnabled(!type.isEmpty());
             m_envPathRow->setEnabled(!type.isEmpty());
+            scheduleEnvironmentCheck();
           });
   connect(browseBtn, &QPushButton::clicked, this, [this]() {
     auto dir = QFileDialog::getExistingDirectory(
@@ -440,6 +463,9 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
       m_envPathEdit->setText(dir);
     }
   });
+  // Validate whatever the editor opened with (a node loaded from a
+  // state file may name an environment this machine doesn't have).
+  runEnvironmentCheck();
 
   if (m_definitionWidget) {
     connect(m_definitionWidget, &NodeDefinitionWidget::validityChanged, this,
@@ -454,6 +480,68 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
 bool PythonNodeEditorWidget::canApply() const
 {
   return !m_definitionWidget || m_definitionWidget->isValid();
+}
+
+void PythonNodeEditorWidget::scheduleEnvironmentCheck()
+{
+  if (m_executorCombo->currentData().toString().isEmpty()) {
+    m_envCheckTimer->stop();
+    m_envCheck->abort();
+    m_envStatusLabel->hide();
+    return;
+  }
+  m_envCheckTimer->start();
+}
+
+void PythonNodeEditorWidget::runEnvironmentCheck()
+{
+  m_envCheckTimer->stop();
+  QString path = m_envPathEdit->text().trimmed();
+  if (m_executorCombo->currentData().toString().isEmpty() ||
+      path.isEmpty()) {
+    m_envCheck->abort();
+    m_envStatusLabel->hide();
+    return;
+  }
+  // Same box geometry as the verdict styles so the label doesn't
+  // jump when the result replaces this.
+  m_envStatusLabel->setStyleSheet(
+    "QLabel { color: palette(mid); background: palette(alternate-base); "
+    "border: 1px solid palette(mid); border-radius: 4px; padding: 8px; }");
+  m_envStatusLabel->setText(tr("Checking environment..."));
+  m_envStatusLabel->show();
+  m_envCheck->start(path);
+}
+
+void PythonNodeEditorWidget::showEnvironmentStatus(
+  const PythonEnvironmentInfo& info)
+{
+  if (info.status == PythonEnvironmentInfo::Status::NoPath) {
+    m_envStatusLabel->hide();
+    return;
+  }
+
+  // A pick of <env>/bin or of the interpreter resolved to a root:
+  // keep the canonical root in the field (silently — the verdict
+  // being shown already covers it).
+  QString typed = m_envPathEdit->text().trimmed();
+  if (!info.envPath.isEmpty() && !typed.isEmpty() &&
+      QDir::cleanPath(QFileInfo(typed).absoluteFilePath()) != info.envPath) {
+    QSignalBlocker blocker(m_envPathEdit);
+    m_envPathEdit->setText(info.envPath);
+  }
+
+  // Problems use the same amber warning style as InputsNotReadyWidget
+  // (the verdict is advisory, not a blocking error); success gets its
+  // green counterpart.
+  m_envStatusLabel->setStyleSheet(
+    info.ok()
+      ? "QLabel { color: #15803d; background: #dcfce7; "
+        "border: 1px solid #86efac; border-radius: 4px; padding: 8px; }"
+      : "QLabel { color: #b45309; background: #fef3c7; "
+        "border: 1px solid #fcd34d; border-radius: 4px; padding: 8px; }");
+  m_envStatusLabel->setText(info.message);
+  m_envStatusLabel->show();
 }
 
 QString PythonNodeEditorWidget::helpUrl() const
@@ -705,6 +793,13 @@ void PythonNodeEditorWidget::applyChangesToOperator()
   edits.executorType = m_executorCombo->currentData().toString();
   edits.executorEnvPath =
     edits.executorType.isEmpty() ? QString() : m_envPathEdit->text();
+  // Store the environment root even when Apply came before the
+  // debounced check could rewrite a <env>/bin or interpreter pick.
+  QString envRoot =
+    PythonEnvironmentCheck::resolveEnvironmentRoot(edits.executorEnvPath);
+  if (!envRoot.isEmpty()) {
+    edits.executorEnvPath = envRoot;
+  }
   if (m_autoExecCheck && m_autoExecIntervalSpin) {
     edits.autoExecuteEdited = true;
     edits.autoExecuteEnabled = m_autoExecCheck->isChecked();

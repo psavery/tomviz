@@ -1,4 +1,17 @@
+from pathlib import Path
+
 from setuptools import setup, find_packages
+
+
+def tomviz_pipeline_requirement():
+    """The tomviz-pipeline range from tomviz/_pipeline_requirement.py, the
+    same one the app's external-environment check enforces. Executed
+    rather than imported so setup.py never imports the tomviz package."""
+    namespace = {}
+    exec((Path(__file__).parent / 'tomviz' /
+          '_pipeline_requirement.py').read_text(), namespace)
+    return namespace['tomviz_pipeline_requirement']()
+
 
 setup(
     name='tomviz-app',
@@ -18,8 +31,8 @@ setup(
     ],
     python_requires='>=3.9',
     packages=find_packages(),
-    install_requires=['tomviz-pipeline>=3.1.3', 'tqdm', 'h5py', 'numpy',
-                      'scipy'],
+    install_requires=[tomviz_pipeline_requirement(), 'tqdm', 'h5py',
+                      'numpy', 'scipy'],
     extras_require={
         'itk': ['itk'],
         'pyfftw': ['pyfftw']

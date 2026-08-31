@@ -43,13 +43,17 @@ Tomviz python library itself.
 
 ```bash
 conda install -y --override-channels -c conda-forge --file tomviz/.github/workflows/runtime_requirements.txt
-pip install --no-deps -U "tomviz-pipeline>=3.1.3"
+pip install --no-deps -U "$(python tomviz/tomviz/python/tomviz/_pipeline_requirement.py)"
 pip install --no-build-isolation --no-deps -U tomviz/tomviz/python
 ```
 
 The pipeline engine is the separately released
 [tomviz-pipeline](https://pypi.org/project/tomviz-pipeline/) package;
-`tomviz/python` is the application-side layer on top of it. If your
+`tomviz/python` is the application-side layer on top of it. The
+compatible tomviz-pipeline range is defined once, in
+`tomviz/python/tomviz/_pipeline_requirement.py`, which prints it when
+run as a script — hence the `$(python ...)` above. Both installs use
+`--no-deps` so pip never replaces the conda-managed packages. If your
 environment predates that split it still has the old in-tree package
 installed under the same name and the two will shadow each other — run
 `pip uninstall tomviz-pipeline tomviz-app` and delete
@@ -83,6 +87,6 @@ bash tomviz/.github/workflows/scripts/build_tomviz.sh
 
 # Install runtime dependencies
 conda install -y --override-channels -c conda-forge --file tomviz/.github/workflows/runtime_requirements.txt
-pip install --no-deps -U "tomviz-pipeline>=3.1.3"
+pip install --no-deps -U "$(python tomviz/tomviz/python/tomviz/_pipeline_requirement.py)"
 pip install --no-build-isolation --no-deps -U tomviz/tomviz/python
 ```
