@@ -32,8 +32,8 @@ struct PythonEnvironmentInfo
     CliBroken,
     /// tomviz-pipeline runs, but is older than the app requires.
     VersionTooOld,
-    /// tomviz-pipeline runs, but is a newer minor/major than the app
-    /// supports.
+    /// tomviz-pipeline runs, but is a newer major version than the
+    /// app supports.
     VersionTooNew,
     /// Environment usable for external execution.
     Ok,
@@ -61,7 +61,7 @@ struct PythonEnvironmentInfo
 ///   1. is the path a Python environment (has an interpreter)?
 ///   2. is the tomviz-pipeline CLI installed in it?
 ///   3. does `tomviz-pipeline --version` run, and is the version in
-///      [TOMVIZ_PIPELINE_MIN_VERSION, next minor)?
+///      [TOMVIZ_PIPELINE_MIN_VERSION, next major)?
 ///
 /// Steps 1–2 are filesystem lookups; step 3 spawns the CLI with the
 /// same scrubbed environment ExternalNodeExecutor uses, so what is
@@ -85,7 +85,7 @@ public:
   static QString requiredVersion();
 
   /// pip-style specifier for the compatible range of @a required,
-  /// e.g. "tomviz-pipeline>=3.1.3,<3.2".
+  /// e.g. "tomviz-pipeline>=3.1.3,<4".
   static QString requirementSpec(const QString& required = requiredVersion());
 
   /// Parse the leading "major.minor[.patch]" of a version string
@@ -94,7 +94,7 @@ public:
   static bool parseVersion(const QString& text, int& major, int& minor,
                            int& patch);
 
-  /// True if @a found is >= @a required and < the next minor release
+  /// True if @a found is >= @a required and < the next major release
   /// of @a required. An unparsable @a found is incompatible; an
   /// unparsable @a required disables the check (returns true).
   static bool isCompatibleVersion(const QString& found,
@@ -138,12 +138,24 @@ private:
   /// version empty — the caller still has to run step 3.
   static Info inspect(const QString& path, const QString& required);
 
+  /// Raw outcome of running `tomviz-pipeline --version`, collected
+  /// identically by the blocking and asynchronous paths.
+  struct CliRunResult
+  {
+    bool started = false;
+    bool finishedInTime = false;
+    bool normalExit = false;
+    int exitCode = -1;
+    QString stdOut;
+    QString stdErr;
+    /// QProcess's description of a failure to start, when !started.
+    QString startError;
+  };
+
   /// Step 3: turn the outcome of `tomviz-pipeline --version` into the
   /// final verdict.
-  static Info classify(Info info, bool started, bool finishedInTime,
-                       bool normalExit, int exitCode, const QString& stdOut,
-                       const QString& stdErr, const QString& startError,
-                       int timeoutMs, const QString& required);
+  static Info classify(Info info, const CliRunResult& run, int timeoutMs,
+                       const QString& required);
 
   void deliver(const Info& info, int generation);
 

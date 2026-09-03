@@ -154,10 +154,10 @@ QString PythonEnvironmentCheck::requirementSpec(const QString& required)
   if (!parseVersion(required, major, minor, patch)) {
     return QStringLiteral("tomviz-pipeline>=%1").arg(required);
   }
-  return QStringLiteral("tomviz-pipeline>=%1,<%2.%3")
+  Q_UNUSED(minor)
+  return QStringLiteral("tomviz-pipeline>=%1,<%2")
     .arg(required)
-    .arg(major)
-    .arg(minor + 1);
+    .arg(major + 1);
 }
 
 bool PythonEnvironmentCheck::parseVersion(const QString& text, int& major,
@@ -188,9 +188,14 @@ bool PythonEnvironmentCheck::isCompatibleVersion(const QString& found,
   if (!parseVersion(found, major, minor, patch)) {
     return false;
   }
-  // >= required, and < the next minor: same major.minor, patch not
-  // older than the floor.
-  return major == reqMajor && minor == reqMinor && patch >= reqPatch;
+  // >= required and < the next major. Minor releases of the library
+  // keep the CLI contract and degrade gracefully in both directions,
+  // so a newer minor in the environment is fine; a new major is the
+  // signal that something really may have broken.
+  if (major != reqMajor) {
+    return false;
+  }
+  return minor > reqMinor || (minor == reqMinor && patch >= reqPatch);
 }
 
 // ---- filesystem lookups -----------------------------------------------------
@@ -290,9 +295,7 @@ PythonEnvironmentCheck::Info PythonEnvironmentCheck::inspect(
 // ---- verdict ----------------------------------------------------------------
 
 PythonEnvironmentCheck::Info PythonEnvironmentCheck::classify(
-  Info info, bool started, bool finishedInTime, bool normalExit,
-  int exitCode, const QString& stdOut, const QString& stdErr,
-  const QString& startError, int timeoutMs, const QString& required)
+  Info info, const CliRunResult& run, int timeoutMs, const QString& required)
 {
   const QString spec = requirementSpec(required);
   const QString install = installCommand(info.envPath, spec, false);
@@ -304,31 +307,31 @@ PythonEnvironmentCheck::Info PythonEnvironmentCheck::classify(
        "environment, then run:\n%1")
       .arg(install);
 
-  if (!started) {
+  if (!run.started) {
     info.status = Status::CliBroken;
     info.message =
       tr("tomviz-pipeline could not be started in this environment (%1).\n\n"
          "The environment may have been moved or deleted. Recreate it, or "
          "select a different one.")
-        .arg(startError.trimmed());
+        .arg(run.startError.trimmed());
     return info;
   }
-  if (!finishedInTime) {
+  if (!run.finishedInTime) {
     info.status = Status::CliBroken;
     info.message = tr("tomviz-pipeline did not respond within %1 s in this "
                       "environment.")
                      .arg(timeoutMs / 1000);
     return info;
   }
-  if (!normalExit || exitCode != 0) {
+  if (!run.normalExit || run.exitCode != 0) {
     info.status = Status::CliBroken;
-    QString detail = lastLine(stdErr);
+    QString detail = lastLine(run.stdErr);
     if (!detail.isEmpty()) {
       detail.prepend(QStringLiteral(":\n"));
     }
     info.message = tr("tomviz-pipeline is installed in this environment "
                       "but failed to run (exit code %1)%2\n\n%3")
-                     .arg(exitCode)
+                     .arg(run.exitCode)
                      .arg(detail, brokenFix);
     return info;
   }
@@ -338,15 +341,15 @@ PythonEnvironmentCheck::Info PythonEnvironmentCheck::classify(
     QStringLiteral("version\\s+(\\S+)"));
   static const QRegularExpression bareRe(
     QStringLiteral("(\\d+\\.\\d+(?:\\.\\d+)?\\S*)"));
-  QRegularExpressionMatch m = versionRe.match(stdOut);
+  QRegularExpressionMatch m = versionRe.match(run.stdOut);
   if (!m.hasMatch()) {
-    m = bareRe.match(stdOut);
+    m = bareRe.match(run.stdOut);
   }
   if (!m.hasMatch()) {
     info.status = Status::CliBroken;
     info.message = tr("tomviz-pipeline is installed in this environment "
                       "but reported no version (output: '%1').\n\n%2")
-                     .arg(lastLine(stdOut), brokenFix);
+                     .arg(lastLine(run.stdOut), brokenFix);
     return info;
   }
   info.version = m.captured(1);
@@ -403,22 +406,23 @@ PythonEnvironmentCheck::Info PythonEnvironmentCheck::check(
   QProcess process;
   process.setProcessEnvironment(childProcessEnvironment());
   process.start(info.cliPath, { QStringLiteral("--version") });
+  CliRunResult run;
   if (!process.waitForStarted(timeoutMs)) {
-    return classify(info, false, false, false, -1, QString(), QString(),
-                    process.errorString(), timeoutMs, required);
+    run.startError = process.errorString();
+    return classify(info, run, timeoutMs, required);
   }
+  run.started = true;
   if (!process.waitForFinished(timeoutMs)) {
     process.kill();
     process.waitForFinished(5000);
-    return classify(info, true, false, false, -1, QString(), QString(),
-                    QString(), timeoutMs, required);
+    return classify(info, run, timeoutMs, required);
   }
-  return classify(info, true, true,
-                  process.exitStatus() == QProcess::NormalExit,
-                  process.exitCode(),
-                  QString::fromUtf8(process.readAllStandardOutput()),
-                  QString::fromUtf8(process.readAllStandardError()),
-                  QString(), timeoutMs, required);
+  run.finishedInTime = true;
+  run.normalExit = process.exitStatus() == QProcess::NormalExit;
+  run.exitCode = process.exitCode();
+  run.stdOut = QString::fromUtf8(process.readAllStandardOutput());
+  run.stdErr = QString::fromUtf8(process.readAllStandardError());
+  return classify(info, run, timeoutMs, required);
 }
 
 // ---- asynchronous check -----------------------------------------------------
@@ -450,9 +454,9 @@ void PythonEnvironmentCheck::start(const QString& path, int timeoutMs,
                 generation != m_generation) {
               return;
             }
-            Info result =
-              classify(info, false, false, false, -1, QString(), QString(),
-                       process->errorString(), timeoutMs, required);
+            CliRunResult run;
+            run.startError = process->errorString();
+            Info result = classify(info, run, timeoutMs, required);
             m_process.clear();
             process->deleteLater();
             deliver(result, generation);
@@ -464,11 +468,14 @@ void PythonEnvironmentCheck::start(const QString& path, int timeoutMs,
             if (generation != m_generation) {
               return;
             }
-            Info result = classify(
-              info, true, !*timedOut, status == QProcess::NormalExit,
-              exitCode, QString::fromUtf8(process->readAllStandardOutput()),
-              QString::fromUtf8(process->readAllStandardError()), QString(),
-              timeoutMs, required);
+            CliRunResult run;
+            run.started = true;
+            run.finishedInTime = !*timedOut;
+            run.normalExit = status == QProcess::NormalExit;
+            run.exitCode = exitCode;
+            run.stdOut = QString::fromUtf8(process->readAllStandardOutput());
+            run.stdErr = QString::fromUtf8(process->readAllStandardError());
+            Info result = classify(info, run, timeoutMs, required);
             m_process.clear();
             process->deleteLater();
             deliver(result, generation);

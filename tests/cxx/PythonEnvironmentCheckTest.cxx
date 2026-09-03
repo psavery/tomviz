@@ -142,29 +142,32 @@ TEST(PythonEnvironmentCheckTest, ParsesMajorMinorPatchPrefix)
                                                     patch));
 }
 
-TEST(PythonEnvironmentCheckTest, AcceptsSameMinorNotOlderThanFloor)
+TEST(PythonEnvironmentCheckTest, AcceptsSameMajorNotOlderThanFloor)
 {
-  // >= 3.1.3 and < 3.2
+  // >= 3.1.3 and < 4: newer minors keep the CLI contract, so only a
+  // new major is treated as incompatible.
   EXPECT_TRUE(PythonEnvironmentCheck::isCompatibleVersion("3.1.3", "3.1.3"));
   EXPECT_TRUE(PythonEnvironmentCheck::isCompatibleVersion("3.1.9", "3.1.3"));
   EXPECT_TRUE(
     PythonEnvironmentCheck::isCompatibleVersion("3.1.10.dev0", "3.1.3"));
+  EXPECT_TRUE(PythonEnvironmentCheck::isCompatibleVersion("3.2.0", "3.1.3"));
+  EXPECT_TRUE(PythonEnvironmentCheck::isCompatibleVersion("3.10.1", "3.1.3"));
   EXPECT_FALSE(PythonEnvironmentCheck::isCompatibleVersion("3.1.2", "3.1.3"));
   EXPECT_FALSE(
     PythonEnvironmentCheck::isCompatibleVersion("3.0.0beta1", "3.1.3"));
-  EXPECT_FALSE(PythonEnvironmentCheck::isCompatibleVersion("3.2.0", "3.1.3"));
+  EXPECT_FALSE(PythonEnvironmentCheck::isCompatibleVersion("4.0.0", "3.1.3"));
   EXPECT_FALSE(PythonEnvironmentCheck::isCompatibleVersion("4.1.3", "3.1.3"));
   EXPECT_FALSE(PythonEnvironmentCheck::isCompatibleVersion("junk", "3.1.3"));
   // An unparsable floor disables the rule rather than rejecting all.
   EXPECT_TRUE(PythonEnvironmentCheck::isCompatibleVersion("1.0.0", "???"));
 }
 
-TEST(PythonEnvironmentCheckTest, RequirementSpecCoversNextMinor)
+TEST(PythonEnvironmentCheckTest, RequirementSpecCoversNextMajor)
 {
   EXPECT_EQ(PythonEnvironmentCheck::requirementSpec("3.1.3"),
-            "tomviz-pipeline>=3.1.3,<3.2");
-  EXPECT_EQ(PythonEnvironmentCheck::requirementSpec("3.9.0"),
-            "tomviz-pipeline>=3.9.0,<3.10");
+            "tomviz-pipeline>=3.1.3,<4");
+  EXPECT_EQ(PythonEnvironmentCheck::requirementSpec("9.9.9"),
+            "tomviz-pipeline>=9.9.9,<10");
   // The build's own floor is well-formed.
   int major = 0, minor = 0, patch = 0;
   EXPECT_TRUE(PythonEnvironmentCheck::parseVersion(
@@ -246,7 +249,7 @@ TEST(PythonEnvironmentCheckTest, ReportsMissingCli)
   // Problem, blank line, then how to fix it.
   EXPECT_TRUE(info.message.contains(
     "\n\nTo fix: activate the environment, then run:\n"
-    "pip install \"tomviz-pipeline>=3.1.3,<3.2\""));
+    "pip install \"tomviz-pipeline>=3.1.3,<4\""));
 }
 
 #if !defined(Q_OS_WIN)
@@ -295,7 +298,7 @@ TEST(PythonEnvironmentCheckTest, SuggestsCondaWhenCondaInstalledIt)
     PythonEnvironmentCheck::check(env.root(), 10000, kRequired);
   EXPECT_EQ(info.status, Status::VersionTooOld);
   EXPECT_TRUE(info.message.contains(
-    "then run:\nconda install -c conda-forge \"tomviz-pipeline>=3.1.3,<3.2\""))
+    "then run:\nconda install -c conda-forge \"tomviz-pipeline>=3.1.3,<4\""))
     << info.message.toStdString();
   EXPECT_FALSE(info.message.contains("pip install"));
 
@@ -307,13 +310,19 @@ TEST(PythonEnvironmentCheckTest, SuggestsCondaWhenCondaInstalledIt)
   EXPECT_TRUE(info.message.contains("pip install -U"));
 }
 
-TEST(PythonEnvironmentCheckTest, RejectsNextMinorVersion)
+TEST(PythonEnvironmentCheckTest, AcceptsNextMinorRejectsNextMajor)
 {
   FakeEnv env;
   env.create();
+  // A newer minor keeps the CLI contract: no false alarm the day the
+  // library ships 3.2.
   env.installCliReporting("3.2.0");
   PythonEnvironmentInfo info =
     PythonEnvironmentCheck::check(env.root(), 10000, kRequired);
+  EXPECT_EQ(info.status, Status::Ok);
+
+  env.installCliReporting("4.0.0");
+  info = PythonEnvironmentCheck::check(env.root(), 10000, kRequired);
   EXPECT_EQ(info.status, Status::VersionTooNew);
   EXPECT_TRUE(info.message.contains("newer"));
 }
@@ -331,7 +340,7 @@ TEST(PythonEnvironmentCheckTest, ReportsCliThatFails)
   EXPECT_TRUE(info.message.contains("ModuleNotFoundError"));
   EXPECT_TRUE(info.message.contains(
     "\n\nCheck the error above. If a dependency is missing, activate the "
-    "environment, then run:\npip install \"tomviz-pipeline>=3.1.3,<3.2\""));
+    "environment, then run:\npip install \"tomviz-pipeline>=3.1.3,<4\""));
   EXPECT_FALSE(info.message.contains("force-reinstall"));
 }
 

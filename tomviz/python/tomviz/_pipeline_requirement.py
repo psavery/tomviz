@@ -9,8 +9,10 @@
 #     pip install --no-deps -U "$(python tomviz/_pipeline_requirement.py)"
 #
 # An external environment is compatible when its tomviz-pipeline is
-# >= this version and < the next minor release, e.g. 3.1.3 accepts
-# 3.1.x (x >= 3) and rejects 3.2.0.
+# >= this version and < the next major release, e.g. 3.1.3 accepts
+# 3.1.x (x >= 3) and 3.2.x, and rejects 4.0.0. Minor releases of the
+# library keep the CLI contract and degrade gracefully, so only a new
+# major is treated as a break.
 #
 # Keep this file free of imports: CMake parses it with a regular
 # expression and setup.py executes it standalone.
@@ -19,11 +21,11 @@ TOMVIZ_PIPELINE_MIN_VERSION = '3.1.3'
 
 
 def tomviz_pipeline_requirement():
-    """``tomviz-pipeline>=X.Y.Z,<X.(Y+1)``: the range compatible with this
+    """``tomviz-pipeline>=X.Y.Z,<X+1``: the range compatible with this
     tomviz."""
     version = TOMVIZ_PIPELINE_MIN_VERSION
-    major, minor = (int(part) for part in version.split('.')[:2])
-    return f'tomviz-pipeline>={version},<{major}.{minor + 1}'
+    major = int(version.split('.')[0])
+    return f'tomviz-pipeline>={version},<{major + 1}'
 
 
 if __name__ == '__main__':
