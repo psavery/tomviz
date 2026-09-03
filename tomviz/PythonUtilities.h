@@ -29,9 +29,6 @@ class capsule;
 
 namespace tomviz {
 
-class DataSource;
-class DataSourceBase;
-
 class Python
 {
 
@@ -60,7 +57,6 @@ public:
     Object(const QList<long>& intList);
     Object(const QList<double>& floatList);
     Object(const Variant& value);
-    Object(const DataSourceBase& source);
     Object(PyObject* obj);
 
     Object& operator=(const Object& other);
@@ -134,6 +130,10 @@ public:
   public:
     List(PyObject* obj);
     List(const List& other);
+    // Shares the reference. Without this overload a List built from an
+    // Object went through operator PyObject*() into List(PyObject*),
+    // which takes ownership of a reference the Object still owns.
+    List(const Object& obj);
     Object operator[](int index);
     int length();
     Variant toVariant() override;
@@ -192,9 +192,6 @@ public:
   /// vtkPythonPythonInterpreter::PrependPythonPath(...)  to do the work.
   static void prependPythonPath(std::string dir);
 
-  /// Create an internal Dataset object for operators to use
-  static Object createDataset(vtkObjectBase* data, const DataSource& source);
-
 private:
   vtkPythonScopeGilEnsurer* m_ensurer = nullptr;
 };
@@ -211,11 +208,19 @@ public:
 
 struct OperatorDescription
 {
+  enum class Type
+  {
+    Source,
+    Transform,
+    LegacyTransform,
+  };
+
   QString label;
   QString pythonPath;
   QString jsonPath;
   QString loadError;
   bool valid = true;
+  Type type = Type::LegacyTransform;
 };
 
 std::vector<OperatorDescription> findCustomOperators(const QString& path);

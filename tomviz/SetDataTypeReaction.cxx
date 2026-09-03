@@ -4,78 +4,62 @@
 #include "SetDataTypeReaction.h"
 
 #include "ActiveObjects.h"
-#include "OperatorFactory.h"
-#include "Pipeline.h"
-#include "SetTiltAnglesReaction.h"
+#include "TransformUtils.h"
+
+#include "pipeline/OutputPort.h"
+#include "pipeline/PortType.h"
+#include "pipeline/transforms/ConvertToVolumeTransform.h"
+#include "pipeline/transforms/SetTiltAnglesTransform.h"
 
 #include <cassert>
 
 namespace tomviz {
 
 SetDataTypeReaction::SetDataTypeReaction(QAction* action, QMainWindow* mw,
-                                         DataSource::DataSourceType t)
+                                         pipeline::PortType t)
   : pqReaction(action), m_mainWindow(mw), m_type(t)
 {
+  connect(&ActiveObjects::instance(), &ActiveObjects::activeNodeChanged, this,
+          &SetDataTypeReaction::updateEnableState);
   connect(&ActiveObjects::instance(),
-          static_cast<void (ActiveObjects::*)(DataSource*)>(
-            &ActiveObjects::dataSourceChanged),
+          &ActiveObjects::activePipelineChanged,
           this, &SetDataTypeReaction::updateEnableState);
   setWidgetText(t);
   updateEnableState();
 }
 
-void SetDataTypeReaction::setDataType(QMainWindow* mw, DataSource* dsource,
-                                      DataSource::DataSourceType t)
+void SetDataTypeReaction::setDataType(QMainWindow* mw, DataSource*,
+                                      pipeline::PortType t)
 {
-  if (dsource == nullptr) {
-    dsource = ActiveObjects::instance().activeDataSource();
-  }
-  // if it is still null, give up
-  if (dsource == nullptr) {
-    return;
-  }
-  if (t == DataSource::TiltSeries) {
-    SetTiltAnglesReaction::showSetTiltAnglesUI(mw, dsource);
+  Q_UNUSED(mw);
+  if (t == pipeline::PortType::TiltSeries) {
+    auto* transform = new pipeline::SetTiltAnglesTransform();
+    insertTransformIntoPipeline(transform);
   } else {
-    // If it was a TiltSeries convert to volume
-    // if (dsource->type() == DataSource::TiltSeries) {
-    Operator* op = OperatorFactory::instance().createConvertToVolumeOperator(t);
-    dsource->addOperator(op);
-    // dsource->setType(t);
-    // }
+    auto* transform = new pipeline::ConvertToVolumeTransform();
+    transform->setOutputType(pipeline::PortType::Volume);
+    transform->setOutputLabel("Mark as Volume");
+    insertTransformIntoPipeline(transform);
   }
 }
 
 void SetDataTypeReaction::onTriggered()
 {
-  DataSource* dsource = ActiveObjects::instance().activeParentDataSource();
-  setDataType(m_mainWindow, dsource, m_type);
-  // setWidgetText(dsource);
+  setDataType(m_mainWindow, nullptr, m_type);
 }
 
 void SetDataTypeReaction::updateEnableState()
 {
-  // auto dsource = ActiveObjects::instance().activeDataSource();
-  auto pipeline = ActiveObjects::instance().activePipeline();
-  bool enable = pipeline != nullptr;
-  if (enable) {
-    auto dsource = pipeline->transformedDataSource();
-    enable = dsource != nullptr;
-    if (enable) {
-      enable = dsource->type() != m_type;
-    }
-  }
-  parentAction()->setEnabled(enable);
+  auto& ao = ActiveObjects::instance();
+  parentAction()->setEnabled(ao.activeTipOutputPort() != nullptr);
 }
 
-void SetDataTypeReaction::setWidgetText(DataSource::DataSourceType t)
+void SetDataTypeReaction::setWidgetText(pipeline::PortType t)
 {
-  if (t == DataSource::Volume) {
+  if (t == pipeline::PortType::Volume) {
     parentAction()->setText("Mark Data As Volume");
-  } else if (t == DataSource::TiltSeries) {
+  } else if (t == pipeline::PortType::TiltSeries) {
     parentAction()->setText("Mark Data As Tilt Series");
-  } else if (t == DataSource::FIB) {
-    parentAction()->setText("Mark Data As Focused Ion Beam (FIB)");
   } else {
     assert("Unknown data source type" && false);
   }

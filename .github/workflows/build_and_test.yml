@@ -2,9 +2,9 @@ name: build and test
 
 on:
   push:
-    branches: [ master ]
+    branches: [ master, 3.0 ]
   pull_request:
-    branches: [ master ]
+    branches: [ master, 3.0 ]
 
 jobs:
   test:
@@ -77,6 +77,10 @@ jobs:
     - name: Install Test Requirements
       run: |
         conda install -y --override-channels -c conda-forge --file tomviz/tests/python/requirements-dev.txt
+        # The pipeline engine is the standalone tomviz-pipeline package
+        # from PyPI; the compatible range comes from the one place it is
+        # defined, and its dependencies come from runtime_requirements.txt.
+        pip install --no-deps -U "$(python tomviz/tomviz/python/tomviz/_pipeline_requirement.py)"
         pip install --no-build-isolation --no-deps -U tomviz/tomviz/python
         pip install --no-build-isolation --no-deps -U tomviz/acquisition
         # These do not have to be in the same environment as Tomviz, but the dependencies
@@ -91,7 +95,7 @@ jobs:
           TOMVIZ_REQUIRE_PYXRF: true
       run: |
         cd tomviz-build
-        export TOMVIZ_TEST_PYTHON_EXECUTABLE=$(which python3)
+        export TOMVIZ_TEST_PYTHON_EXECUTABLE=$(which python)
         ctest --output-on-failure
 
     - name: Upload CTest Log (On Failure Only)
