@@ -162,10 +162,24 @@ public:
   void removeClippingPlane(vtkPlane* plane) override;
   void removeAllClippingPlanes();
 
+  /// Cut-out rendering: remove one octant so the interior is visible
+  /// from outside. The corner sits at the cutOutPosition fractions;
+  /// cutOutCorner picks the removed octant (bit 0 = high X, bit 1 =
+  /// high Y, bit 2 = high Z).
+  bool cutOutEnabled() const;
+  void setCutOutEnabled(bool enabled);
+  int cutOutCorner() const;
+  void setCutOutCorner(int corner);
+  /// Position of the cut along @a axis, as a fraction (0-1) of the
+  /// volume's extent.
+  double cutOutPosition(int axis) const;
+  void setCutOutPosition(int axis, double fraction);
+
   void onMetadataChanged() override;
 
 signals:
   void interpolationTypeChanged(int type);
+  void cutOutChanged();
   void lightingChanged(bool enabled);
   /// Emitted whenever any lighting parameter changes; the properties widget
   /// uses this to refresh its sliders and the active preset highlight.
@@ -188,6 +202,8 @@ private:
   int maxTextureSize() const;
   // Emit a warning that clipping has no effect on a bricked (over-cap) volume.
   void warnClippingUnsupported() const;
+  /// Push the cut-out state onto the mapper for the current bounds.
+  void applyCutOut();
   // Log why scatteringSupported() is false.
   void warnScatteringUnsupported() const;
   // User-facing version of the above, for the properties widget. Empty when
@@ -214,6 +230,11 @@ private:
   vtkNew<vtkMultiBlockVolumeMapper> m_multiBlockMapper;
   vtkSmartPointer<vtkMultiBlockDataSet> m_brickedVolume;
   bool m_usingMultiBlock = false;
+
+  // Cut-out state; applied to the mapper by applyCutOut().
+  bool m_cutOutEnabled = false;
+  int m_cutOutCorner = 0;
+  double m_cutOutPosition[3] = { 0.5, 0.5, 0.5 };
   vtkNew<vtkVolume> m_volume;
   vtkNew<vtkVolumeProperty> m_volumeProperty;
   vtkNew<vtkPiecewiseFunction> m_gradientOpacity;

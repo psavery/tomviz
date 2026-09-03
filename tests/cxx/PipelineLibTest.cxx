@@ -3966,6 +3966,52 @@ TEST_F(PipelineLibTest, SinkLinkFlagSurvivesSerialization)
   EXPECT_TRUE(restoredClip.linked());
 }
 
+TEST_F(PipelineLibTest, VolumeSinkCutOutProperties)
+{
+  VolumeSink sink;
+  EXPECT_FALSE(sink.cutOutEnabled());
+  EXPECT_EQ(sink.cutOutCorner(), 0);
+  EXPECT_DOUBLE_EQ(sink.cutOutPosition(0), 0.5);
+
+  sink.setCutOutEnabled(true);
+  EXPECT_TRUE(sink.cutOutEnabled());
+
+  sink.setCutOutCorner(5);
+  EXPECT_EQ(sink.cutOutCorner(), 5);
+  // Out-of-range corners clamp rather than indexing a bogus region
+  sink.setCutOutCorner(99);
+  EXPECT_EQ(sink.cutOutCorner(), 7);
+  sink.setCutOutCorner(-3);
+  EXPECT_EQ(sink.cutOutCorner(), 0);
+
+  sink.setCutOutPosition(1, 0.25);
+  EXPECT_DOUBLE_EQ(sink.cutOutPosition(1), 0.25);
+  sink.setCutOutPosition(2, 5.0);
+  EXPECT_DOUBLE_EQ(sink.cutOutPosition(2), 1.0);
+
+  // Bad axes are ignored rather than writing out of bounds
+  sink.setCutOutPosition(7, 0.3);
+  EXPECT_DOUBLE_EQ(sink.cutOutPosition(7), 0.5);
+}
+
+TEST_F(PipelineLibTest, VolumeSinkCutOutSerializationRoundTrip)
+{
+  VolumeSink sink;
+  sink.setCutOutEnabled(true);
+  sink.setCutOutCorner(6);
+  sink.setCutOutPosition(0, 0.2);
+  sink.setCutOutPosition(1, 0.4);
+  sink.setCutOutPosition(2, 0.6);
+
+  VolumeSink restored;
+  EXPECT_TRUE(restored.deserialize(sink.serialize()));
+  EXPECT_TRUE(restored.cutOutEnabled());
+  EXPECT_EQ(restored.cutOutCorner(), 6);
+  EXPECT_DOUBLE_EQ(restored.cutOutPosition(0), 0.2);
+  EXPECT_DOUBLE_EQ(restored.cutOutPosition(1), 0.4);
+  EXPECT_DOUBLE_EQ(restored.cutOutPosition(2), 0.6);
+}
+
 TEST_F(PipelineLibTest, ThresholdSinkPropertyDefaults)
 {
   ThresholdSink sink;

@@ -2,6 +2,8 @@
    It is released under the 3-Clause BSD License, see "LICENSE". */
 
 #include "VolumeSink.h"
+
+#include "DoubleSliderWidget.h"
 #include "ThreadUtils.h"
 #include "VolumeBricking.h"
 #include "VolumeSinkWidget.h"
@@ -15,6 +17,7 @@
 #include <QComboBox>
 #include <QDebug>
 #include <QFormLayout>
+#include <QJsonArray>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QSettings>
@@ -372,6 +375,19 @@ public:
   void UseJitteringOff() { GetGPUMapper()->UseJitteringOff(); }
   vtkTypeBool GetUseJittering() { return GetGPUMapper()->GetUseJittering(); }
   void SetUseJittering(vtkTypeBool b) { GetGPUMapper()->SetUseJittering(b); }
+
+  // Cropping is honoured by whichever mapper actually draws, so set it on
+  // the GPU mapper as well as on ourselves (same reason as jittering).
+  void SetCroppingState(vtkTypeBool on, const double planes[6], int flags)
+  {
+    for (vtkVolumeMapper* m : { static_cast<vtkVolumeMapper*>(this),
+                                static_cast<vtkVolumeMapper*>(
+                                  GetGPUMapper()) }) {
+      m->SetCroppingRegionPlanes(const_cast<double*>(planes));
+      m->SetCroppingRegionFlags(flags);
+      m->SetCropping(on);
+    }
+  }
 
   // The scattering level the user asked for. Still frames render it, fitted
   // into the time budget by adjusting the sampling; camera moves render
@@ -840,6 +856,8 @@ bool VolumeSink::consume(const QMap<QString, PortData>& inputs)
 
   updateMapperForInput(volume->imageData());
   applyActiveScalars();
+  // Re-derive the cut planes: the new data may have different bounds.
+  applyCutOut();
   m_volume->SetVisibility(visibility() ? 1 : 0);
 
   onMetadataChanged();
@@ -1363,6 +1381,105 @@ void VolumeSink::removeAllClippingPlanes()
   emit renderNeeded();
 }
 
+// --- Cut-out ---
+
+bool VolumeSink::cutOutEnabled() const
+{
+  return m_cutOutEnabled;
+}
+
+void VolumeSink::setCutOutEnabled(bool enabled)
+{
+  if (m_cutOutEnabled == enabled) {
+    return;
+  }
+  m_cutOutEnabled = enabled;
+  applyCutOut();
+  emit cutOutChanged();
+  emit renderNeeded();
+}
+
+int VolumeSink::cutOutCorner() const
+{
+  return m_cutOutCorner;
+}
+
+void VolumeSink::setCutOutCorner(int corner)
+{
+  corner = qBound(0, corner, 7);
+  if (m_cutOutCorner == corner) {
+    return;
+  }
+  m_cutOutCorner = corner;
+  applyCutOut();
+  emit cutOutChanged();
+  emit renderNeeded();
+}
+
+double VolumeSink::cutOutPosition(int axis) const
+{
+  if (axis < 0 || axis > 2) {
+    return 0.5;
+  }
+  return m_cutOutPosition[axis];
+}
+
+void VolumeSink::setCutOutPosition(int axis, double fraction)
+{
+  if (axis < 0 || axis > 2) {
+    return;
+  }
+  fraction = qBound(0.0, fraction, 1.0);
+  if (m_cutOutPosition[axis] == fraction) {
+    return;
+  }
+  m_cutOutPosition[axis] = fraction;
+  applyCutOut();
+  emit renderNeeded();
+}
+
+void VolumeSink::applyCutOut()
+{
+  auto vol = volumeData();
+  if (!vol || !vol->isValid()) {
+    return;
+  }
+
+  if (!m_cutOutEnabled) {
+    double none[6] = { 0, 0, 0, 0, 0, 0 };
+    m_volumeMapper->SetCroppingState(0, none, VTK_CROP_SUBVOLUME);
+    return;
+  }
+
+  double bounds[6];
+  vol->imageData()->GetBounds(bounds);
+
+  // Two planes per axis give VTK's 27 crop regions; the second plane
+  // at the far edge collapses the third region per axis.
+  double planes[6];
+  for (int axis = 0; axis < 3; ++axis) {
+    double lo = bounds[2 * axis];
+    double hi = bounds[2 * axis + 1];
+    planes[2 * axis] = lo + m_cutOutPosition[axis] * (hi - lo);
+    planes[2 * axis + 1] = hi;
+  }
+
+  // Region bits run x fastest, then y, then z; drop the octant on the
+  // high side of every axis whose corner bit is set.
+  int i = (m_cutOutCorner & 1) ? 1 : 0;
+  int j = (m_cutOutCorner & 2) ? 1 : 0;
+  int k = (m_cutOutCorner & 4) ? 1 : 0;
+  int flags = 0x7ffffff & ~(1 << (i + 3 * j + 9 * k));
+
+  m_volumeMapper->SetCroppingState(1, planes, flags);
+
+  if (m_usingMultiBlock) {
+    qWarning("VolumeSink: cut-out rendering is not supported for volumes "
+             "larger than the GPU's 3-D texture size limit. This volume is "
+             "rendered in bricks, so the cut-out will have no effect.");
+  }
+}
+
 // --- Properties widget ---
 
 QString VolumeSink::scatteringUnavailableReason() const
@@ -1445,6 +1562,63 @@ QWidget* VolumeSink::createSinkPropertiesWidget(QWidget* parent)
                                   separateCmapCheck);
   connect(separateCmapCheck, &QCheckBox::toggled,
           [this](bool on) { setUseDetachedColorMap(on); });
+
+  // --- Cut-out ---
+  auto* cutOutCheck = new QCheckBox(widget);
+  cutOutCheck->setToolTip(
+    "Remove one octant of the volume so the interior can be seen from "
+    "outside.");
+  {
+    QSignalBlocker blocker(cutOutCheck);
+    cutOutCheck->setChecked(cutOutEnabled());
+  }
+  widget->formLayout()->insertRow(insertRow++, "Cut Out", cutOutCheck);
+  connect(cutOutCheck, &QCheckBox::toggled,
+          [this](bool on) { setCutOutEnabled(on); });
+
+  auto* cornerCombo = new QComboBox(widget);
+  // Order matches the corner bits: 1 = high X, 2 = high Y, 4 = high Z.
+  cornerCombo->addItems({ "-X -Y -Z", "+X -Y -Z", "-X +Y -Z", "+X +Y -Z",
+                          "-X -Y +Z", "+X -Y +Z", "-X +Y +Z", "+X +Y +Z" });
+  cornerCombo->setToolTip("Which corner of the volume is removed.");
+  {
+    QSignalBlocker blocker(cornerCombo);
+    cornerCombo->setCurrentIndex(cutOutCorner());
+  }
+  widget->formLayout()->insertRow(insertRow++, "Cut Out Corner", cornerCombo);
+  connect(cornerCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+          this, [this](int idx) { setCutOutCorner(idx); });
+
+  QList<QWidget*> cutOutRows{ cornerCombo };
+  const char* axisNames[3] = { "Cut Out X", "Cut Out Y", "Cut Out Z" };
+  for (int axis = 0; axis < 3; ++axis) {
+    auto* slider = new DoubleSliderWidget(true, widget);
+    slider->setLineEditWidth(50);
+    slider->setMinimum(0.0);
+    slider->setMaximum(1.0);
+    slider->setValue(cutOutPosition(axis));
+    slider->setToolTip(
+      "Where the cut sits along this axis, as a fraction of the volume.");
+    widget->formLayout()->insertRow(insertRow++, axisNames[axis], slider);
+    connect(slider, &DoubleSliderWidget::valueEdited, this,
+            [this, axis](double v) { setCutOutPosition(axis, v); });
+    connect(slider, &DoubleSliderWidget::valueChanged, this,
+            [this, axis](double v) { setCutOutPosition(axis, v); });
+    cutOutRows.append(slider);
+  }
+
+  // The corner and position rows only mean anything while the cut-out is on
+  auto syncCutOutRows = [this, cutOutRows, widget]() {
+    for (auto* row : cutOutRows) {
+      row->setEnabled(cutOutEnabled());
+      if (auto* label = widget->formLayout()->labelForField(row)) {
+        label->setEnabled(cutOutEnabled());
+      }
+    }
+  };
+  syncCutOutRows();
+  connect(this, &VolumeSink::cutOutChanged, widget,
+          [syncCutOutRows]() { syncCutOutRows(); });
 
   // Push all lighting state (values + active preset highlight) into the
   // widget; reused whenever any lighting parameter changes on this sink.
@@ -1553,6 +1727,13 @@ QJsonObject VolumeSink::serialize() const
   json["activeScalars"] = activeScalarsToName(m_activeScalars);
   json["labelMapDefaultsApplied"] = m_labelMapDefaultsApplied;
 
+  QJsonObject cutOut;
+  cutOut["enabled"] = m_cutOutEnabled;
+  cutOut["corner"] = m_cutOutCorner;
+  cutOut["position"] = QJsonArray{ m_cutOutPosition[0], m_cutOutPosition[1],
+                                   m_cutOutPosition[2] };
+  json["cutOut"] = cutOut;
+
   QJsonObject light;
   light["enabled"] = lighting();
   light["ambient"] = ambient();
@@ -1579,6 +1760,16 @@ bool VolumeSink::deserialize(const QJsonObject& json)
   }
   if (json.contains("blendingMode")) {
     setBlendingMode(json["blendingMode"].toInt());
+  }
+  if (json.contains("cutOut")) {
+    auto cutOut = json["cutOut"].toObject();
+    m_cutOutCorner = qBound(0, cutOut["corner"].toInt(), 7);
+    auto position = cutOut["position"].toArray();
+    for (int axis = 0; axis < 3 && axis < position.size(); ++axis) {
+      m_cutOutPosition[axis] = qBound(0.0, position[axis].toDouble(), 1.0);
+    }
+    m_cutOutEnabled = cutOut["enabled"].toBool();
+    applyCutOut();
   }
   if (json.contains("rayJittering")) {
     setJittering(json["rayJittering"].toBool());
