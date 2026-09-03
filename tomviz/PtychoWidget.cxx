@@ -30,6 +30,7 @@
 #include <QProcessEnvironment>
 #include <QScrollBar>
 #include <QSignalBlocker>
+#include <QTextStream>
 #include <QtConcurrent>
 
 #include <atomic>
@@ -132,6 +133,16 @@ public:
             this, &Internal::updateFilteredSidList);
     connect(ui.loadSidsFromTxt, &QPushButton::clicked, this,
             &Internal::onLoadSidsFromTxtClicked);
+
+    // Write the table out without running the operator, so a scan list
+    // can be prepared up front and shared with the PyXRF workflow.
+    auto* saveScanListButton = new QPushButton("Save Scan List...", parent);
+    saveScanListButton->setToolTip(
+      "Save the listed scans as a CSV (Scan ID, Theta, Use, Version) that "
+      "this dialog and the PyXRF dialog can load back in.");
+    ui.horizontalLayout->addWidget(saveScanListButton);
+    connect(saveScanListButton, &QPushButton::clicked, this,
+            &Internal::saveScanList);
 
     connect(ui.selectOutputInfoFile, &QPushButton::clicked, this,
             &Internal::selectOutputInfoFile);
@@ -1019,6 +1030,39 @@ public:
     }
 
     updateTable();
+  }
+
+  void saveScanList()
+  {
+    if (filteredSidList.isEmpty()) {
+      QMessageBox::information(parent.data(), "Save Scan List",
+                               "There are no scans to save.");
+      return;
+    }
+    auto startPath =
+      outputInfoFile().isEmpty() ? ptychoDirectory() : outputInfoFile();
+    auto path = QFileDialog::getSaveFileName(parent.data(), "Save scan list",
+                                             startPath, "CSV files (*.csv)");
+    if (path.isEmpty()) {
+      return;
+    }
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+      QMessageBox::warning(parent.data(), "Save Scan List",
+                           QString("Could not write %1").arg(path));
+      return;
+    }
+    // Same columns as the CSV the operator writes for its output info file
+    QTextStream out(&file);
+    out << "Scan ID,Theta,Use,Version\n";
+    for (auto sid : filteredSidList) {
+      int idx = sidList.indexOf(sid);
+      if (idx < 0) {
+        continue;
+      }
+      out << sid << ',' << QString::number(angleList[idx], 'f', 3) << ','
+          << (useList[idx] ? 1 : 0) << ',' << versionList[idx] << '\n';
+    }
   }
 
   void selectOutputInfoFile()
