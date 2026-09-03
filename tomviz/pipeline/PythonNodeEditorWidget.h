@@ -169,6 +169,10 @@ private:
   bool m_jsonFormNeedsData = false;
   // Description declared "externalOnly": Internal executor is disabled.
   bool m_externalOnly = false;
+  // Description declared "externalCompatible": false — the operator's
+  // imports only resolve in the application environment, so the
+  // External executor is disabled.
+  bool m_internalOnly = false;
   // JSON "name" field; keys the remembered external-env path.
   QString m_operatorName;
   QString m_jsonDescription;

@@ -324,6 +324,11 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
     if (descDoc.isObject()) {
       m_externalOnly =
         descDoc.object().value("externalOnly").toBool(false);
+      // A contradictory externalOnly + externalCompatible=false combo is
+      // treated as externalOnly, matching PythonNodeBackend.
+      m_internalOnly =
+        !descDoc.object().value("externalCompatible").toBool(true) &&
+        !m_externalOnly;
       m_operatorName = descDoc.object().value("name").toString();
     }
   }
@@ -347,6 +352,14 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
     }
     m_executorCombo->setToolTip(
       tr("This operator requires an external Python environment"));
+  } else if (m_internalOnly) {
+    if (auto* model =
+          qobject_cast<QStandardItemModel*>(m_executorCombo->model())) {
+      model->item(1)->setEnabled(false);
+    }
+    m_executorCombo->setToolTip(
+      tr("This operator can only run in the application's Python "
+         "environment"));
   }
   executorLabel->setBuddy(m_executorCombo);
   execGrid->addWidget(executorLabel, 0, 0);
@@ -435,7 +448,8 @@ PythonNodeEditorWidget::PythonNodeEditorWidget(
   m_tabWidget->addTab(execTab, tr("Execution"));
 
   int typeIdx = m_executorCombo->findData(executorType);
-  if (typeIdx < 0 || (m_externalOnly && typeIdx == 0)) {
+  if (typeIdx < 0 || (m_externalOnly && typeIdx == 0) ||
+      (m_internalOnly && typeIdx == 1)) {
     typeIdx = m_externalOnly
       ? m_executorCombo->findData(ExternalNodeExecutor::typeString())
       : 0;
@@ -813,7 +827,16 @@ void PythonNodeEditorWidget::applyChangesToOperator()
   QJsonObject descObj =
     QJsonDocument::fromJson(edits.jsonDescription.toUtf8()).object();
   m_externalOnly = descObj.value("externalOnly").toBool(false);
+  m_internalOnly =
+    !descObj.value("externalCompatible").toBool(true) && !m_externalOnly;
   m_operatorName = descObj.value("name").toString();
+
+  if (m_internalOnly && !edits.executorType.isEmpty()) {
+    // The (possibly just-edited) description says in-app only
+    edits.executorType.clear();
+    edits.executorEnvPath.clear();
+    m_executorCombo->setCurrentIndex(0);
+  }
 
   // Remember the applied environment per operator type so future
   // instances of this operator start with it prefilled.

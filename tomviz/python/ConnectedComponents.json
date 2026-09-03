@@ -2,6 +2,7 @@
   "name": "ConnectedComponents",
   "label": "Connected Components",
   "description": "Compute label map of connected components. The components are relabeled in order of increasing volume in the output.",
+  "externalCompatible": false,
   "parameters": [
     {
       "name": "background_value",
