@@ -4,6 +4,8 @@
 #ifndef tomvizCameraViewpoints_h
 #define tomvizCameraViewpoints_h
 
+#include "SceneSnapshot.h"
+
 #include <QByteArray>
 #include <QJsonObject>
 #include <QList>
@@ -50,6 +52,10 @@ struct Viewpoint
   /// viewpoint is saved, because it cannot be regenerated later without
   /// moving the camera there and back.
   QByteArray thumbnail;
+
+  /// Module state recorded with this viewpoint (visibility, opacity,
+  /// volume cut-out); played back in step with the camera path.
+  SceneSnapshot scene;
 
   void readFrom(vtkCamera* camera);
   void applyTo(vtkCamera* camera) const;
@@ -144,6 +150,7 @@ private:
 
   QList<Viewpoint> m_viewpoints;
   QPointer<QObject> m_flight;
+  QPointer<QObject> m_sceneFlight;
   // Held by pointer rather than by value so the header does not have to
   // pull in the interpolator to destroy it.
   vtkSmartPointer<vtkCameraInterpolator> m_interpolator;

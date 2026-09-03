@@ -486,6 +486,9 @@ list(APPEND SOURCES
   animations/CameraAnimation.h
   animations/CameraViewpoints.cxx
   animations/CameraViewpoints.h
+  animations/SceneAnimation.h
+  animations/SceneSnapshot.cxx
+  animations/SceneSnapshot.h
   animations/ClipAnimation.h
   animations/ContourAnimation.h
   animations/OpacityAnimation.h

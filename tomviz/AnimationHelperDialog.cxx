@@ -13,6 +13,7 @@
 #include "MovieExportDialog.h"
 #include "OpacityAnimation.h"
 #include "ScalarOpacityAnimation.h"
+#include "SceneSnapshot.h"
 #include "SliceAnimation.h"
 #include "Utilities.h"
 
@@ -46,6 +47,7 @@
 #include <vtkWeakPointer.h>
 
 #include <QBuffer>
+#include <QCheckBox>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
@@ -154,6 +156,8 @@ class AnimationHelperDialog::Internal : public QObject
 {
 public:
   Ui::AnimationHelperDialog ui;
+  // Whether Add/Update Viewpoint also records the module state
+  QCheckBox* recordScene = nullptr;
   pqPropertyLinks pqLinks;
   QPointer<AnimationHelperDialog> parent;
   vtkWeakPointer<vtkSMProxy> linkedScene;
@@ -176,6 +180,14 @@ public:
   Internal(AnimationHelperDialog* p) : QObject(p), parent(p)
   {
     ui.setupUi(p);
+
+    recordScene = new QCheckBox("Record module state with viewpoints", parent);
+    recordScene->setToolTip(
+      "Also save which modules are visible, their opacity, and any volume "
+      "cut-out with each viewpoint, and move between those states while "
+      "flying the path.");
+    recordScene->setChecked(true);
+    ui.cameraLayout->addWidget(recordScene);
 
     ui.viewpointList->setIconSize(QSize(96, 72));
     ui.viewpointList->setDragDropMode(QAbstractItemView::InternalMove);
@@ -662,6 +674,9 @@ public:
     viewpoint.readFrom(context.camera);
     viewpoint.thumbnail = captureThumbnail(context.view);
     viewpoint.name = viewpoints.nextDefaultName();
+    if (recordScene->isChecked()) {
+      viewpoint.scene = SceneSnapshot::capture(pipeline());
+    }
 
     viewpoints.append(viewpoint);
     ui.viewpointList->setCurrentRow(viewpoints.size() - 1);
@@ -690,6 +705,9 @@ public:
     auto viewpoint = viewpoints.at(row);
     viewpoint.readFrom(context.camera);
     viewpoint.thumbnail = captureThumbnail(context.view);
+    viewpoint.scene = recordScene->isChecked()
+                        ? SceneSnapshot::capture(pipeline())
+                        : SceneSnapshot();
     viewpoints.replace(row, viewpoint);
   }
 
@@ -703,6 +721,7 @@ public:
     }
 
     viewpoints.at(row).applyTo(context.camera);
+    viewpoints.at(row).scene.apply(pipeline());
     if (auto* renderer = context.proxy->GetRenderer()) {
       renderer->ResetCameraClippingRange();
     }

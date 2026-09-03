@@ -8,6 +8,7 @@
 #include "ModuleAnimations.h"
 #include "OpacityInterpolation.h"
 #include "OpacityAnimation.h"
+#include "SceneSnapshot.h"
 #include "Pipeline.h"
 #include "SliceAnimation.h"
 #include "sinks/ClipSink.h"
@@ -27,6 +28,8 @@ using tomviz::ContourAnimation;
 using tomviz::interpolateOpacity;
 using tomviz::ModuleAnimations;
 using tomviz::OpacityAnimation;
+using tomviz::SceneSnapshot;
+using tomviz::applySceneTransition;
 using tomviz::SliceAnimation;
 using tomviz::Viewpoint;
 using tomviz::pipeline::planeTravelRange;
@@ -449,4 +452,55 @@ TEST_F(AnimationTest, BlendingSurvivesEmptyAndDegenerateInput)
   // Writing back over an input must not read freed or half-written state.
   interpolateOpacity(real, three, 0.5, range, real);
   EXPECT_GT(real->GetSize(), 0);
+}
+
+TEST_F(AnimationTest, RecordedModuleStateSurvivesAStateFileRoundTrip)
+{
+  tomviz::pipeline::Pipeline pipeline;
+  auto* slice = new tomviz::pipeline::SliceSink();
+  pipeline.addNode(slice);
+  slice->setOpacity(0.3);
+  slice->setVisibility(false);
+
+  Viewpoint viewpoint;
+  viewpoint.scene = SceneSnapshot::capture(&pipeline);
+  auto restored = Viewpoint::deserialize(viewpoint.serialize());
+
+  int id = pipeline.nodeId(slice);
+  ASSERT_TRUE(restored.scene.sinks.contains(id));
+  EXPECT_FALSE(restored.scene.sinks[id].visible);
+  ASSERT_TRUE(restored.scene.sinks[id].opacity.has_value());
+  EXPECT_DOUBLE_EQ(*restored.scene.sinks[id].opacity, 0.3);
+}
+
+TEST_F(AnimationTest, SceneTransitionsFadeWhatChangedAndHoldTheRest)
+{
+  tomviz::pipeline::Pipeline pipeline;
+  auto* steady = new tomviz::pipeline::SliceSink();
+  auto* fading = new tomviz::pipeline::SliceSink();
+  pipeline.addNode(steady);
+  pipeline.addNode(fading);
+  steady->setOpacity(1.0);
+  fading->setOpacity(0.8);
+
+  auto from = SceneSnapshot::capture(&pipeline);
+  fading->setVisibility(false);
+  auto to = SceneSnapshot::capture(&pipeline);
+
+  // A module identical at both ends is never written, so an edit made
+  // after recording stays put
+  steady->setOpacity(0.4);
+  QSet<int> overridden;
+  applySceneTransition(&pipeline, from, to, 0.5, overridden);
+  EXPECT_DOUBLE_EQ(steady->opacity(), 0.4);
+
+  // The disappearing module fades out and only hides at the end
+  EXPECT_TRUE(fading->visibility());
+  EXPECT_DOUBLE_EQ(fading->opacity(), 0.4);
+  applySceneTransition(&pipeline, from, to, 1.0, overridden);
+  EXPECT_FALSE(fading->visibility());
+  EXPECT_DOUBLE_EQ(fading->opacity(), 0.0);
+  applySceneTransition(&pipeline, from, to, 0.0, overridden);
+  EXPECT_TRUE(fading->visibility());
+  EXPECT_DOUBLE_EQ(fading->opacity(), 0.8);
 }

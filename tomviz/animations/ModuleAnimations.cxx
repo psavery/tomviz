@@ -3,6 +3,8 @@
 
 #include "ModuleAnimations.h"
 
+#include "ActiveObjects.h"
+#include "CameraViewpoints.h"
 #include "ClipAnimation.h"
 #include "ContourAnimation.h"
 #include "ModuleAnimation.h"
@@ -13,6 +15,7 @@
 #include "pipeline/Pipeline.h"
 
 #include <QDebug>
+#include <QHash>
 #include <QJsonArray>
 
 namespace tomviz {
@@ -151,21 +154,41 @@ void ModuleAnimations::prune()
 
 void ModuleAnimations::pinExportQuality()
 {
+  using Curve = vtkSmartPointer<vtkPiecewiseFunction>;
+  // Every sequence of curves a volume will blend through: the explicit
+  // opacity morphs, plus the curves recorded with the viewpoints.
+  QHash<pipeline::VolumeSink*, QList<QList<Curve>>> sequences;
   for (const auto& animation : m_animations) {
     auto* morph = qobject_cast<ScalarOpacityAnimation*>(animation.data());
     auto* sink = morph ? morph->sink() : nullptr;
-    if (!sink) {
+    if (!sink || morph->keyframes().isEmpty()) {
       continue;
     }
-
-    const auto& keyframes = morph->keyframes();
-    if (keyframes.isEmpty()) {
-      continue;
+    QList<Curve> curves;
+    for (const auto& keyframe : morph->keyframes()) {
+      curves.append(keyframe.curve);
     }
+    sequences[sink].append(curves);
+  }
+  if (auto* pipeline = ActiveObjects::instance().pipeline()) {
+    QHash<pipeline::VolumeSink*, QList<Curve>> recorded;
+    for (const auto& viewpoint : CameraViewpoints::instance().viewpoints()) {
+      for (auto it = viewpoint.scene.sinks.cbegin();
+           it != viewpoint.scene.sinks.cend(); ++it) {
+        auto* sink =
+          qobject_cast<pipeline::VolumeSink*>(pipeline->nodeById(it.key()));
+        if (sink && it.value().scalarOpacity) {
+          recorded[sink].append(it.value().scalarOpacity);
+        }
+      }
+    }
+    for (auto it = recorded.cbegin(); it != recorded.cend(); ++it) {
+      sequences[it.key()].append(it.value());
+    }
+  }
 
-    // The most expensive curve is not necessarily any of the captures - a
-    // spike dissolving into a ramp is widest somewhere in the middle - so
-    // walk every blend rather than just comparing the keyframes.
+  for (auto it = sequences.cbegin(); it != sequences.cend(); ++it) {
+    auto* sink = it.key();
     double range[2] = { 0.0, 1.0 };
     auto volume = sink->volumeData();
     if (volume && volume->isValid()) {
@@ -174,6 +197,9 @@ void ModuleAnimations::pinExportQuality()
       range[1] = volumeRange[1];
     }
 
+    // The most expensive curve is not necessarily any of the captures - a
+    // spike dissolving into a ramp is widest somewhere in the middle - so
+    // walk every blend rather than just comparing the keyframes.
     vtkNew<vtkPiecewiseFunction> worst;
     double worstCost = -1.0;
     auto consider = [&](vtkPiecewiseFunction* curve) {
@@ -183,18 +209,18 @@ void ModuleAnimations::pinExportQuality()
         worst->DeepCopy(curve);
       }
     };
-
-    consider(keyframes.first().curve);
     const int steps = 10;
-    for (int pair = 0; pair + 1 < keyframes.size(); ++pair) {
-      for (int i = 1; i <= steps; ++i) {
-        vtkNew<vtkPiecewiseFunction> sample;
-        interpolateOpacity(keyframes[pair].curve, keyframes[pair + 1].curve,
-                           static_cast<double>(i) / steps, range, sample);
-        consider(sample);
+    for (const auto& curves : it.value()) {
+      consider(curves.first());
+      for (int pair = 0; pair + 1 < curves.size(); ++pair) {
+        for (int i = 1; i <= steps; ++i) {
+          vtkNew<vtkPiecewiseFunction> sample;
+          interpolateOpacity(curves[pair], curves[pair + 1],
+                             static_cast<double>(i) / steps, range, sample);
+          consider(sample);
+        }
       }
     }
-
     sink->setWorstCaseOpacity(worst);
   }
 }

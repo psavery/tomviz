@@ -3,7 +3,9 @@
 
 #include "CameraViewpoints.h"
 
+#include "ActiveObjects.h"
 #include "CameraAnimation.h"
+#include "SceneAnimation.h"
 
 #include <QJsonArray>
 #include <QRegularExpression>
@@ -69,6 +71,9 @@ QJsonObject Viewpoint::serialize() const
   if (!thumbnail.isEmpty()) {
     json["thumbnail"] = QString::fromLatin1(thumbnail.toBase64());
   }
+  if (!scene.isEmpty()) {
+    json["scene"] = scene.serialize();
+  }
   return json;
 }
 
@@ -88,6 +93,7 @@ Viewpoint Viewpoint::deserialize(const QJsonObject& json)
   viewpoint.name = json["name"].toString();
   viewpoint.thumbnail =
     QByteArray::fromBase64(json["thumbnail"].toString().toLatin1());
+  viewpoint.scene = SceneSnapshot::deserialize(json["scene"].toObject());
   return viewpoint;
 }
 
@@ -311,6 +317,13 @@ void CameraViewpoints::startFlight(pqRenderView* view, bool snapToHead)
     if (snapToHead) {
       flight->onTimeChanged();
     }
+    // The recorded module state travels with the camera
+    auto* sceneFlight =
+      new SceneAnimation(ActiveObjects::instance().pipeline());
+    m_sceneFlight = sceneFlight;
+    if (snapToHead) {
+      sceneFlight->onTimeChanged();
+    }
   }
 }
 
@@ -319,6 +332,10 @@ void CameraViewpoints::stopFlight()
   if (m_flight) {
     m_flight->deleteLater();
     m_flight = nullptr;
+  }
+  if (m_sceneFlight) {
+    m_sceneFlight->deleteLater();
+    m_sceneFlight = nullptr;
   }
 }
 
