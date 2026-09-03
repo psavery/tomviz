@@ -80,6 +80,7 @@ void DataTransformMenu::buildTransforms()
   auto fftAbsLogAction = mathOps->addAction("FFT (abs log)");
   auto fourierFilterAction = mathOps->addAction("Fourier Filter");
   auto fourierPeakMaskAction = mathOps->addAction("Fourier Peak Mask");
+  auto fourierMaskAction = mathOps->addAction("Fourier Mask");
   auto imageMathAction = mathOps->addAction("Image Math");
 
   // === Filters & Smoothing submenu ===
@@ -190,6 +191,9 @@ void DataTransformMenu::buildTransforms()
   new AddPythonTransformReaction(fourierPeakMaskAction, "Fourier Peak Mask",
                                  readInPythonScript("FourierPeakMask"),
                                  readInJSONDescription("FourierPeakMask"));
+  new AddPythonTransformReaction(fourierMaskAction, "Fourier Mask",
+                                 readInPythonScript("FourierMask"),
+                                 readInJSONDescription("FourierMask"));
   new AddPythonTransformReaction(imageMathAction, "Image Math",
                                  readInPythonScript("ImageMath"),
                                  readInJSONDescription("ImageMath"));

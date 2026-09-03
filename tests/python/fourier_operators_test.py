@@ -39,6 +39,11 @@ def _run_peak_mask(arr, **arguments):
     return _run_operator('FourierPeakMask', {'volume': arr}, **arguments)
 
 
+def _run_fourier_mask(data, mask, **arguments):
+    return _run_operator('FourierMask', {'volume': data, 'mask': mask},
+                         **arguments)
+
+
 def _run_image_math(a, b, **arguments):
     return _run_operator('ImageMath', {'volume': a, 'second_dataset': b},
                          **arguments)
@@ -175,3 +180,26 @@ def test_image_math_resamples_a_smaller_second_dataset():
     out = _run_image_math(a, b, operation=1, resample_to_match=True)
     assert out.shape == a.shape
     assert np.allclose(out, 7.0)
+
+
+def test_fourier_mask_keeps_the_selected_component():
+    # Two periodicities along x; a mask around one peak keeps only it
+    n = 32
+    x = np.arange(n)[:, None, None]
+    data = (np.cos(2 * np.pi * 4 * x / n) +
+            np.cos(2 * np.pi * 10 * x / n)) * np.ones((n, n, n))
+    mask = np.zeros((n, n, n), dtype=np.uint8)
+    mask[n // 2 + 4, n // 2, n // 2] = 1  # +4 cycles; the mate is added
+    out = _run_fourier_mask(data, mask, edge_softness=0.0)
+    expected = np.cos(2 * np.pi * 4 * x / n) * np.ones((n, n, n))
+    assert np.allclose(out, expected, atol=1e-3)
+    inverted = _run_fourier_mask(data, mask, edge_softness=0.0, invert=True)
+    assert np.allclose(inverted, data - expected, atol=1e-3)
+
+
+def test_fourier_mask_rejects_a_mismatched_or_empty_mask():
+    data = np.ones((8, 8, 8))
+    with pytest.raises(Exception):
+        _run_fourier_mask(data, np.ones((4, 4, 4), dtype=np.uint8))
+    with pytest.raises(Exception):
+        _run_fourier_mask(data, np.zeros((8, 8, 8), dtype=np.uint8))

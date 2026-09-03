@@ -514,6 +514,7 @@ set(python_files
   CombineDatasets.py
   FourierFilter.py
   FourierPeakMask.py
+  FourierMask.py
   ImageMath.py
   ConnectedComponents.py
   ClipEdges.py
@@ -611,6 +612,7 @@ set(json_files
   CombineDatasets.json
   FourierFilter.json
   FourierPeakMask.json
+  FourierMask.json
   ImageMath.json
   ConnectedComponents.json
   ClipEdges.json
