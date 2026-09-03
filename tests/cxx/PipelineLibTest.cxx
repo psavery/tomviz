@@ -3901,6 +3901,71 @@ TEST_F(PipelineLibTest, SliceSinkSerializationRoundTrip)
   EXPECT_FALSE(restored.mapScalars());
 }
 
+TEST_F(PipelineLibTest, SliceSinkLinkingPropagatesToLinkedPeers)
+{
+  auto* a = new SliceSink();
+  auto* b = new SliceSink();
+  auto* unlinked = new SliceSink();
+  pipeline->addNode(a);
+  pipeline->addNode(b);
+  pipeline->addNode(unlinked);
+
+  b->setLinked(true);
+  b->setSlice(5);
+  a->setSlice(9);
+  // Turning the link on adopts the newly linked view's state everywhere
+  a->setLinked(true);
+  EXPECT_EQ(b->slice(), 9);
+
+  // Changes reach the linked peer, in both directions, but not the
+  // unlinked sink; direction is linked too
+  a->setSlice(12);
+  EXPECT_EQ(b->slice(), 12);
+  EXPECT_NE(unlinked->slice(), 12);
+  b->setSlice(3);
+  EXPECT_EQ(a->slice(), 3);
+  a->setDirection(SliceSink::YZ);
+  EXPECT_EQ(b->direction(), SliceSink::YZ);
+  EXPECT_EQ(unlinked->direction(), SliceSink::XY);
+
+  // Unlinking stops propagation
+  b->setLinked(false);
+  a->setSlice(20);
+  EXPECT_NE(b->slice(), 20);
+}
+
+TEST_F(PipelineLibTest, ClipSinkLinkingPropagatesToLinkedPeers)
+{
+  auto* a = new ClipSink();
+  auto* b = new ClipSink();
+  pipeline->addNode(a);
+  pipeline->addNode(b);
+
+  a->setLinked(true);
+  b->setLinked(true);
+
+  a->setSlice(8);
+  EXPECT_EQ(b->slice(), 8);
+
+  a->setDirection(ClipSink::XZ);
+  EXPECT_EQ(b->direction(), ClipSink::XZ);
+}
+
+TEST_F(PipelineLibTest, SinkLinkFlagSurvivesSerialization)
+{
+  SliceSink slice;
+  slice.setLinked(true);
+  SliceSink restoredSlice;
+  EXPECT_TRUE(restoredSlice.deserialize(slice.serialize()));
+  EXPECT_TRUE(restoredSlice.linked());
+
+  ClipSink clip;
+  clip.setLinked(true);
+  ClipSink restoredClip;
+  EXPECT_TRUE(restoredClip.deserialize(clip.serialize()));
+  EXPECT_TRUE(restoredClip.linked());
+}
+
 TEST_F(PipelineLibTest, ThresholdSinkPropertyDefaults)
 {
   ThresholdSink sink;
@@ -4273,6 +4338,40 @@ void setVolumeData(OutputPort* port, const QStringList& arrayNames)
 {
   port->setData(
     PortData(std::any(makeVolume(arrayNames)), PortType::ImageData));
+}
+
+TEST_F(PipelineLibTest, SliceSinkConsumeDoesNotRePropagateLink)
+{
+  struct OpenSliceSink : SliceSink
+  {
+    using SliceSink::consume;
+  };
+
+  auto* a = new OpenSliceSink();
+  auto* b = new OpenSliceSink();
+  pipeline->addNode(a);
+  pipeline->addNode(b);
+  a->setLinked(true);
+  b->setLinked(true);
+  a->setSlice(3);
+  ASSERT_EQ(b->slice(), 3);
+
+  // Diverge b without the link noticing (deserialize sets the index
+  // directly), simulating a peer whose own extents clamped the index.
+  auto json = b->serialize();
+  json["slice"] = 1;
+  ASSERT_TRUE(b->deserialize(json));
+  ASSERT_EQ(b->slice(), 1);
+  ASSERT_EQ(a->slice(), 3);
+
+  // consume()'s UI-sync notifications must not push b's index onto the
+  // other linked views: only user edits propagate.
+  QMap<QString, PortData> inputs;
+  inputs["volume"] =
+    PortData(std::any(makeVolume({ "scalars" })), PortType::ImageData);
+  EXPECT_TRUE(b->consume(inputs));
+  EXPECT_EQ(b->slice(), 1);
+  EXPECT_EQ(a->slice(), 3);
 }
 
 // EMD holds every array of a volume in one file.

@@ -24,6 +24,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QScopedValueRollback>
 #include <QSignalBlocker>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -80,6 +81,14 @@ void planeTravelRange(const double bounds[6], const double normal[3],
   }
 }
 
+namespace {
+
+// Set while a linked clip is pushing its state onto its peers, so their
+// own change signals do not echo it back. GUI thread only.
+bool s_propagatingClipLink = false;
+
+} // namespace
+
 ClipSink::ClipSink(QObject* parent) : LegacyModuleSink(parent)
 {
   addInput("volume", PortType::ImageData);
@@ -88,6 +97,8 @@ ClipSink::ClipSink(QObject* parent) : LegacyModuleSink(parent)
   connect(inputPort("volume"), &Port::connectionChanged,
           this, &ClipSink::onInputConnectionChanged);
 
+  connect(this, &ClipSink::sliceChanged,
+          this, &ClipSink::propagateToLinkedSinks);
 }
 
 ClipSink::~ClipSink()
@@ -315,6 +326,8 @@ void ClipSink::setDirection(Direction dir)
   syncClippingPlane();
   emit clipPlaneUpdated();
   emit renderNeeded();
+  // No directionChanged signal here, so drive the link explicitly.
+  propagateToLinkedSinks();
 }
 
 int ClipSink::slice() const
@@ -542,6 +555,48 @@ vtkPlane* ClipSink::clippingPlane() const
   return m_clippingPlane;
 }
 
+bool ClipSink::linked() const
+{
+  return m_linked;
+}
+
+void ClipSink::setLinked(bool linked)
+{
+  if (m_linked == linked) {
+    return;
+  }
+  m_linked = linked;
+  emit linkedChanged(m_linked);
+
+  if (m_linked) {
+    propagateToLinkedSinks();
+  }
+}
+
+void ClipSink::propagateToLinkedSinks()
+{
+  if (!m_linked || s_propagatingClipLink) {
+    return;
+  }
+
+  auto* pip = qobject_cast<Pipeline*>(parent());
+  if (!pip) {
+    return;
+  }
+
+  QScopedValueRollback<bool> guard(s_propagatingClipLink, true);
+  for (auto* node : pip->nodes()) {
+    auto* other = qobject_cast<ClipSink*>(node);
+    if (!other || other == this || !other->linked()) {
+      continue;
+    }
+    other->setDirection(m_direction);
+    if (isOrtho()) {
+      other->setSlice(m_slice);
+    }
+  }
+}
+
 QJsonObject ClipSink::serialize() const
 {
   auto json = LegacyModuleSink::serialize();
@@ -551,6 +606,7 @@ QJsonObject ClipSink::serialize() const
   json["showPlane"] = m_showPlane;
   json["showArrow"] = m_showArrow;
   json["invertPlane"] = m_invertPlane;
+  json["linked"] = m_linked;
   json["selectedColor"] = QJsonArray{ m_planeColor[0], m_planeColor[1],
                                       m_planeColor[2] };
 
@@ -593,6 +649,9 @@ bool ClipSink::deserialize(const QJsonObject& json)
       setPlaneColor(arr.at(0).toDouble(), arr.at(1).toDouble(),
                     arr.at(2).toDouble());
     }
+  }
+  if (json.contains("linked")) {
+    m_linked = json["linked"].toBool();
   }
   if (json.contains("invertPlane")) {
     setInvertPlane(json["invertPlane"].toBool());
@@ -730,6 +789,25 @@ QWidget* ClipSink::createSinkPropertiesWidget(QWidget* parent)
               }
             }
           });
+
+  // --- Link to other clips ---
+  auto* linkCheck = new QCheckBox(widget);
+  linkCheck->setToolTip(
+    "Move every linked clip together. Turn this on in two or more clips "
+    "(for example one per element of a simultaneously acquired dataset) and "
+    "changing the direction or plane in any of them applies the same to the "
+    "others.");
+  {
+    QSignalBlocker blocker(linkCheck);
+    linkCheck->setChecked(linked());
+  }
+  formLayout->addRow("Link Clips", linkCheck);
+  connect(linkCheck, &QCheckBox::toggled,
+          [this](bool on) { setLinked(on); });
+  connect(this, &ClipSink::linkedChanged, linkCheck, [linkCheck](bool on) {
+    QSignalBlocker blocker(linkCheck);
+    linkCheck->setChecked(on);
+  });
 
   // --- Separator ---
   auto* line = new QFrame(widget);

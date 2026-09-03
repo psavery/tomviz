@@ -5,6 +5,8 @@
 
 #include "DoubleSliderWidget.h"
 #include "IntSliderWidget.h"
+#include "Node.h"
+#include "Pipeline.h"
 #include "data/VolumeData.h"
 #include "vtkActiveScalarsProducer.h"
 #include "vtkNonOrthoImagePlaneWidget.h"
@@ -18,6 +20,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
+#include <QScopedValueRollback>
 #include <QSignalBlocker>
 #include <QSlider>
 #include <QSpinBox>
@@ -44,10 +47,23 @@
 namespace tomviz {
 namespace pipeline {
 
+namespace {
+
+// Set while a linked slice pushes its state onto its peers, so their
+// change signals do not echo it back. GUI thread only.
+bool s_propagatingSliceLink = false;
+
+} // namespace
+
 SliceSink::SliceSink(QObject* parent) : LegacyModuleSink(parent)
 {
   addInput("volume", PortType::ImageData);
   setLabel("Slice");
+
+  connect(this, &SliceSink::sliceChanged,
+          this, &SliceSink::propagateToLinkedSinks);
+  connect(this, &SliceSink::directionChanged,
+          this, &SliceSink::propagateToLinkedSinks);
 }
 
 SliceSink::~SliceSink()
@@ -211,10 +227,15 @@ bool SliceSink::consume(const QMap<QString, PortData>& inputs)
     }
   }
 
-  // Notify UI of the current state so sliders/combos initialize correctly
-  emit directionChanged(m_direction);
-  emit sliceChanged(m_slice);
-  emit planeChanged();
+  // Notify the UI of the current state. These are sync notifications,
+  // not user edits: hold the link guard so an execution never
+  // re-propagates a peer's clamped index back onto wider datasets.
+  {
+    QScopedValueRollback<bool> guard(s_propagatingSliceLink, true);
+    emit directionChanged(m_direction);
+    emit sliceChanged(m_slice);
+    emit planeChanged();
+  }
 
   auto vol = volumeData();
   if (vol && vol->isValid()) {
@@ -433,6 +454,53 @@ void SliceSink::setActiveScalars(int index)
   m_activeScalars = index;
   applyActiveScalars();
   emit renderNeeded();
+}
+
+bool SliceSink::linked() const
+{
+  return m_linked;
+}
+
+void SliceSink::setLinked(bool linked)
+{
+  if (m_linked == linked) {
+    return;
+  }
+  m_linked = linked;
+  emit linkedChanged(m_linked);
+
+  if (m_linked) {
+    // Adopt this view's state everywhere as soon as linking turns on
+    propagateToLinkedSinks();
+  }
+}
+
+void SliceSink::propagateToLinkedSinks()
+{
+  if (!m_linked || s_propagatingSliceLink) {
+    return;
+  }
+
+  auto* pip = qobject_cast<Pipeline*>(parent());
+  if (!pip) {
+    return;
+  }
+
+  QScopedValueRollback<bool> guard(s_propagatingSliceLink, true);
+  for (auto* node : pip->nodes()) {
+    auto* other = qobject_cast<SliceSink*>(node);
+    if (!other || other == this || !other->linked()) {
+      continue;
+    }
+    // Direction first: changing it re-centres the peer's slice, which
+    // the index below then overwrites.
+    other->setDirection(m_direction);
+    if (isOrtho()) {
+      // setSlice clamps to the peer's own extents, so datasets of
+      // different depths stay in range.
+      other->setSlice(m_slice);
+    }
+  }
 }
 
 void SliceSink::applyActiveScalars()
@@ -674,6 +742,25 @@ QWidget* SliceSink::createSinkPropertiesWidget(QWidget* parent)
   }
   sliceSlider->setVisible(isOrtho());
   formLayout->addRow("Slice", sliceSlider);
+
+  // --- Link to other slice views ---
+  auto* linkCheck = new QCheckBox(widget);
+  linkCheck->setToolTip(
+    "Step through every linked slice view together. Turn this on in two or "
+    "more slice views (for example one per element of a simultaneously "
+    "acquired dataset) and changing the direction or slice in any of them "
+    "applies the same to the others.");
+  {
+    QSignalBlocker blocker(linkCheck);
+    linkCheck->setChecked(linked());
+  }
+  formLayout->addRow("Link Slices", linkCheck);
+  connect(linkCheck, &QCheckBox::toggled,
+          [this](bool on) { setLinked(on); });
+  connect(this, &SliceSink::linkedChanged, linkCheck, [linkCheck](bool on) {
+    QSignalBlocker blocker(linkCheck);
+    linkCheck->setChecked(on);
+  });
   // valueEdited fires on release / text commit → full-quality render
   connect(sliceSlider, &IntSliderWidget::valueEdited,
           [this](int v) { setSlice(v); });
@@ -916,6 +1003,7 @@ QJsonObject SliceSink::serialize() const
   json["showArrow"] = m_showArrow;
   json["mapScalars"] = m_mapScalars;
   json["activeScalars"] = activeScalarsToName(m_activeScalars);
+  json["linked"] = m_linked;
 
   // Serialize plane geometry from widget if available
   double point[3];
@@ -954,6 +1042,9 @@ bool SliceSink::deserialize(const QJsonObject& json)
   }
   if (json.contains("slice")) {
     m_slice = json["slice"].toInt();
+  }
+  if (json.contains("linked")) {
+    m_linked = json["linked"].toBool();
   }
   if (json.contains("opacity")) {
     setOpacity(json["opacity"].toDouble());

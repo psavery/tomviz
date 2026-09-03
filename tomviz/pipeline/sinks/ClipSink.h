@@ -117,11 +117,17 @@ public:
 
   void onMetadataChanged() override;
 
+  /// Whether this clip follows, and is followed by, the other linked
+  /// clips, so datasets acquired together are cut away as one.
+  bool linked() const;
+  void setLinked(bool linked);
+
 signals:
   /// Emitted when the clip plane geometry is updated.
   void clipPlaneUpdated();
   /// Emitted when the slice index changes (from widget interaction).
   void sliceChanged(int slice);
+  void linkedChanged(bool linked);
 
 protected:
   bool consume(const QMap<QString, PortData>& inputs) override;
@@ -142,6 +148,10 @@ private:
   // Called when the user drags the widget interactively
   void onWidgetInteraction();
 
+  /// Push this clip's direction and index onto the other linked clips.
+  /// Connected to sliceChanged and directionChanged.
+  void propagateToLinkedSinks();
+
   // Clipping plane propagation to sibling sinks
   void connectToSiblings();
   void disconnectFromSiblings();
@@ -158,6 +168,7 @@ private:
   bool m_showPlane = true;
   bool m_showArrow = true;
   bool m_invertPlane = false;
+  bool m_linked = false;
   double m_planeColor[3] = { 204.0 / 255, 204.0 / 255, 204.0 / 255 };
   int m_dims[3] = { 0, 0, 0 };
   double m_bounds[6] = { 0, 0, 0, 0, 0, 0 };

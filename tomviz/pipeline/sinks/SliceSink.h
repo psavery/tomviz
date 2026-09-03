@@ -92,6 +92,12 @@ public:
   int activeScalars() const;
   void setActiveScalars(int index);
 
+  /// Whether this slice follows, and is followed by, the other linked
+  /// slice views, so datasets acquired together step through as one.
+  /// The slice index is clamped to each sink's own extents.
+  bool linked() const;
+  void setLinked(bool linked);
+
   /// Set the center (point on the plane) for Custom direction.
   void setPlaneCenter(double x, double y, double z);
   void planeCenter(double xyz[3]) const;
@@ -109,6 +115,7 @@ signals:
   void sliceChanged(int slice);
   void directionChanged(Direction direction);
   void planeChanged();
+  void linkedChanged(bool linked);
 
 protected:
   bool consume(const QMap<QString, PortData>& inputs) override;
@@ -116,6 +123,10 @@ protected:
 
 private slots:
   void onPlaneChanged();
+  /// Push this slice's direction and index onto the other linked
+  /// slice views. Driven by sliceChanged/directionChanged; the
+  /// slider's drag ticks emit neither, so peers follow on release.
+  void propagateToLinkedSinks();
 
 private:
   void setupWidget();
@@ -135,6 +146,7 @@ private:
   bool m_showArrow = true;
   bool m_mapScalars = true;
   int m_activeScalars = -1;
+  bool m_linked = false;
 
   // For custom direction
   double m_planeCenter[3] = { 0, 0, 0 };
