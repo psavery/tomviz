@@ -922,8 +922,11 @@ public:
     if (qobject_cast<pipeline::ContourSink*>(node)) {
       ui.animatedProperty->addItem("Iso value", "iso");
       ui.animatedProperty->addItem("Opacity", "opacity");
-    } else if (qobject_cast<pipeline::SliceSink*>(node)) {
-      ui.animatedProperty->addItem("Slice index", "slice");
+    } else if (auto* slice = qobject_cast<pipeline::SliceSink*>(node)) {
+      // A Custom plane has no index to sweep
+      if (slice->isOrtho()) {
+        ui.animatedProperty->addItem("Slice index", "slice");
+      }
       ui.animatedProperty->addItem("Opacity", "opacity");
     } else if (auto* clip = qobject_cast<pipeline::ClipSink*>(node)) {
       ui.animatedProperty->addItem(
@@ -1005,6 +1008,7 @@ public:
                     disconnect(slice, nullptr, this, nullptr);
                     return;
                   }
+                  this->populateProperties();
                   this->configurePropertyPage();
                 });
       }
