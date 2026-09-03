@@ -120,7 +120,11 @@ public:
   /// Start or stop flying the camera along the path. It lives here
   /// rather than in the dialog so it survives the dialog closing and is
   /// visible to the state file.
-  void startFlight(pqRenderView* view);
+  /// Arm the flight so animation playback drives the camera along the
+  /// path. When @a snapToHead is true the camera jumps to the start of
+  /// the path immediately as a preview; pass false to leave the camera
+  /// where it is until playback moves it.
+  void startFlight(pqRenderView* view, bool snapToHead = true);
   void stopFlight();
   bool isFlying() const;
 

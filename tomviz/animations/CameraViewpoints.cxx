@@ -296,7 +296,7 @@ void CameraViewpoints::rebuildInterpolator()
   }
 }
 
-void CameraViewpoints::startFlight(pqRenderView* view)
+void CameraViewpoints::startFlight(pqRenderView* view, bool snapToHead)
 {
   stopFlight();
   if (view && m_viewpoints.size() >= 2) {
@@ -304,8 +304,13 @@ void CameraViewpoints::startFlight(pqRenderView* view)
     m_flight = flight;
     // Playback that starts at time zero never announces a time change,
     // so put the camera at the head of the path now rather than leaving
-    // it wherever it was until the clock first moves.
-    flight->onTimeChanged();
+    // it wherever it was until the clock first moves. Callers that arm
+    // the flight as a side effect (e.g. adding a viewpoint) skip the
+    // snap so the camera does not jump away from where the user just
+    // framed it.
+    if (snapToHead) {
+      flight->onTimeChanged();
+    }
   }
 }
 

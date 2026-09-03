@@ -39,6 +39,7 @@
 #include <vtkImageData.h>
 #include <vtkPiecewiseFunction.h>
 #include <vtkRenderer.h>
+#include <vtkSMAnimationScene.h>
 #include <vtkSMProxy.h>
 #include <vtkSMRenderViewProxy.h>
 #include <vtkSmartPointer.h>
@@ -356,9 +357,28 @@ public:
 
   void play()
   {
-    if (auto* animationScene = scene()) {
-      animationScene->getProxy()->InvokeCommand("Play");
+    auto* animationScene = scene();
+    if (!animationScene) {
+      return;
     }
+    auto* proxy = animationScene->getProxy();
+
+    // Play() runs a blocking loop that pumps events, so a mode switch
+    // made mid-playback executes inside that loop, and re-invoking Play
+    // there is a hard vtkAnimationPlayer error ("Cannot play during an
+    // active playback"). Stop() only raises a flag the loop honors once
+    // control unwinds, so the restart has to be deferred; if the timer
+    // fires while the old loop is still winding down, play() simply
+    // defers again.
+    auto* sceneObject =
+      vtkSMAnimationScene::SafeDownCast(proxy->GetClientSideObject());
+    if (sceneObject && sceneObject->GetInPlay()) {
+      proxy->InvokeCommand("Stop");
+      QTimer::singleShot(0, this, [this]() { play(); });
+      return;
+    }
+
+    proxy->InvokeCommand("Play");
   }
 
   // The active view isn't necessarily a render view: a Plot module makes
@@ -645,6 +665,16 @@ public:
 
     viewpoints.append(viewpoint);
     ui.viewpointList->setCurrentRow(viewpoints.size() - 1);
+
+    // Building a path is a statement of intent: once there are enough
+    // viewpoints to fly, make Play fly through them instead of doing a
+    // camera orbit. Arm the flight only; no snap to the path head (the
+    // user just framed this view) and no auto-play.
+    if (viewpoints.size() >= 2 && !viewpoints.isFlying()) {
+      clearCameraCues(context.proxy);
+      viewpoints.startFlight(context.view, /*snapToHead=*/false);
+      updateEnableStates();
+    }
   }
 
   void updateViewpoint()

@@ -8,6 +8,9 @@
 #include "CameraViewpoints.h"
 #include "pipeline/Node.h"
 
+#include <pqAnimationManager.h>
+#include <pqAnimationScene.h>
+#include <pqPVApplicationCore.h>
 #include <pqTimeKeeper.h>
 
 #include <QJsonObject>
@@ -46,7 +49,20 @@ public:
       connect(baseNode.data(), &QObject::destroyed, this,
               &QObject::deleteLater);
     }
+
+    // Playback leaves whatever the last tick applied. Animations that
+    // override module state (e.g. the scalar opacity morph) use the
+    // playback-ended hook to hand control back to the user's settings.
+    // The scene is replaced on state load, so follow the active one.
+    if (auto* manager = pqPVApplicationCore::instance()->animationManager()) {
+      connect(manager, &pqAnimationManager::activeSceneChanged, this,
+              [this]() { bindToScene(); });
+    }
+    bindToScene();
   }
+
+  /// Called when animation playback finishes. Default does nothing.
+  virtual void onPlaybackEnded() {}
 
   virtual ActiveObjects& activeObjects() { return ActiveObjects::instance(); }
   virtual pqTimeKeeper* timeKeeper()
@@ -109,6 +125,28 @@ public:
   /// The parameters needed to rebuild this animation. The node it runs
   /// on is written by the caller, which is the only one holding the ids.
   virtual QJsonObject serialize() const { return QJsonObject(); }
+
+private:
+  /// Track the active animation scene's endPlay so onPlaybackEnded()
+  /// fires no matter which scene is current.
+  void bindToScene()
+  {
+    auto* manager = pqPVApplicationCore::instance()->animationManager();
+    auto* scene = manager ? manager->getActiveScene() : nullptr;
+    if (scene == m_boundScene) {
+      return;
+    }
+    if (m_boundScene) {
+      disconnect(m_boundScene.data(), nullptr, this, nullptr);
+    }
+    m_boundScene = scene;
+    if (scene) {
+      connect(scene, &pqAnimationScene::endPlay, this,
+              [this]() { onPlaybackEnded(); });
+    }
+  }
+
+  QPointer<pqAnimationScene> m_boundScene;
 };
 
 } // namespace tomviz

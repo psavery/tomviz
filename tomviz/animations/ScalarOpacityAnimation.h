@@ -73,6 +73,17 @@ public:
     }
   }
 
+  void onPlaybackEnded() override
+  {
+    // While the animation exists its blend owns the volume's opacity;
+    // when playback stops, hand the volume back to the histogram
+    // editor's curve. Without this the override stays installed and
+    // editing the transfer function appears to do nothing.
+    if (auto* target = sink()) {
+      target->setAnimatedScalarOpacity(nullptr);
+    }
+  }
+
   /// True if @a node has a scalar opacity worth animating. Only volume
   /// rendering reads one; the surface sinks have a flat opacity instead,
   /// which OpacityAnimation covers. Label maps render through the same
