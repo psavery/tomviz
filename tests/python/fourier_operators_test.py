@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 
 from tomviz_pipeline import PortData
 from tomviz_pipeline.dataset import Dataset
@@ -164,3 +165,13 @@ def test_image_math_guards():
     _, result = _run_operator_raw(
         'ImageMath', {'volume': a, 'second_dataset': np.zeros((4, 4, 5))})
     assert result == {}
+
+
+def test_image_math_resamples_a_smaller_second_dataset():
+    a = np.full((8, 8, 8), 5.0)
+    b = np.full((4, 4, 4), 2.0)
+    with pytest.raises(Exception):
+        _run_image_math(a, b, operation=1)
+    out = _run_image_math(a, b, operation=1, resample_to_match=True)
+    assert out.shape == a.shape
+    assert np.allclose(out, 7.0)

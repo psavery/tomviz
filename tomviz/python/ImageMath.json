@@ -1,7 +1,7 @@
 {
   "name": "ImageMath",
   "label": "Image Math",
-  "description": "Voxel-wise arithmetic between two datasets of the same shape: subtract, add, multiply, or divide the second dataset from/into this one. Optionally normalize both to unit mean first, so datasets on different intensity scales can be compared. The result replaces this dataset's active array.",
+  "description": "Voxel-wise arithmetic between two datasets: subtract, add, multiply, or divide the second dataset from/into this one. Optionally normalize both to unit mean first, so datasets on different intensity scales can be compared. The result replaces this dataset's active array.",
   "externalCompatible": false,
   "parameters": [
     {
@@ -27,6 +27,13 @@
       "name": "normalize_first",
       "label": "Normalize First",
       "description": "Divide each array by its own mean intensity before combining, so datasets on different intensity scales compare directly.",
+      "type": "bool",
+      "default": false
+    },
+    {
+      "name": "resample_to_match",
+      "label": "Resample To Match",
+      "description": "If the second dataset has a different shape, stretch it onto this dataset's voxel grid (linear interpolation) before combining. Assumes both cover the same field of view; add the operator to the higher-resolution dataset to keep its detail.",
       "type": "bool",
       "default": false
     }
