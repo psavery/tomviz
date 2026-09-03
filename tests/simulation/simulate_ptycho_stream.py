@@ -52,6 +52,18 @@ def write_scan(root: Path, sid: int, theta: float,
     probe = (rng.normal(size=PROBE_SHAPE) +
              1j * rng.normal(size=PROBE_SHAPE)).astype(np.complex64)
 
+    # The per-scan config file real reconstructions carry: tomviz reads
+    # the tilt angle (and pixel sizes) from it, both in the dialog and
+    # when absorbing new scans during periodic execution.
+    config = recon_dir / f'{sid}_{VERSION}.txt'
+    config.write_text(
+        f'angle = {theta}\n'
+        'lambda_nm = 0.1\n'
+        'z_m = 2.0\n'
+        f'nx = {shape[1]}\n'
+        f'ny = {shape[0]}\n'
+        'ccd_pixel_um = 55\n')
+
     # Write to temp names then rename, so a reader never sees a
     # half-written array. The temp name keeps the .npy suffix because
     # np.save appends one to any other extension.

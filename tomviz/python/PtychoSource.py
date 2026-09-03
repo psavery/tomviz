@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+import math
 import sys
 import tempfile
 from pathlib import Path
@@ -22,10 +23,8 @@ if TYPE_CHECKING:
 
 
 # The ptycho file-layout helpers below are copied from
-# tomviz/ptycho/ptycho.py so that this script stays self-contained: it
-# is embedded verbatim in state files and may execute in an external
-# Python environment where the application's tomviz.ptycho module does
-# not exist.
+# tomviz/ptycho/ptycho.py: this script is embedded in state files and
+# may run in an external environment without the tomviz.ptycho module.
 
 # Files with these suffixes cannot be the small text config that
 # carries the angle and pixel sizes.
@@ -83,6 +82,56 @@ def locate_ptycho_hyan_file(sid: int, version: str,
             continue
 
     return None
+
+
+def fetch_angle_from_ptycho_hyan_file(filepath: str | Path) -> float:
+    with open(filepath, 'r', encoding='utf-8') as rf:
+        for line in rf:
+            line = line.lstrip()
+            if line.startswith('angle = '):
+                return float(line.split('=')[1].strip())
+
+    # Angle was not found
+    return math.nan
+
+
+def _discover_scans(ptycho_dir: str | Path) -> dict[int, tuple[str, float]]:
+    """Complete scans on disk: {sid: (version, angle)}.
+
+    A scan counts when some version has the object and probe files and
+    an angle, mirroring the dialog's "first valid version" default.
+    Incomplete scans are left out and picked up on a later check once
+    their remaining files arrive.
+    """
+    root = Path(ptycho_dir)
+    if not root.is_dir():
+        return {}
+
+    scans: dict[int, tuple[str, float]] = {}
+    for entry in sorted(root.iterdir()):
+        if not (entry.name.startswith('S') and entry.is_dir()):
+            continue
+        try:
+            sid = int(entry.name[1:])
+        except ValueError:
+            continue
+
+        versions = sorted(x.name for x in entry.iterdir() if x.is_dir())
+        for version in versions:
+            if find_ptycho_file(sid, version, 'object', root) is None:
+                continue
+            if find_ptycho_file(sid, version, 'probe', root) is None:
+                continue
+            config = locate_ptycho_hyan_file(sid, version, root)
+            if config is None:
+                continue
+            angle = fetch_angle_from_ptycho_hyan_file(config)
+            if math.isnan(angle):
+                continue
+            scans[sid] = (version, angle)
+            break
+
+    return scans
 
 
 def fetch_pixel_sizes_from_ptycho_hyan_file(
@@ -469,7 +518,95 @@ class PtychoSource(tomviz.nodes.SourceNode):
         fingerprint = _dir_fingerprint(ptycho_dir)
         previous = self.state.get('dir_fingerprint')
         self.state['dir_fingerprint'] = fingerprint
-        return previous is not None and fingerprint != previous
+        changed = previous is not None and fingerprint != previous
+
+        if changed:
+            # New scans must also enter the sid/version/angle parameter
+            # lists, or the re-run would rebuild the same stack; the
+            # write-back keeps the dialog and saved state in step too.
+            # Best-effort: a corrupt config file must not eat the
+            # re-run this change should trigger.
+            try:
+                self._absorb_new_scans(parameters)
+            except Exception as exc:
+                print(f'Warning: could not absorb new scans: {exc}',
+                      file=sys.stderr)
+
+        return changed
+
+    def _absorb_new_scans(self, parameters: dict) -> None:
+        sids: list[int] = json.loads(parameters.get('sid_list', '[]'))
+        versions: list[str] = json.loads(
+            parameters.get('version_list', '[]'))
+        angles: list[float] = json.loads(parameters.get('angle_list', '[]'))
+
+        # sid_list holds only the scans marked "Use"; ui_state's full
+        # table also knows the deliberately deselected ones. Only scans
+        # absent from both are new.
+        known = set(sids)
+        try:
+            full_sids = json.loads(
+                parameters.get('ui_state', '{}')).get('full_sid_list')
+            if isinstance(full_sids, list):
+                known.update(full_sids)
+        except ValueError:
+            pass
+
+        on_disk = _discover_scans(parameters.get('ptycho_dir', ''))
+        new_sids = sorted(set(on_disk) - known)
+        if not new_sids:
+            return
+
+        print('New scans detected:', new_sids)
+
+        # A single version stands for every scan (the
+        # _stack_ptycho_data broadcast); expand before appending.
+        if len(versions) == 1 and len(sids) > 1:
+            versions = versions * len(sids)
+
+        triples = sorted(
+            [(sid, version, angle)
+             for sid, version, angle in zip(sids, versions, angles)] +
+            [(sid, on_disk[sid][0], on_disk[sid][1]) for sid in new_sids])
+        self.set_parameter(
+            'sid_list', json.dumps([t[0] for t in triples]))
+        self.set_parameter(
+            'version_list', json.dumps([t[1] for t in triples]))
+        self.set_parameter(
+            'angle_list', json.dumps([t[2] for t in triples]))
+
+        self._merge_ui_state(parameters, new_sids, on_disk)
+
+    def _merge_ui_state(self, parameters: dict, new_sids: list[int],
+                        on_disk: dict[int, tuple[str, float]]) -> None:
+        # The dialog restores its table from ui_state's full lists, so
+        # new scans merge in (marked used) with existing choices kept.
+        try:
+            ui_state = json.loads(parameters.get('ui_state', '{}'))
+        except ValueError:
+            return
+        full_sids = ui_state.get('full_sid_list')
+        full_versions = ui_state.get('full_version_list')
+        full_use = ui_state.get('full_use_list')
+        if not isinstance(full_sids, list) or not full_sids:
+            # No table state recorded (parameter-only restore path);
+            # sid_list alone drives the dialog then.
+            return
+
+        rows = {
+            sid: (version, use)
+            for sid, version, use in zip(full_sids, full_versions, full_use)
+        }
+        for sid in new_sids:
+            if sid not in rows:
+                rows[sid] = (on_disk[sid][0], True)
+
+        # The dialog keeps its table sorted by SID
+        merged = sorted(rows)
+        ui_state['full_sid_list'] = merged
+        ui_state['full_version_list'] = [rows[sid][0] for sid in merged]
+        ui_state['full_use_list'] = [rows[sid][1] for sid in merged]
+        self.set_parameter('ui_state', json.dumps(ui_state))
 
     def produce(self, ptycho_dir: str = '', output_info_file: str = '',
                 rotate_datasets: bool = True, sid_list: str = '[]',

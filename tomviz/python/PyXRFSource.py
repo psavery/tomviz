@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import tempfile
 from collections.abc import Callable
@@ -59,6 +60,58 @@ def _expand_scan_range(scan_range: str,
         else:
             ids.add(int(part))
     return sorted(ids - skip_set)
+
+
+_SCAN_FILE_RE = re.compile(r'^scan2D_(\d+)\.h5$')
+
+
+def _scan_ids_on_disk(working_directory: str | Path) -> list[int]:
+    ids = []
+    for path in Path(working_directory).glob('scan2D_*.h5'):
+        match = _SCAN_FILE_RE.match(path.name)
+        if match:
+            ids.append(int(match.group(1)))
+    return sorted(ids)
+
+
+def _grown_scan_range(scan_range: str,
+                      working_directory: str | Path) -> str | None:
+    """Extend the range to cover scans that appeared past its end.
+
+    Returns the grown range string, or None when there is nothing to
+    grow. Scans below the range's start or inside its holes are left
+    alone: the range is user intent, and what a live acquisition adds
+    is new scans past the end.
+    """
+    try:
+        covered = _expand_scan_range(scan_range)
+    except (ValueError, IndexError):
+        return None
+    if not covered:
+        return None
+    top = covered[-1]
+
+    beyond = [i for i in _scan_ids_on_disk(working_directory) if i > top]
+    if not beyond:
+        return None
+    new_stop = beyond[-1]
+
+    segments = [s.strip() for s in scan_range.split(',') if s.strip()]
+    pieces = segments[-1].split(':')
+    try:
+        # When the last segment's stop is the range's end (the common
+        # "start:stop" case, and any segment grown here before), bump
+        # it in place so repeated growth stays one compact segment; a
+        # stride is preserved. Otherwise append a segment.
+        if len(pieces) in (2, 3) and int(pieces[1]) == top:
+            pieces[1] = str(new_stop)
+            segments[-1] = ':'.join(pieces)
+        else:
+            raise ValueError
+    except (ValueError, IndexError):
+        segments.append(f'{beyond[0]}:{new_stop}'
+                        if beyond[0] != new_stop else f'{new_stop}')
+    return ', '.join(segments)
 
 
 def _run_command(args: list[str]) -> None:
@@ -205,7 +258,20 @@ class PyXRFSource(tomviz.nodes.SourceNode):
         fingerprint = _dir_fingerprint(working_directory)
         previous = self.state.get('dir_fingerprint')
         self.state['dir_fingerprint'] = fingerprint
-        return previous is not None and fingerprint != previous
+        changed = previous is not None and fingerprint != previous
+
+        if changed:
+            # A set range pins downloads and processing, so scans past
+            # its end must grow it or the re-run would exclude them.
+            # With no range, produce reads whatever is present.
+            scan_range = parameters.get('scan_range', '')
+            if scan_range:
+                grown = _grown_scan_range(scan_range, working_directory)
+                if grown is not None:
+                    print(f'New scans detected; growing range to {grown}')
+                    self.set_parameter('scan_range', grown)
+
+        return changed
 
     def produce(self, pyxrf_utils_command: str = 'pyxrf-utils',
                 working_directory: str = '',
