@@ -10,6 +10,7 @@
 #include "PyXRFWidget.h"
 #include "SAM2SeedWidget.h"
 #include "SelectCylinderWidget.h"
+#include "ThresholdRangeWidget.h"
 #include "ShiftRotationCenterWidget.h"
 #include "RotateAlignWidget.h"
 #include "CustomNodeWidgetRegistry.h"
@@ -126,6 +127,8 @@ void Behaviors::registerCustomOperatorUIs()
     "ManualManipulationWidget", /*needsData=*/true);
   registerCustomNodeWidget<SelectCylinderWidget>(
     "CylindricalCropWidget", /*needsData=*/true);
+  registerCustomNodeWidget<ThresholdRangeWidget>(
+    "ThresholdRangeWidget", /*needsData=*/true);
   registerCustomNodeWidget<SAM2SeedWidget>(
     "SAM2SeedWidget", /*needsData=*/true);
   registerCustomNodeWidget<PyXRFWidget>(

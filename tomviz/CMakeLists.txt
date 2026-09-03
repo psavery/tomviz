@@ -54,6 +54,8 @@ set(SOURCES
   SAM2SeedWidget.h
   SelectCylinderWidget.cxx
   SelectCylinderWidget.h
+  ThresholdRangeWidget.cxx
+  ThresholdRangeWidget.h
   SelectVolumeWidget.cxx
   SelectVolumeWidget.h
   DataBroker.cxx
