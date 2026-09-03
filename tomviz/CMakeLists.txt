@@ -512,6 +512,9 @@ set(python_files
   BinaryThreshold.py
   CircleMask.py
   CombineDatasets.py
+  FourierFilter.py
+  FourierPeakMask.py
+  ImageMath.py
   ConnectedComponents.py
   ClipEdges.py
   OtsuMultipleThreshold.py
@@ -606,6 +609,9 @@ set(json_files
   BinaryThreshold.json
   CircleMask.json
   CombineDatasets.json
+  FourierFilter.json
+  FourierPeakMask.json
+  ImageMath.json
   ConnectedComponents.json
   ClipEdges.json
   OtsuMultipleThreshold.json

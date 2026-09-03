@@ -78,6 +78,9 @@ void DataTransformMenu::buildTransforms()
   auto cropEdgesAction = mathOps->addAction("Clip Edges");
   auto hannWindowAction = mathOps->addAction("Hann Window");
   auto fftAbsLogAction = mathOps->addAction("FFT (abs log)");
+  auto fourierFilterAction = mathOps->addAction("Fourier Filter");
+  auto fourierPeakMaskAction = mathOps->addAction("Fourier Peak Mask");
+  auto imageMathAction = mathOps->addAction("Image Math");
 
   // === Filters & Smoothing submenu ===
   QMenu* filters = menu->addMenu("Filters && Smoothing");
@@ -181,6 +184,15 @@ void DataTransformMenu::buildTransforms()
                                  readInPythonScript("HannWindow3D"));
   new AddPythonTransformReaction(fftAbsLogAction, "FFT (ABS LOG)",
                                  readInPythonScript("FFT_AbsLog"));
+  new AddPythonTransformReaction(fourierFilterAction, "Fourier Filter",
+                                 readInPythonScript("FourierFilter"),
+                                 readInJSONDescription("FourierFilter"));
+  new AddPythonTransformReaction(fourierPeakMaskAction, "Fourier Peak Mask",
+                                 readInPythonScript("FourierPeakMask"),
+                                 readInJSONDescription("FourierPeakMask"));
+  new AddPythonTransformReaction(imageMathAction, "Image Math",
+                                 readInPythonScript("ImageMath"),
+                                 readInJSONDescription("ImageMath"));
   new AddPythonTransformReaction(gradientMagnitudeSobelAction,
                                  "Gradient Magnitude",
                                  readInPythonScript("GradientMagnitude_Sobel"));

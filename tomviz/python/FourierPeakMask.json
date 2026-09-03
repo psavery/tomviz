@@ -1,0 +1,46 @@
+{
+  "name": "FourierPeakMask",
+  "label": "Fourier Peak Mask",
+  "description": "Keep only the reciprocal-space volumes around the given peaks and transform back to real space, the equivalent of selected-area electron diffraction. Run 'FFT (abs log)' on a copy of the data first, read off each peak's (x, y, z) voxel index, and enter the peaks below. Soft spherical windows (erf edges) are applied around each peak and, optionally, its Friedel mate mirrored through the spectrum center.",
+  "parameters": [
+    {
+      "name": "centers",
+      "label": "Peak Centers",
+      "description": "One peak per line (or semicolon-separated) as 'x, y, z' voxel indices into the centered spectrum, as shown by the 'FFT (abs log)' operator.",
+      "type": "string",
+      "default": ""
+    },
+    {
+      "name": "centers_file",
+      "label": "Peak Centers CSV",
+      "description": "Optional CSV file with one x,y,z row per peak. Header lines and extra columns are ignored. Used in addition to any peaks typed above.",
+      "type": "file",
+      "default": ""
+    },
+    {
+      "name": "radius",
+      "label": "Window Radius (bins)",
+      "description": "Radius of the spherical window around each peak, in frequency bins.",
+      "type": "double",
+      "default": 15.0,
+      "minimum": 0.0
+    },
+    {
+      "name": "sigma",
+      "label": "Edge Softness (bins)",
+      "description": "Softness of the window edge (erf transition width), in frequency bins.",
+      "type": "double",
+      "default": 5.0,
+      "minimum": 0.001
+    },
+    {
+      "name": "include_friedel_mates",
+      "label": "Include Friedel Mates",
+      "description": "Also keep each peak's mirror through the spectrum center. The spectrum of real data is symmetric, so this is almost always wanted; peaks whose own window already covers the center are not mirrored twice.",
+      "type": "bool",
+      "default": true
+    }
+  ],
+  "inputType": "ImageData",
+  "outputType": "ImageData"
+}
