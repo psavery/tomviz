@@ -15,6 +15,7 @@
 #include <QBrush>
 #include <QDebug>
 #include <QDir>
+#include <QEventLoop>
 #include <QFile>
 #include <QFileDialog>
 #include <QInputDialog>
@@ -29,8 +30,26 @@
 #include <QProcessEnvironment>
 #include <QScrollBar>
 #include <QSignalBlocker>
+#include <QtConcurrent>
+
+#include <atomic>
+#include <functional>
+#include <memory>
 
 namespace tomviz {
+
+// Emits results from the background ptycho directory scan. The worker
+// thread emits; the widget receives via queued connections.
+class PtychoScanCall : public QObject
+{
+  Q_OBJECT
+
+signals:
+  void listed(int total);
+  void sidScanned(qlonglong sid, QStringList versions, QVariantList angles,
+                  QStringList errors, int index, int total);
+  void finished(bool ok);
+};
 
 class PtychoWidget::Internal : public QObject
 {
@@ -60,11 +79,22 @@ public:
 
   Python::Module ptychoModule;
 
+  // Background directory scan state. The generation counter invalidates
+  // results from a superseded scan; the flag cancels its worker loop.
+  std::shared_ptr<std::atomic<bool>> scanCancelFlag;
+  int scanGeneration = 0;
+  bool scanInProgress = false;
+  // Runs after the next scan that completes; carried across a
+  // superseded scan so a pending selection restore is not lost.
+  std::function<void()> pendingScanDone;
+
   Internal(PtychoWidget* p)
     : parent(p)
   {
     ui.setupUi(p);
     setParent(p);
+
+    ui.scanProgressBar->hide();
 
     importModule();
 
@@ -72,6 +102,17 @@ public:
     setupConnections();
   }
 
+  ~Internal()
+  {
+    if (scanCancelFlag) {
+      scanCancelFlag->store(true);
+    }
+  }
+
+signals:
+  void scanFinished();
+
+public:
   void setupConnections()
   {
     connect(ui.startPtychoGUI, &QPushButton::clicked, this,
@@ -242,51 +283,6 @@ public:
     return angles;
   }
 
-  QList<long> invalidSidsSelected()
-  {
-    QList<long> invalid;
-    for (auto sid : selectedSids()) {
-      auto idx = sidList.indexOf(sid);
-      if (!errorReasonList[idx].isEmpty()) {
-        invalid.append(sid);
-      }
-    }
-    return invalid;
-  }
-
-  bool validate(QString& reason)
-  {
-    // Validate settings
-    if (ptychoDirectory().isEmpty() || !QDir(ptychoDirectory()).exists()) {
-      reason = "Ptycho directory does not exist: " + ptychoDirectory();
-      return false;
-    }
-
-    if (sidList.isEmpty()) {
-      reason = "No SIDs found in ptycho directory: " + ptychoDirectory();
-      return false;
-    }
-
-    auto invalid = invalidSidsSelected();
-    if (!invalid.isEmpty()) {
-      QString title = "Invalid SID and version combinations selected";
-      QString text = "Invalid SIDs were selected. ";
-      text += "Do you wish to automatically deselect them and continue?";
-      if (QMessageBox::question(parent, title, text) == QMessageBox::No) {
-        reason = "Invalid SIDs were selected";
-        return false;
-      }
-
-      for (auto sid : invalid) {
-        auto idx = sidList.indexOf(sid);
-        useList[idx] = false;
-        updateTable();
-      }
-    }
-
-    return true;
-  }
-
   void updateTable()
   {
     auto* table = ui.table;
@@ -301,46 +297,52 @@ public:
 
     table->setRowCount(filteredSidList.size());
     for (int i = 0; i < filteredSidList.size(); ++i) {
-      auto sid = filteredSidList[i];
-      bool invalid = false;
-      for (auto j : tableColumns.keys()) {
-        auto column = tableColumns[j];
-        auto value = tableValue(sid, column);
-        if (column == "Version") {
-          auto* cb = createVersionComboBox(sid, value);
-          table->setCellWidget(i, j, cb);
-          continue;
-        } else if (column == "Use") {
-          auto* w = createUseCheckBox(sid, value);
-          table->setCellWidget(i, j, w);
-          continue;
-        } else if (column == "Error Reason") {
-          invalid = !value.isEmpty();
-        }
-
-        auto* item = new QTableWidgetItem(value);
-        item->setTextAlignment(Qt::AlignCenter);
-        table->setItem(i, j, item);
-      }
-
-      if (invalid) {
-        // Make every item have a red background
-        for (int j = 0; j < tableColumns.size(); ++j) {
-          auto* item = table->item(i, j);
-          if (item) {
-            item->setBackground(QBrush(Qt::red));
-          } else {
-            auto* cw = table->cellWidget(i, j);
-            if (cw) {
-              cw->setStyleSheet("background-color: red");
-            }
-          }
-        }
-      }
+      fillTableRow(i, filteredSidList[i]);
     }
 
     if (scrollbar) {
       scrollbar->setValue(scrollbarPosition);
+    }
+  }
+
+  void fillTableRow(int i, long sid)
+  {
+    auto* table = ui.table;
+
+    bool invalid = false;
+    for (auto j : tableColumns.keys()) {
+      auto column = tableColumns[j];
+      auto value = tableValue(sid, column);
+      if (column == "Version") {
+        auto* cb = createVersionComboBox(sid, value);
+        table->setCellWidget(i, j, cb);
+        continue;
+      } else if (column == "Use") {
+        auto* w = createUseCheckBox(sid, value);
+        table->setCellWidget(i, j, w);
+        continue;
+      } else if (column == "Error Reason") {
+        invalid = !value.isEmpty();
+      }
+
+      auto* item = new QTableWidgetItem(value);
+      item->setTextAlignment(Qt::AlignCenter);
+      table->setItem(i, j, item);
+    }
+
+    if (invalid) {
+      // Make every item have a red background
+      for (int j = 0; j < tableColumns.size(); ++j) {
+        auto* item = table->item(i, j);
+        if (item) {
+          item->setBackground(QBrush(Qt::red));
+        } else {
+          auto* cw = table->cellWidget(i, j);
+          if (cw) {
+            cw->setStyleSheet("background-color: red");
+          }
+        }
+      }
     }
   }
 
@@ -461,27 +463,27 @@ public:
     settings->endGroup();
 
     if (!ptychoDirectory().isEmpty()) {
-      // Trigger a load
-      loadPtychoDir();
+      // Trigger a load; the rest applies after the scan completes
+      loadPtychoDir([this, savedSidList, savedVersionList, savedUseList]() {
+        if (!csvFile().isEmpty()) {
+          // Trigger applying the CSV file
+          setUseAndVersionsFromCSV();
+        }
 
-      if (!csvFile().isEmpty()) {
-        // Trigger applying the CSV file
-        setUseAndVersionsFromCSV();
-      }
+        if (!filterSIDsString().isEmpty()) {
+          // Trigger an update via the filters
+          updateFilteredSidList();
+        }
 
-      if (!filterSIDsString().isEmpty()) {
-        // Trigger an update via the filters
-        updateFilteredSidList();
-      }
-
-      if (savedSidList == sidList) {
-        // If the saved SID list matches, we can also load the settings
-        // for "use" and "version"
-        versionList = savedVersionList;
-        useList = savedUseList;
-        onSelectedVersionsChanged();
-        updateTable();
-      }
+        if (savedSidList == sidList) {
+          // If the saved SID list matches, we can also load the settings
+          // for "use" and "version"
+          versionList = savedVersionList;
+          useList = savedUseList;
+          onSelectedVersionsChanged();
+          updateTable();
+        }
+      });
     }
   }
 
@@ -623,90 +625,228 @@ public:
     loadPtychoDir();
   }
 
-  void loadPtychoDir()
+  void cancelScan()
   {
-    clearTable();
-
-    Python python;
-
-    auto func = ptychoModule.findFunction("gather_ptycho_info");
-    if (!func.isValid()) {
-      QString msg = "Failed to import \"tomviz.ptycho.gather_ptycho_info\"";
-      qCritical() << msg;
-      return;
+    if (scanCancelFlag) {
+      scanCancelFlag->store(true);
     }
-
-    Python::Dict kwargs;
-    kwargs.set("ptycho_dir", ptychoDirectory());
-    auto result = func.call(kwargs);
-
-    if (!result.isValid() || !result.isDict()) {
-      QString msg = "Error calling \"tomviz.ptycho.gather_ptycho_info\"";
-      qCritical() << msg;
-      return;
+    ++scanGeneration;
+    if (scanInProgress) {
+      scanInProgress = false;
+      ui.scanProgressBar->hide();
+      emit scanFinished();
     }
-
-    auto resultDict = result.toDict();
-
-    auto sidListV = resultDict["sid_list"].toVariant().toList();
-    auto versionDictV = resultDict["version_list"].toVariant().toList();
-    auto angleDictV = resultDict["angle_list"].toVariant().toList();
-    auto errorDictV = resultDict["error_list"].toVariant().toList();
-
-    sidList.clear();
-    versionOptions.clear();
-    angleOptions.clear();
-    allErrorLists.clear();
-    for (size_t i = 0; i < sidListV.size(); ++i) {
-      auto sid = sidListV[i].toLong();
-      sidList.append(sid);
-
-      auto versionOptionsV = versionDictV[i].toList();
-      auto theseAnglesV = angleDictV[i].toList();
-      auto theseErrorsV = errorDictV[i].toList();
-
-      QStringList versions;
-      QMap<QString, double> angles;
-      QMap<QString, QString> errors;
-      for (size_t j = 0; j < versionOptionsV.size(); ++j) {
-        auto version = QString::fromStdString(versionOptionsV[j].toString());
-        versions.append(version);
-        angles[version] = theseAnglesV[j].toDouble();
-        errors[version] = QString::fromStdString(theseErrorsV[j].toString());
-      }
-      versionOptions[sid] = versions;
-      angleOptions[sid] = angles;
-      allErrorLists[sid] = errors;
-    }
-
-    resetSelectedVersionsAndUseList();
-    updateFilteredSidList();
   }
 
-  void resetSelectedVersionsAndUseList()
+  // Blocks (with the event loop running) until no scan is in progress.
+  // Used before reading the selection out of the widget, so an Apply
+  // during a scan waits for complete results instead of using partial
+  // ones.
+  void waitForScan()
   {
-    versionList.clear();
-    useList.clear();
+    // Self-guarded: the dialog refuses to close during an apply, but if
+    // this object is ever destroyed under the nested loop anyway, quit
+    // instead of spinning on freed state.
+    QPointer<Internal> self(this);
+    while (self && self->scanInProgress) {
+      QEventLoop loop;
+      connect(this, &Internal::scanFinished, &loop, &QEventLoop::quit);
+      connect(this, &QObject::destroyed, &loop, &QEventLoop::quit);
+      loop.exec();
+    }
+  }
 
-    for (auto sid: sidList) {
-      bool set = false;
-      for (auto& version: versionOptions[sid]) {
-        if (allErrorLists[sid][version].isEmpty()) {
-          // This one is valid.
-          versionList.append(version);
-          useList.append(true);
-          set = true;
-          break;
-        }
-      }
-      if (!set) {
-        // Do the first one and don't set it to be used.
-        versionList.append(versionOptions[sid][0]);
-        useList.append(false);
-      }
+  // Scans the ptycho directory in a background thread, streaming SIDs
+  // into the table as they are found. onDone runs after the next scan
+  // that completes: if this scan is superseded (e.g. the parked ptycho
+  // GUI exiting triggers a reload mid-restore), the continuation
+  // carries over to the superseding scan instead of being lost.
+  void loadPtychoDir(std::function<void()> onDone = {})
+  {
+    cancelScan();
+    clearTable();
+    updateTable();
+
+    if (onDone) {
+      pendingScanDone = std::move(onDone);
     }
 
-    onSelectedVersionsChanged();
+    scanInProgress = true;
+    scanCancelFlag = std::make_shared<std::atomic<bool>>(false);
+
+    int gen = scanGeneration;
+    auto cancel = scanCancelFlag;
+    auto dir = ptychoDirectory();
+
+    // Busy indicator until the SID list arrives
+    ui.scanProgressBar->setRange(0, 0);
+    ui.scanProgressBar->show();
+
+    auto* call = new PtychoScanCall;
+    connect(call, &PtychoScanCall::listed, this, [this, gen](int total) {
+      if (gen != scanGeneration) {
+        return;
+      }
+      ui.scanProgressBar->setRange(0, total);
+      ui.scanProgressBar->setValue(0);
+    });
+    connect(call, &PtychoScanCall::sidScanned, this,
+            [this, gen](qlonglong sid, QStringList versions,
+                        QVariantList angles, QStringList errors, int index,
+                        int total) {
+      Q_UNUSED(total)
+      if (gen != scanGeneration) {
+        return;
+      }
+      appendScannedSid(static_cast<long>(sid), versions, angles, errors);
+      ui.scanProgressBar->setValue(index + 1);
+    });
+    connect(call, &PtychoScanCall::finished, this,
+            [this, gen](bool ok) {
+      if (gen != scanGeneration) {
+        return;
+      }
+      scanInProgress = false;
+      ui.scanProgressBar->hide();
+      if (!ok) {
+        qCritical() << "The ptycho directory scan failed";
+      }
+      updateFilteredSidList();
+      auto done = std::move(pendingScanDone);
+      pendingScanDone = nullptr;
+      if (done) {
+        done();
+      }
+      emit scanFinished();
+    });
+    connect(call, &PtychoScanCall::finished, call, &QObject::deleteLater);
+
+    auto future = QtConcurrent::run([call, cancel, dir]() {
+      QList<qlonglong> sids;
+      Python::Module module;
+      {
+        Python python;
+        module = python.import("tomviz.ptycho");
+        Python::Function listFunc;
+        if (module.isValid()) {
+          listFunc = module.findFunction("list_ptycho_sids");
+        }
+        if (!listFunc.isValid()) {
+          qCritical()
+            << "Failed to find \"tomviz.ptycho.list_ptycho_sids\"";
+          emit call->finished(false);
+          return;
+        }
+
+        Python::Dict kwargs;
+        kwargs.set("ptycho_dir", dir);
+        auto res = listFunc.call(kwargs);
+        if (!res.isValid() || !res.isList()) {
+          qCritical() << "Error calling \"tomviz.ptycho.list_ptycho_sids\"";
+          emit call->finished(false);
+          return;
+        }
+
+        auto resList = res.toList();
+        for (int i = 0; i < resList.length(); ++i) {
+          sids.append(resList[i].toLong());
+        }
+      }
+
+      int total = sids.size();
+      emit call->listed(total);
+
+      for (int i = 0; i < total; ++i) {
+        if (cancel->load()) {
+          emit call->finished(false);
+          return;
+        }
+
+        auto sid = sids[i];
+        QStringList versions, errors;
+        QVariantList angles;
+        {
+          // Scoped so the GIL is released between SIDs
+          Python python;
+          auto func = module.findFunction("gather_sid_info");
+          if (!func.isValid()) {
+            qCritical() << "Failed to find \"tomviz.ptycho.gather_sid_info\"";
+            emit call->finished(false);
+            return;
+          }
+
+          Python::Dict kwargs;
+          kwargs.set("ptycho_dir", dir);
+          kwargs.set("sid", Variant(static_cast<long>(sid)));
+          auto res = func.call(kwargs);
+          if (!res.isValid() || !res.isDict()) {
+            // Skip this SID, but keep scanning the rest
+            qCritical() << "Error gathering ptycho info for SID" << sid;
+            continue;
+          }
+
+          auto resDict = res.toDict();
+          for (auto& v : resDict["versions"].toVariant().toList()) {
+            versions.append(QString::fromStdString(v.toString()));
+          }
+          for (auto& a : resDict["angles"].toVariant().toList()) {
+            angles.append(a.toDouble());
+          }
+          for (auto& e : resDict["errors"].toVariant().toList()) {
+            errors.append(QString::fromStdString(e.toString()));
+          }
+        }
+        emit call->sidScanned(sid, versions, angles, errors, i, total);
+      }
+
+      emit call->finished(!cancel->load());
+    });
+    Q_UNUSED(future)
+  }
+
+  // Record one scanned SID with its default selection (first valid
+  // version, used; else first version, unused) and stream its row into
+  // the table when no SID filter is active.
+  void appendScannedSid(long sid, const QStringList& versions,
+                        const QVariantList& angles, const QStringList& errors)
+  {
+    if (sidList.contains(sid)) {
+      return;
+    }
+
+    QMap<QString, double> angleMap;
+    QMap<QString, QString> errorMap;
+    for (int j = 0; j < versions.size(); ++j) {
+      angleMap[versions[j]] = angles.value(j).toDouble();
+      errorMap[versions[j]] = errors.value(j);
+    }
+
+    sidList.append(sid);
+    versionOptions[sid] = versions;
+    angleOptions[sid] = angleMap;
+    allErrorLists[sid] = errorMap;
+
+    QString chosen = versions.isEmpty() ? QString("t1") : versions[0];
+    bool use = false;
+    for (auto& version : versions) {
+      if (errorMap[version].isEmpty()) {
+        // This one is valid.
+        chosen = version;
+        use = true;
+        break;
+      }
+    }
+    versionList.append(chosen);
+    useList.append(use);
+    angleList.append(angleMap[chosen]);
+    errorReasonList.append(errorMap[chosen]);
+
+    if (filterSIDsString().isEmpty()) {
+      filteredSidList.append(sid);
+      int row = ui.table->rowCount();
+      ui.table->setRowCount(row + 1);
+      fillTableRow(row, sid);
+    }
   }
 
   void onSelectedVersionsChanged()
@@ -812,6 +952,9 @@ public:
 
   void setUseAndVersionsFromCSV()
   {
+    // Apply against the complete SID list, not a partial scan
+    waitForScan();
+
     Python python;
 
     auto func = ptychoModule.findFunction("get_use_and_versions_from_csv");
@@ -930,7 +1073,7 @@ public:
 
   QString filterSIDsString() const { return ui.filterSIDsString->text().trimmed(); }
 
-  void setFilterSIDsString(QString s) const { ui.filterSIDsString->setText(s); }
+  void setFilterSIDsString(QString s) { ui.filterSIDsString->setText(s); }
 
   QString outputInfoFile() const { return ui.outputInfoFile->text(); }
 
@@ -951,6 +1094,10 @@ PtychoWidget::~PtychoWidget() = default;
 
 void PtychoWidget::getValues(QMap<QString, QVariant>& map)
 {
+  // If a directory scan is still running, wait for its results so we
+  // never hand back a partially-populated selection.
+  m_internal->waitForScan();
+
   auto sids = m_internal->selectedSids();
   auto versions = m_internal->selectedVersions();
   auto angles = m_internal->selectedAngles();
@@ -1015,68 +1162,69 @@ void PtychoWidget::setValues(const QMap<QString, QVariant>& map)
       map.value("rotate_datasets", true).toBool());
   }
 
-  m_internal->loadPtychoDir();
+  // Restore the selections after the directory scan completes
+  m_internal->loadPtychoDir([this, map]() {
+    auto uiStateJson = map.value("ui_state").toString();
+    if (!uiStateJson.isEmpty()) {
+      auto uiState = QJsonDocument::fromJson(uiStateJson.toUtf8()).object();
+      m_internal->setCsvFile(uiState.value("csv_file").toString());
+      m_internal->setFilterSIDsString(
+        uiState.value("filter_sids_string").toString());
 
-  auto uiStateJson = map.value("ui_state").toString();
-  if (!uiStateJson.isEmpty()) {
-    auto uiState = QJsonDocument::fromJson(uiStateJson.toUtf8()).object();
-    m_internal->setCsvFile(uiState.value("csv_file").toString());
-    m_internal->setFilterSIDsString(
-      uiState.value("filter_sids_string").toString());
+      auto fullSidArr = uiState.value("full_sid_list").toArray();
+      auto fullVersionArr = uiState.value("full_version_list").toArray();
+      auto fullUseArr = uiState.value("full_use_list").toArray();
 
-    auto fullSidArr = uiState.value("full_sid_list").toArray();
-    auto fullVersionArr = uiState.value("full_version_list").toArray();
-    auto fullUseArr = uiState.value("full_use_list").toArray();
+      QList<long> savedSidList;
+      for (const auto& v : fullSidArr) {
+        savedSidList.append(static_cast<long>(v.toInteger()));
+      }
+      QStringList savedVersionList;
+      for (const auto& v : fullVersionArr) {
+        savedVersionList.append(v.toString());
+      }
+      QList<bool> savedUseList;
+      for (const auto& v : fullUseArr) {
+        savedUseList.append(v.toBool());
+      }
 
-    QList<long> savedSidList;
-    for (const auto& v : fullSidArr) {
-      savedSidList.append(static_cast<long>(v.toInteger()));
-    }
-    QStringList savedVersionList;
-    for (const auto& v : fullVersionArr) {
-      savedVersionList.append(v.toString());
-    }
-    QList<bool> savedUseList;
-    for (const auto& v : fullUseArr) {
-      savedUseList.append(v.toBool());
-    }
+      if (savedSidList == m_internal->sidList) {
+        m_internal->versionList = savedVersionList;
+        m_internal->useList = savedUseList;
+        m_internal->onSelectedVersionsChanged();
+      } else if (!m_internal->csvFile().isEmpty()) {
+        m_internal->setUseAndVersionsFromCSV();
+      }
 
-    if (savedSidList == m_internal->sidList) {
-      m_internal->versionList = savedVersionList;
-      m_internal->useList = savedUseList;
+      m_internal->updateFilteredSidList();
+    } else {
+      // No ui_state -- use sid_list/version_list to restore selections
+      auto sidJson = map.value("sid_list", "[]").toString();
+      auto versionJson = map.value("version_list", "[]").toString();
+      auto sidArr = QJsonDocument::fromJson(sidJson.toUtf8()).array();
+      auto verArr = QJsonDocument::fromJson(versionJson.toUtf8()).array();
+
+      QSet<long> selectedSids;
+      QMap<long, QString> selectedVersions;
+      for (int i = 0; i < sidArr.size(); ++i) {
+        long sid = static_cast<long>(sidArr[i].toInteger());
+        selectedSids.insert(sid);
+        if (i < verArr.size()) {
+          selectedVersions[sid] = verArr[i].toString();
+        }
+      }
+
+      for (int i = 0; i < m_internal->sidList.size(); ++i) {
+        auto sid = m_internal->sidList[i];
+        m_internal->useList[i] = selectedSids.contains(sid);
+        if (selectedVersions.contains(sid)) {
+          m_internal->versionList[i] = selectedVersions[sid];
+        }
+      }
       m_internal->onSelectedVersionsChanged();
-    } else if (!m_internal->csvFile().isEmpty()) {
-      m_internal->setUseAndVersionsFromCSV();
+      m_internal->updateFilteredSidList();
     }
-
-    m_internal->updateFilteredSidList();
-  } else {
-    // No ui_state -- use sid_list/version_list to restore selections
-    auto sidJson = map.value("sid_list", "[]").toString();
-    auto versionJson = map.value("version_list", "[]").toString();
-    auto sidArr = QJsonDocument::fromJson(sidJson.toUtf8()).array();
-    auto verArr = QJsonDocument::fromJson(versionJson.toUtf8()).array();
-
-    QSet<long> selectedSids;
-    QMap<long, QString> selectedVersions;
-    for (int i = 0; i < sidArr.size(); ++i) {
-      long sid = static_cast<long>(sidArr[i].toInteger());
-      selectedSids.insert(sid);
-      if (i < verArr.size()) {
-        selectedVersions[sid] = verArr[i].toString();
-      }
-    }
-
-    for (int i = 0; i < m_internal->sidList.size(); ++i) {
-      auto sid = m_internal->sidList[i];
-      m_internal->useList[i] = selectedSids.contains(sid);
-      if (selectedVersions.contains(sid)) {
-        m_internal->versionList[i] = selectedVersions[sid];
-      }
-    }
-    m_internal->onSelectedVersionsChanged();
-    m_internal->updateFilteredSidList();
-  }
+  });
 }
 
 void PtychoWidget::writeSettings()
