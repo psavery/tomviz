@@ -176,10 +176,11 @@ EditNodeWidget* LegacyPythonTransform::createPropertiesWidget(
                                    : findCustomNodeWidget(m_customWidgetID);
   if (info && info->create) {
     customNeedsData = info->needsData;
-    factory = [this, info](QWidget* p) -> CustomPythonNodeWidget* {
+    factory = [this, info, pipeline](QWidget* p) -> CustomPythonNodeWidget* {
       auto* w = info->create(collectInputs(), p);
       if (w) {
         w->setScript(m_script);
+        w->setNodeContext(this, pipeline);
       }
       return w;
     };

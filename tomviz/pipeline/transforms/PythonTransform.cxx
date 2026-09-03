@@ -116,10 +116,11 @@ EditNodeWidget* PythonTransform::createPropertiesWidget(Pipeline* pipeline,
     widgetID.isEmpty() ? nullptr : findCustomNodeWidget(widgetID);
   if (info && info->create) {
     customNeedsData = info->needsData;
-    factory = [this, info](QWidget* p) -> CustomPythonNodeWidget* {
+    factory = [this, info, pipeline](QWidget* p) -> CustomPythonNodeWidget* {
       auto* w = info->create(collectInputs(), p);
       if (w) {
         w->setScript(m_backend.scriptSource());
+        w->setNodeContext(this, pipeline);
       }
       return w;
     };

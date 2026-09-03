@@ -105,10 +105,11 @@ EditNodeWidget* PythonSource::createPropertiesWidget(Pipeline* pipeline,
     // Sources have no inputs — needsData should be irrelevant here,
     // but honor the flag in case a registration unexpectedly sets it.
     customNeedsData = info->needsData;
-    factory = [this, info](QWidget* p) -> CustomPythonNodeWidget* {
+    factory = [this, info, pipeline](QWidget* p) -> CustomPythonNodeWidget* {
       auto* w = info->create(collectInputs(), p);
       if (w) {
         w->setScript(m_backend.scriptSource());
+        w->setNodeContext(this, pipeline);
       }
       return w;
     };
