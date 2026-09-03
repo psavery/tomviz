@@ -3,6 +3,7 @@
 
 #include "SliceSink.h"
 
+#include "ActiveObjects.h"
 #include "DoubleSliderWidget.h"
 #include "IntSliderWidget.h"
 #include "Node.h"
@@ -158,6 +159,13 @@ bool SliceSink::initialize(vtkSMViewProxy* view)
   // When the user drags the slice in the 3D view, update our state and UI.
   pqCoreUtilities::connect(m_widget, vtkCommand::InteractionEvent, this,
                            SLOT(onPlaneChanged()));
+
+  // Report the voxel under the cursor (the widget picks it on a short
+  // timer while the mouse moves over the slice); the main window shows
+  // it in the status bar.
+  m_widget->SetVoxelValueFn([](const vtkVector3i& ijk, double value) {
+    emit ActiveObjects::instance().mouseOverVoxel(ijk, value);
+  });
 
   return true;
 }

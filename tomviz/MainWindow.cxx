@@ -319,6 +319,8 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
 
   // Sync ActiveObjects changes back to the strip widget and properties panel.
   // This ensures programmatic setActiveNode/Port/Link calls are reflected.
+  connect(&ActiveObjects::instance(), &ActiveObjects::mouseOverVoxel, this,
+          &MainWindow::onMouseOverVoxel);
   connect(&ActiveObjects::instance(), &ActiveObjects::activeNodeChanged,
           this, &MainWindow::onActiveNodeChanged);
   connect(&ActiveObjects::instance(), &ActiveObjects::activePortChanged,
