@@ -117,11 +117,9 @@ ViewMenuManager::ViewMenuManager(QMainWindow* mainWindow, QMenu* menu)
 
   Menu->addSeparator();
 
-  // FIXME: staged for removal
   m_imageViewerModeAction = Menu->addAction("Image Viewer Mode");
   m_imageViewerModeAction->setCheckable(true);
   m_imageViewerModeAction->setChecked(false);
-  m_imageViewerModeAction->setVisible(false);
   connect(m_imageViewerModeAction, &QAction::triggered, this,
           &ViewMenuManager::setImageViewerMode);
 
@@ -236,6 +234,10 @@ void ViewMenuManager::onViewChanged()
     m_view && m_view->GetProperty("OrientationAxesVisibility");
   m_showCenterAxesAction->setEnabled(enableCenterAxes);
   m_showOrientationAxesAction->setEnabled(enableOrientationAxes);
+  // Image viewer mode drives the camera, projection and interaction
+  // mode of a render view; without one there is nothing to switch.
+  m_imageViewerModeAction->setEnabled(
+    m_view && ActiveObjects::instance().activePqRenderView());
   if (enableCenterAxes) {
     vtkSMPropertyHelper showCenterAxes(m_view, "CenterAxesVisibility");
     m_showCenterAxesAction->setChecked(showCenterAxes.GetAsInt() == 1);
@@ -273,6 +275,9 @@ void ViewMenuManager::setShowOrientationAxes(bool show)
 int ViewMenuManager::interactionMode() const
 {
   auto* renderView = ActiveObjects::instance().activePqRenderView();
+  if (!renderView) {
+    return vtkPVRenderView::INTERACTION_MODE_3D;
+  }
   return vtkSMPropertyHelper(renderView->getProxy(), "InteractionMode")
     .GetAsInt();
 }
@@ -280,6 +285,9 @@ int ViewMenuManager::interactionMode() const
 void ViewMenuManager::setInteractionMode(int mode)
 {
   auto* renderView = ActiveObjects::instance().activePqRenderView();
+  if (!renderView) {
+    return;
+  }
   vtkSMPropertyHelper(renderView->getProxy(), "InteractionMode").Set(mode);
   renderView->getProxy()->UpdateProperty("InteractionMode", 1);
 }
@@ -332,30 +340,44 @@ void ViewMenuManager::setImageViewerMode(bool enable)
     m_imageViewerModeAction->setChecked(enable);
   }
 
-  if (!enable && enable == m_imageViewerMode) {
-    return;
-  }
-  m_imageViewerMode = enable;
-
   if (!enable) {
-    emit imageViewerModeToggled(enable);
+    if (!m_imageViewerMode) {
+      return;
+    }
+    m_imageViewerMode = false;
+    emit imageViewerModeToggled(false);
     restoreImageViewerSettings();
     return;
   }
 
-  auto* pip = ActiveObjects::instance().pipeline();
-  auto* tipPort = ActiveObjects::instance().activeTipOutputPort();
-  if (!pip || !tipPort) {
-    return;
+  // Entering while already in the mode (loading a second image stack
+  // does exactly that) must not save the mode's own camera, projection
+  // and interaction as if they were the user's: put the original view
+  // back first, then set up again from a clean slate.
+  if (m_imageViewerMode) {
+    m_imageViewerMode = false;
+    restoreImageViewerSettings();
   }
 
+  // Nothing to show, or nowhere to show it: leave the mode off rather
+  // than leaving the menu item checked over an unchanged view.
+  auto* pip = ActiveObjects::instance().pipeline();
+  auto* tipPort = ActiveObjects::instance().activeTipOutputPort();
   auto* view =
     vtkSMRenderViewProxy::SafeDownCast(ActiveObjects::instance().activeView());
+  if (!pip || !tipPort || !view) {
+    QSignalBlocker blocked(m_imageViewerModeAction);
+    m_imageViewerModeAction->setChecked(false);
+    return;
+  }
+  m_imageViewerMode = true;
+
   auto* camera = view->GetActiveCamera();
 
   auto& oldSettings = m_previousImageViewerSettings;
   oldSettings->clear();
-  oldSettings->camera->ShallowCopy(camera);
+  // DeepCopy: a snapshot must not share matrices with the live camera
+  oldSettings->camera->DeepCopy(camera);
   oldSettings->projection = projectionMode();
   oldSettings->interactionMode = interactionMode();
 
@@ -429,21 +451,19 @@ void ViewMenuManager::setImageViewerMode(bool enable)
   }
   oldSettings->sliceSink = sliceSink;
 
-  // Hide other sinks on the same port
-  for (auto* link : tipPort->links()) {
-    auto* sg =
-      qobject_cast<pipeline::SinkGroupNode*>(link->to()->node());
-    if (!sg) {
-      continue;
-    }
-    for (auto* sinkNode : sg->sinks()) {
-      auto* legacySink =
-        qobject_cast<pipeline::LegacyModuleSink*>(sinkNode);
-      if (legacySink && legacySink != sliceSink &&
-          legacySink->visibility()) {
-        oldSettings->visibleSinks.append(legacySink);
-        legacySink->setVisibility(false);
-      }
+  // Hide every other visible sink rendering into this view, not just
+  // the ones hanging off this port: with several datasets loaded (e.g.
+  // an XRF and a ptycho volume) the others would otherwise keep
+  // rendering their 3D geometry into what is supposed to be a 2D image
+  // view. Sinks in other views (a split layout, plots) are left alone.
+  // restoreImageViewerSettings() re-shows exactly what is recorded
+  // here, so widening the search needs no matching change there.
+  for (auto* node : pip->nodes()) {
+    auto* legacySink = qobject_cast<pipeline::LegacyModuleSink*>(node);
+    if (legacySink && legacySink != sliceSink &&
+        legacySink->view() == view && legacySink->visibility()) {
+      oldSettings->visibleSinks.append(legacySink);
+      legacySink->setVisibility(false);
     }
   }
 
@@ -498,11 +518,14 @@ void ViewMenuManager::restoreImageViewerSettings()
 
   auto* view =
     vtkSMRenderViewProxy::SafeDownCast(ActiveObjects::instance().activeView());
+  if (!view) {
+    return;
+  }
   auto* camera = view->GetActiveCamera();
 
   setInteractionMode(settings->interactionMode);
   setProjectionMode(settings->projection);
-  camera->ShallowCopy(settings->camera);
+  camera->DeepCopy(settings->camera);
 
   if (settings->sliceSink) {
     if (settings->newSliceSink) {
