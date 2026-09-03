@@ -185,7 +185,9 @@ public:
   QString primaryOutputName() const;
 
 private:
-  void parseDescription();
+  /// Reparse m_jsonDescription into the parameter/spec/metadata
+  /// members. The caller must hold m_parametersMutex.
+  void parseDescriptionLocked();
   QMap<QString, PortData> runImpl(Node* host,
                                   const QMap<QString, PortData>& inputs,
                                   bool isSource);

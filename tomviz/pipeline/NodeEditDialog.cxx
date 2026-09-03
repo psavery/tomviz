@@ -19,6 +19,7 @@
 #include <QDialogButtonBox>
 #include <QPushButton>
 #include <QScreen>
+#include <QCloseEvent>
 #include <QShowEvent>
 #include <QVBoxLayout>
 
@@ -133,12 +134,21 @@ void NodeEditDialog::refreshButtonEnablement()
 
 void NodeEditDialog::onApply()
 {
-  if (!m_node) {
+  if (!m_node || m_applying) {
     return;
   }
 
+  m_applying = true;
   if (m_editWidget) {
     m_editWidget->applyChangesToOperator();
+  }
+  m_applying = false;
+
+  if (!m_node) {
+    // The node was removed while apply was blocked in a nested event
+    // loop; the deferred close was refused, so close now.
+    close();
+    return;
   }
 
   if (m_isNewInsertion && !m_insertionCompleted) {
@@ -151,12 +161,19 @@ void NodeEditDialog::onApply()
 
 void NodeEditDialog::onOkay()
 {
-  if (!m_node) {
+  if (!m_node || m_applying) {
     return;
   }
 
+  m_applying = true;
   if (m_editWidget) {
     m_editWidget->applyChangesToOperator();
+  }
+  m_applying = false;
+
+  if (!m_node) {
+    close();
+    return;
   }
 
   if (m_isNewInsertion && !m_insertionCompleted) {
@@ -168,8 +185,21 @@ void NodeEditDialog::onOkay()
   accept();
 }
 
+void NodeEditDialog::closeEvent(QCloseEvent* event)
+{
+  if (m_applying) {
+    event->ignore();
+    return;
+  }
+  QDialog::closeEvent(event);
+}
+
 void NodeEditDialog::reject()
 {
+  if (m_applying) {
+    return;
+  }
+
   if (m_isNewInsertion && !m_insertionCompleted) {
     // The insertion was applied eagerly when the dialog opened.  Undo it so
     // that cancel is a true no-op.  Removing the new node also drops its own

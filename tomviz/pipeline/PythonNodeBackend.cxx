@@ -168,8 +168,9 @@ PythonNodeBackend::PythonNodeBackend() = default;
 
 void PythonNodeBackend::setJSONDescription(const QString& json)
 {
+  QMutexLocker locker(&m_parametersMutex);
   m_jsonDescription = json;
-  parseDescription();
+  parseDescriptionLocked();
 }
 
 QString PythonNodeBackend::jsonDescription() const
@@ -179,10 +180,15 @@ QString PythonNodeBackend::jsonDescription() const
 
 QStringList PythonNodeBackend::reconfigure(const QString& json)
 {
+  // One lock across the reparse and the merge, so a run snapshotting
+  // the parameters on a worker thread never sees the cleared or
+  // defaults-only intermediate state.
+  QMutexLocker locker(&m_parametersMutex);
   auto previousValues = m_parameters;
   auto previousTypes = m_parameterTypes;
 
-  setJSONDescription(json);
+  m_jsonDescription = json;
+  parseDescriptionLocked();
 
   QStringList reset;
   m_parameters =
@@ -193,11 +199,13 @@ QStringList PythonNodeBackend::reconfigure(const QString& json)
 
 void PythonNodeBackend::setScript(const QString& script)
 {
+  QMutexLocker locker(&m_parametersMutex);
   m_script = script;
 }
 
 QString PythonNodeBackend::scriptSource() const
 {
+  QMutexLocker locker(&m_parametersMutex);
   return m_script;
 }
 
@@ -283,7 +291,9 @@ QString PythonNodeBackend::primaryOutputName() const
   return m_outputs.isEmpty() ? QString() : m_outputs.first().name;
 }
 
-void PythonNodeBackend::parseDescription()
+// Caller must hold m_parametersMutex: this rewrites the parameter map,
+// specs, and script metadata that runs snapshot from worker threads.
+void PythonNodeBackend::parseDescriptionLocked()
 {
   m_operatorName.clear();
   m_defaultLabel.clear();
@@ -443,6 +453,7 @@ void PythonNodeBackend::applySerializedFields(const QJsonObject& json,
   applyDescription(std::move(addInput), std::move(addOutput));
 
   auto args = json.value(QStringLiteral("arguments")).toObject();
+  QMutexLocker locker(&m_parametersMutex);
   for (auto it = args.constBegin(); it != args.constEnd(); ++it) {
     const QString& key = it.key();
     const QString declType = m_parameterTypes.value(key);
@@ -483,6 +494,21 @@ bool PythonNodeBackend::runShouldAutoExecute(Node* host)
   }
 
   const bool isSource = !isTransformShape();
+
+  // Snapshot what the GUI thread can rewrite mid-poll (a description
+  // or script apply), so the whole poll sees one consistent view.
+  QString operatorName;
+  QString script;
+  QMap<QString, QJsonObject> parameterSpecs;
+  QMap<QString, QVariant> params;
+  {
+    QMutexLocker locker(&m_parametersMutex);
+    operatorName = m_operatorName;
+    script = m_script;
+    parameterSpecs = m_parameterSpecs;
+    params = m_parameters;
+  }
+
   try {
     py::gil_scoped_acquire gil;
 
@@ -492,7 +518,7 @@ bool PythonNodeBackend::runShouldAutoExecute(Node* host)
       nodesMod.attr(isSource ? kSourceBaseAttr : kTransformBaseAttr);
 
     py::object scriptModule =
-      PythonNodeUtils::loadScriptAsModule(m_operatorName, m_script);
+      PythonNodeUtils::loadScriptAsModule(operatorName, script);
     py::object userClass =
       PythonNodeUtils::findNodeClass(scriptModule, baseClass);
     if (userClass.is_none()) {
@@ -509,8 +535,7 @@ bool PythonNodeBackend::runShouldAutoExecute(Node* host)
     userClass.attr("__init__")(instance);
     instance.attr("state") =
       PythonNodeUtils::variantMapToPyDict(host->userState());
-    const auto params = parameters();
-    injectParameterApi(instance, m_parameterSpecs, params);
+    injectParameterApi(instance, parameterSpecs, params);
 
     // Scripts written against a tomviz.nodes that predates the hook
     // simply never auto-execute.
@@ -566,6 +591,20 @@ QMap<QString, PortData> PythonNodeBackend::runImpl(
     py::initialize_interpreter();
   }
 
+  // Snapshot what the GUI thread can rewrite mid-run: kwargs, the
+  // kernel's `self.parameter()` view, and the loaded script must agree.
+  QString operatorName;
+  QString script;
+  QMap<QString, QJsonObject> parameterSpecs;
+  QMap<QString, QVariant> params;
+  {
+    QMutexLocker locker(&m_parametersMutex);
+    operatorName = m_operatorName;
+    script = m_script;
+    parameterSpecs = m_parameterSpecs;
+    params = m_parameters;
+  }
+
   try {
     py::gil_scoped_acquire gil;
 
@@ -580,7 +619,7 @@ QMap<QString, PortData> PythonNodeBackend::runImpl(
       nodesMod.attr(isSource ? kSourceBaseAttr : kTransformBaseAttr);
 
     py::object scriptModule =
-      PythonNodeUtils::loadScriptAsModule(m_operatorName, m_script);
+      PythonNodeUtils::loadScriptAsModule(operatorName, script);
 
     py::object userClass =
       PythonNodeUtils::findNodeClass(scriptModule, baseClass);
@@ -605,11 +644,7 @@ QMap<QString, PortData> PythonNodeBackend::runImpl(
     // returns.
     instance.attr("state") =
       PythonNodeUtils::variantMapToPyDict(host->userState());
-    // Snapshot the parameters once: kwargs and the kernel's
-    // `self.parameter()` view must agree, and the GUI may apply new
-    // values while this run is in flight.
-    const auto params = parameters();
-    injectParameterApi(instance, m_parameterSpecs, params);
+    injectParameterApi(instance, parameterSpecs, params);
 
     // Build kwargs from current parameters.
     py::dict kwargs;

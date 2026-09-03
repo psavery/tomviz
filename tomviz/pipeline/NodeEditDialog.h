@@ -10,6 +10,7 @@
 #include <QPointer>
 
 class QDialogButtonBox;
+class QCloseEvent;
 class QShowEvent;
 
 namespace tomviz {
@@ -69,8 +70,13 @@ private slots:
 
 protected:
   void showEvent(QShowEvent* event) override;
+  /// Close is refused while an apply is in progress: applying can
+  /// spin a nested event loop, and destroying the dialog under that
+  /// loop would unwind through freed objects.
+  void closeEvent(QCloseEvent* event) override;
 
 private:
+  bool m_applying = false;
   void init();
   void refreshButtonEnablement();
   void saveGeometry();
