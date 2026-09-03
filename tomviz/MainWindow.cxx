@@ -204,6 +204,12 @@ MainWindow::MainWindow(QWidget* parent, Qt::WindowFlags flags)
                   "#pipelineScroll, #pipelineScrollContainer, #pipelineStrip"
                   " { background: white; }"));
   setAcceptDrops(true);
+  // Several child widgets accept drops by default (line edits, the
+  // message/python text docks, item views) and claim a file drag only
+  // to refuse it, leaving dead zones where drag-and-drop silently does
+  // nothing. Filter file drags application-wide so dropping data works
+  // anywhere over this window.
+  qApp->installEventFilter(this);
   // Force full messages to be shown
   m_ui->outputWidget->showFullMessages(true);
   m_timer = new QTimer(this);
@@ -1191,6 +1197,45 @@ void MainWindow::dragEnterEvent(QDragEnterEvent* e)
   if (e->mimeData()->hasUrls()) {
     e->acceptProposedAction();
   }
+}
+
+bool MainWindow::eventFilter(QObject* watched, QEvent* event)
+{
+  // Route local-file drags over any child of this window to the data
+  // loading handlers above. Without this, whichever drop-accepting
+  // child sits under the cursor claims the drag and refuses the files.
+  // Other windows (e.g. the image stack dialog, which has its own drop
+  // handling) are left alone, as are drags carrying no local files.
+  auto type = event->type();
+  if (type == QEvent::DragEnter || type == QEvent::DragMove ||
+      type == QEvent::Drop) {
+    auto* widget = qobject_cast<QWidget*>(watched);
+    if (widget && widget != this && widget->window() == this) {
+      auto* dropEvt = static_cast<QDropEvent*>(event);
+      const auto* mime = dropEvt->mimeData();
+      bool hasLocalFile = false;
+      if (mime && mime->hasUrls()) {
+        const auto urls = mime->urls();
+        for (const auto& url : urls) {
+          if (url.isLocalFile()) {
+            hasLocalFile = true;
+            break;
+          }
+        }
+      }
+      if (hasLocalFile) {
+        if (type == QEvent::DragEnter) {
+          dragEnterEvent(static_cast<QDragEnterEvent*>(event));
+        } else if (type == QEvent::DragMove) {
+          dropEvt->acceptProposedAction();
+        } else {
+          dropEvent(dropEvt);
+        }
+        return true;
+      }
+    }
+  }
+  return QMainWindow::eventFilter(watched, event);
 }
 
 void MainWindow::dropEvent(QDropEvent* e)
