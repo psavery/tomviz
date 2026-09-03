@@ -100,6 +100,11 @@ private:
   void autoAdjustContrast();
   void autoAdjustContrast(vtkDataArray* histogram, vtkDataArray* extents,
                           vtkImageData* imageData);
+  /// Open a box selector in the render view and auto-adjust the
+  /// contrast from the voxels inside it.
+  void autoAdjustContrastForSelectedRegion();
+  /// Auto-adjust the contrast using only @a extent (in voxel indices).
+  void autoAdjustContrastForExtent(const int extent[6]);
   void resetAutoContrastState();
 
   // Add placeholder nodes to make the color bar and opacity editor look nicer
@@ -127,6 +132,7 @@ private:
 
   QPointer<QDialog> m_brightnessContrastDialog;
   QPointer<BrightnessContrastWidget> m_brightnessContrastWidget;
+  QPointer<QDialog> m_autoContrastRegionDialog;
 
   pipeline::VolumeDataPtr m_volumeData;
 

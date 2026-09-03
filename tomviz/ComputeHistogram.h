@@ -7,6 +7,7 @@
 #include <vtkDoubleArray.h>
 #include <vtkImageData.h>
 #include <vtkMath.h>
+#include <vtkPointData.h>
 
 #include <algorithm>
 #include <cmath>
@@ -109,8 +110,11 @@ void calcHistogram(T*, const vtkIdType, uint64_t*)
 }
 
 /** Single component unsigned char covering 0 -> 255 range. */
-void calcHistogram(unsigned char* values, const vtkIdType numTuples,
-                   uint64_t* pops)
+// inline: unlike its neighbours this overload is not a template, so
+// without it the header cannot be included in more than one translation
+// unit.
+inline void calcHistogram(unsigned char* values, const vtkIdType numTuples,
+                          uint64_t* pops)
 {
   // unsigned char is always in [0, kBins-1], no clamp needed.
   for (vtkIdType j = 0; j < numTuples; ++j) {

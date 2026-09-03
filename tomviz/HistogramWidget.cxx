@@ -7,9 +7,11 @@
 #include "BrightnessContrastWidget.h"
 #include "ColorMap.h"
 #include "ColorMapSettingsWidget.h"
+#include "ComputeHistogram.h"
 #include "DoubleSliderWidget.h"
 #include "PresetDialog.h"
 #include "QVTKGLWidget.h"
+#include "SelectVolumeWidget.h"
 #include "Utilities.h"
 #include "pipeline/InputPort.h"
 #include "pipeline/Link.h"
@@ -28,10 +30,14 @@
 #include <vtkDataArray.h>
 #include <vtkDiscretizableColorTransferFunction.h>
 #include <vtkEventQtSlotConnect.h>
+#include <vtkExtractVOI.h>
+#include <vtkFloatArray.h>
 #include <vtkImageData.h>
 #include <vtkPiecewiseFunction.h>
+#include <vtkPointData.h>
 #include <vtkRenderWindow.h>
 #include <vtkTable.h>
+#include <vtkUnsignedLongLongArray.h>
 #include <vtkVector.h>
 
 #include <pqApplicationCore.h>
@@ -54,6 +60,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QSettings>
 #include <QSignalBlocker>
 #include <QTimer>
@@ -775,6 +782,8 @@ void HistogramWidget::onBrightnessAndContrastClicked()
   auto* widget = m_brightnessContrastWidget.data();
   connect(widget, &BrightnessContrastWidget::autoPressed, this,
           QOverload<>::of(&HistogramWidget::autoAdjustContrast));
+  connect(widget, &BrightnessContrastWidget::autoRegionPressed, this,
+          &HistogramWidget::autoAdjustContrastForSelectedRegion);
   connect(widget, &BrightnessContrastWidget::resetPressed, this,
           QOverload<>::of(&HistogramWidget::resetRange));
 
@@ -804,6 +813,131 @@ void HistogramWidget::autoAdjustContrast()
   }
 
   autoAdjustContrast(histogram, extents, imageData);
+}
+
+void HistogramWidget::autoAdjustContrastForSelectedRegion()
+{
+  if (!m_volumeData || !m_volumeData->isValid()) {
+    return;
+  }
+
+  auto* imageData = m_volumeData->imageData();
+  if (!imageData) {
+    return;
+  }
+
+  // One selector at a time: a second press would put a second box
+  // widget in the render view.
+  if (m_autoContrastRegionDialog) {
+    m_autoContrastRegionDialog->raise();
+    m_autoContrastRegionDialog->activateWindow();
+    return;
+  }
+
+  double origin[3], spacing[3], displayPosition[3] = { 0, 0, 0 };
+  int extent[6];
+  imageData->GetOrigin(origin);
+  imageData->GetSpacing(spacing);
+  imageData->GetExtent(extent);
+
+  // Modeless: the selector puts a box widget in the render view, which
+  // the user has to reach past the dialog to drag.
+  auto* dialog = new QDialog(this);
+  m_autoContrastRegionDialog = dialog;
+  dialog->setWindowTitle("Auto Contrast Region");
+  dialog->setAttribute(Qt::WA_DeleteOnClose);
+
+  auto* selector = new SelectVolumeWidget(origin, spacing, extent, extent,
+                                          displayPosition, dialog);
+  auto* buttons = new QDialogButtonBox(
+    QDialogButtonBox::Apply | QDialogButtonBox::Close, Qt::Horizontal, dialog);
+
+  auto* layout = new QVBoxLayout(dialog);
+  layout->addWidget(new QLabel(
+    "Drag the box in the 3D view to choose the region the contrast should "
+    "be computed from, then click Apply.", dialog));
+  layout->addWidget(selector);
+  layout->addWidget(buttons);
+
+  connect(buttons->button(QDialogButtonBox::Apply), &QPushButton::clicked, this,
+          [this, selector]() {
+            int selected[6];
+            selector->getExtentOfSelection(selected);
+            autoAdjustContrastForExtent(selected);
+          });
+  connect(buttons, &QDialogButtonBox::rejected, dialog, &QDialog::close);
+
+  dialog->show();
+}
+
+void HistogramWidget::autoAdjustContrastForExtent(const int extent[6])
+{
+  if (!m_volumeData || !m_volumeData->isValid() || !m_LUT) {
+    return;
+  }
+
+  auto* imageData = m_volumeData->imageData();
+  if (!imageData) {
+    return;
+  }
+
+  vtkNew<vtkExtractVOI> extractor;
+  extractor->SetInputData(imageData);
+  int voi[6] = { extent[0], extent[1], extent[2],
+                 extent[3], extent[4], extent[5] };
+  extractor->SetVOI(voi);
+  extractor->Update();
+
+  auto* region = extractor->GetOutput();
+  auto* array = region ? region->GetPointData()->GetScalars() : nullptr;
+  if (!array || array->GetNumberOfTuples() < 1) {
+    return;
+  }
+
+  // Bin the region the way HistogramManager bins whole images; its
+  // cache is keyed on whole images, so transient sub-regions bin here.
+  double minmax[2] = { 0.0, 0.0 };
+  switch (array->GetDataType()) {
+    vtkTemplateMacro(ComputeFiniteRange(
+      reinterpret_cast<VTK_TT*>(array->GetVoidPointer(0)),
+      array->GetNumberOfTuples(), array->GetNumberOfComponents(),
+      /*useMagnitude=*/true, minmax));
+    default:
+      return;
+  }
+  if (minmax[0] == minmax[1]) {
+    minmax[1] = minmax[0] + 1.0;
+  }
+
+  double inc = (minmax[1] - minmax[0]) / (kHistogramBins - 1);
+  double halfInc = inc / 2.0;
+
+  vtkNew<vtkFloatArray> extentsArray;
+  extentsArray->SetName("image_extents");
+  extentsArray->SetNumberOfTuples(kHistogramBins);
+  double binMin = minmax[0] + halfInc;
+  for (int j = 0; j < kHistogramBins; ++j) {
+    extentsArray->SetValue(j, binMin + j * inc);
+  }
+
+  vtkNew<vtkUnsignedLongLongArray> populations;
+  populations->SetName("image_pops");
+  populations->SetNumberOfTuples(kHistogramBins);
+  auto* pops = static_cast<uint64_t*>(populations->GetVoidPointer(0));
+  std::fill(pops, pops + kHistogramBins, 0);
+
+  int invalid = 0;
+  switch (array->GetDataType()) {
+    vtkTemplateMacro(CalculateHistogram(
+      reinterpret_cast<VTK_TT*>(array->GetVoidPointer(0)),
+      array->GetNumberOfTuples(), array->GetNumberOfComponents(), minmax[0],
+      minmax[1], pops, 1.0 / inc, invalid));
+    default:
+      return;
+  }
+
+  // The region's own dimensions set the ImageJ-style thresholds
+  autoAdjustContrast(populations, extentsArray, region);
 }
 
 void HistogramWidget::autoAdjustContrast(vtkDataArray* histogram,
