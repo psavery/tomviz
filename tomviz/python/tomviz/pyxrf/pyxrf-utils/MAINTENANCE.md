@@ -94,6 +94,29 @@ The recommended deployment is the wrapper script:
    previously left `conda-meta/*.json` unreadable to other users.
 3. Make it executable (`chmod a+rx run-pyxrf-utils`).
 
+The wrapper deliberately runs `pixi run --as-is`, which is `--frozen`
+plus `--no-install`: it never re-solves the manifest and never installs
+anything. Without it, a `pixi.toml` that no longer matches `pixi.lock`
+would send whoever runs it next into a full dependency solve, and a
+missing or incomplete environment into a multi-gigabyte download, in
+both cases from inside the Tomviz GUI with no visible progress. With
+it, those situations fail immediately instead. The tradeoff is that the
+environment must already have been built with `pixi install` before the
+wrapper is used, so run that after any change to `pixi.toml` or
+`pixi.lock`.
+
+Note that `--as-is` does not fail on its own when the environment is
+absent; pixi falls back to running the task with the system `python`,
+which then dies with a confusing `ModuleNotFoundError`. That is why the
+wrapper checks for the environment's interpreter itself and exits with
+a message pointing at `pixi install`.
+
+Do not adopt `--as-is` expecting it to be faster. It skips the
+manifest and environment consistency checks, but those cost roughly
+15 ms on a warm cache, against a CLI startup of about 1.5 s and jobs
+that run for minutes. The reason to use it is the failure mode, not
+the latency.
+
 Because the wrapper goes through `pixi run`, the CLI always executes
 with the environment's own Python and libraries, regardless of the
 caller's environment. Users' `~/.local` site-packages are not involved
