@@ -35,6 +35,7 @@ using VolumeDataPtr = std::shared_ptr<VolumeData>;
 } // namespace pipeline
 
 class BrightnessContrastWidget;
+class OpacityPresetWidget;
 class ColorMapSettingsWidget;
 class PresetDialog;
 class QVTKGLWidget;
@@ -73,6 +74,7 @@ public slots:
   void onPresetClicked();
   void onSaveToPresetClicked();
   void onBrightnessAndContrastClicked();
+  void onOpacityPresetsClicked();
   void onCreateSegmentationColormapClicked();
   void applyCurrentPreset();
   void updateUI();
@@ -118,6 +120,7 @@ private:
   QToolButton* m_colorMapSettingsButton;
   QToolButton* m_savePresetButton;
   QToolButton* m_brightnessAndContrastButton;
+  QToolButton* m_opacityPresetButton;
 
   vtkWeakPointer<vtkDiscretizableColorTransferFunction> m_LUT;
   vtkWeakPointer<vtkPiecewiseFunction> m_scalarOpacityFunction;
@@ -132,6 +135,8 @@ private:
 
   QPointer<QDialog> m_brightnessContrastDialog;
   QPointer<BrightnessContrastWidget> m_brightnessContrastWidget;
+  QPointer<QDialog> m_opacityPresetDialog;
+  QPointer<OpacityPresetWidget> m_opacityPresetWidget;
   QPointer<QDialog> m_autoContrastRegionDialog;
 
   pipeline::VolumeDataPtr m_volumeData;

@@ -33,6 +33,8 @@ set(SOURCES
   Behaviors.cxx
   Behaviors.h
   BrightnessContrastWidget.cxx
+  OpacityPresetWidget.cxx
+  OpacityPresetWidget.h
   BrightnessContrastWidget.h
   CameraReaction.cxx
   CameraReaction.h

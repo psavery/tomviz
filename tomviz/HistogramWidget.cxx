@@ -5,6 +5,7 @@
 
 #include "ActiveObjects.h"
 #include "BrightnessContrastWidget.h"
+#include "OpacityPresetWidget.h"
 #include "ColorMap.h"
 #include "ColorMapSettingsWidget.h"
 #include "ComputeHistogram.h"
@@ -159,6 +160,15 @@ HistogramWidget::HistogramWidget(QWidget* parent)
           &HistogramWidget::onBrightnessAndContrastClicked);
   vLayout->addWidget(button);
 
+  button = new QToolButton;
+  m_opacityPresetButton = button;
+  button->setIcon(QIcon(":/icons/gradient_opacity.png"));
+  button->setToolTip("Opacity presets (Gaussian, linear, cutoff)");
+  button->setEnabled(false);
+  connect(button, &QToolButton::clicked, this,
+          &HistogramWidget::onOpacityPresetsClicked);
+  vLayout->addWidget(button);
+
   vLayout->addStretch(1);
 
   connect(&ActiveObjects::instance(),
@@ -270,6 +280,12 @@ void HistogramWidget::updateColorMapDialogs()
     m_brightnessContrastWidget->setVolumeData(m_volumeData);
     m_brightnessContrastWidget->setLut(lut);
     m_brightnessContrastWidget->updateGui();
+  }
+
+  if (m_opacityPresetWidget) {
+    m_opacityPresetWidget->setVolumeData(m_volumeData);
+    m_opacityPresetWidget->setLut(lut);
+    m_opacityPresetWidget->updateGui();
   }
 }
 
@@ -793,6 +809,25 @@ void HistogramWidget::onBrightnessAndContrastClicked()
   connect(&dialog, &QDialog::finished, &dialog, &QDialog::deleteLater);
 }
 
+void HistogramWidget::onOpacityPresetsClicked()
+{
+  if (m_opacityPresetDialog) {
+    m_opacityPresetDialog->raise();
+    return;
+  }
+
+  m_opacityPresetDialog = new QDialog(this);
+  auto& dialog = *m_opacityPresetDialog;
+  dialog.setLayout(new QVBoxLayout);
+  dialog.setWindowTitle("Opacity Presets");
+  dialog.resize(500, 200);
+
+  m_opacityPresetWidget = new OpacityPresetWidget(m_volumeData, m_LUT, this);
+  dialog.layout()->addWidget(m_opacityPresetWidget);
+  dialog.show();
+  connect(&dialog, &QDialog::finished, &dialog, &QDialog::deleteLater);
+}
+
 void HistogramWidget::autoAdjustContrast()
 {
   auto* table = m_inputData.Get();
@@ -1067,10 +1102,12 @@ void HistogramWidget::updateUI()
   QSignalBlocker blocker2(m_colorMapSettingsButton);
   QSignalBlocker blocker3(m_savePresetButton);
   QSignalBlocker blocker4(m_brightnessAndContrastButton);
+  QSignalBlocker blocker5(m_opacityPresetButton);
   m_colorLegendToolButton->setEnabled(enable);
   m_colorMapSettingsButton->setEnabled(enable);
   m_savePresetButton->setEnabled(enable);
   m_brightnessAndContrastButton->setEnabled(enable);
+  m_opacityPresetButton->setEnabled(enable);
   if (enable) {
     m_colorLegendToolButton->setChecked(
       vtkSMPropertyHelper(sbProxy, "Visibility").GetAsInt() == 1);
