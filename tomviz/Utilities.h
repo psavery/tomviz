@@ -22,6 +22,8 @@
 #include <QStringList>
 #include <QVariant>
 
+class QTextStream;
+
 #include <vector>
 
 class pqAnimationScene;
@@ -344,6 +346,14 @@ bool loadPlugins();
  * actually modifying the data.
  */
 void relabelXAndZAxes(vtkImageData* image);
+
+/**
+ * Parse scan IDs from a whitespace-delimited text stream. By default
+ * the first column holds them; a '#' comment header naming the columns
+ * (e.g. the ptycho output info file's "# Angle SID Version") selects
+ * the SID column instead. Used by the ptycho and pyxrf dialogs.
+ */
+QStringList readSidsFromText(QTextStream& reader);
 
 } // namespace tomviz
 

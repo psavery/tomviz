@@ -1,3 +1,4 @@
+import csv
 import math
 from pathlib import Path
 import sys
@@ -162,28 +163,99 @@ def locate_ptycho_hyan_file(sid: int, version: str,
     return None
 
 
+# Recognized (normalized) header names for scan list files
+SID_HEADERS = ('scanid', 'sid')
+USE_HEADERS = ('use',)
+VERSION_HEADERS = ('version',)
+ANGLE_HEADERS = ('angle', 'theta')
+USE_TRUE_VALUES = ('1', 'x', 'true', 'yes')
+
+
+def _normalized_header_map(tokens: list[str]) -> dict:
+    # Map normalized header names ("Scan ID" -> "scanid") to columns
+    names = {}
+    for i, tok in enumerate(tokens):
+        key = ''.join(c for c in tok.lower() if c.isalnum())
+        if key:
+            names.setdefault(key, i)
+    return names
+
+
 def get_use_and_versions_from_csv(csv_path: str) -> dict:
-    data = np.genfromtxt(csv_path, delimiter=',', names=True, dtype=None)
+    """Read SIDs, plus optional "Use" and "Version" settings, from a
+    scan list file.
+
+    Both comma-delimited CSV (e.g. the pyxrf-utils log file, with its
+    "Scan ID", "Use", and "Version" columns) and whitespace-delimited
+    text (e.g. the ptycho output info file, "# Angle SID Version") are
+    accepted. The header row may start with '#'. If no recognizable
+    header is present, the first column is taken to be the SID.
+    """
+    empty = {'sids': [], 'use': [], 'versions': []}
+
+    with open(csv_path, 'r', newline='') as rf:
+        lines = [line for line in rf if line.strip()]
+
+    if not lines:
+        print('Scan list file is empty', file=sys.stderr)
+        return empty
+
+    if ',' in lines[0]:
+        rows = [row for row in csv.reader(lines)]
+    else:
+        rows = [line.split() for line in lines]
+
+    # Identify the header row, which may be prefixed with '#'
+    header_map = {}
+    data_rows = rows
+    tokens = list(rows[0])
+    if tokens and tokens[0].startswith('#'):
+        tokens[0] = tokens[0].lstrip('#').strip()
+        if not tokens[0]:
+            tokens = tokens[1:]
+    candidate = _normalized_header_map(tokens)
+    known = SID_HEADERS + USE_HEADERS + VERSION_HEADERS + ANGLE_HEADERS
+    if any(k in candidate for k in known):
+        header_map = candidate
+        data_rows = rows[1:]
+
+    sid_col = next((header_map[k] for k in SID_HEADERS if k in header_map),
+                   None)
+    use_col = next((header_map[k] for k in USE_HEADERS if k in header_map),
+                   None)
+    version_col = next(
+        (header_map[k] for k in VERSION_HEADERS if k in header_map), None)
+
+    if sid_col is None:
+        if header_map:
+            print('No "Scan ID" column found in scan list file',
+                  file=sys.stderr)
+            return empty
+        # No header at all: the first column is the SID
+        sid_col = 0
 
     sids = []
-    try:
-        sids = data['Scan_ID'].tolist()
-    except Exception:
-        print('"Scan_ID" column not found in CSV file', file=sys.stderr)
-
     use = []
-    try:
-        use = data['Use'].tolist()
-        # Convert to boolean
-        use = [x in (1, '1', 'x') for x in use]
-    except Exception:
-        print('"Use" column not found in CSV file', file=sys.stderr)
-
     versions = []
-    try:
-        versions = data['Version'].tolist()
-    except Exception:
-        print('"Version" column not found in CSV file', file=sys.stderr)
+    for row in data_rows:
+        if not row or row[0].lstrip().startswith('#'):
+            continue
+        if sid_col >= len(row):
+            continue
+        try:
+            sid = int(row[sid_col].strip())
+        except ValueError:
+            continue
+
+        sids.append(sid)
+        # Rows shorter than the declared columns still get an entry, so
+        # the use/version lists stay aligned with the SID list.
+        if use_col is not None:
+            value = row[use_col].strip().lower() if use_col < len(row) else ''
+            use.append(value in USE_TRUE_VALUES)
+        if version_col is not None:
+            versions.append(
+                row[version_col].strip() if version_col < len(row) else '')
 
     return {
         'sids': sids,
@@ -218,7 +290,8 @@ def filter_sid_list(sid_list: list[int], filter_string: str) -> list[int]:
         else:
             valid_sids.append(int(this_str))
 
-    return [sid for sid in sid_list if sid in valid_sids]
+    valid = set(valid_sids)
+    return [sid for sid in sid_list if sid in valid]
 
 
 def fetch_angle_from_ptycho_hyan_file(filepath: PathLike) -> float | None:

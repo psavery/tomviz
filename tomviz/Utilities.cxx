@@ -66,8 +66,10 @@
 #include <QJsonValue>
 #include <QLayout>
 #include <QMessageBox>
+#include <QRegularExpression>
 #include <QStandardPaths>
 #include <QString>
+#include <QTextStream>
 #include <QUrl>
 
 namespace tomviz {
@@ -1868,6 +1870,37 @@ void relabelXAndZAxes(vtkImageData* image)
 
   // Reinstate the field data
   image->SetFieldData(fd);
+}
+
+QStringList readSidsFromText(QTextStream& reader)
+{
+  QStringList sids;
+  int sidCol = 0;
+  static const QRegularExpression ws("\\s+");
+  while (!reader.atEnd()) {
+    auto line = reader.readLine().trimmed();
+    if (line.isEmpty()) {
+      continue;
+    }
+    if (line.startsWith('#')) {
+      // A header comment can name the columns, e.g. "# Angle SID Version"
+      auto tokens = line.mid(1).trimmed().split(ws, Qt::SkipEmptyParts);
+      for (int i = 0; i < tokens.size(); ++i) {
+        auto t = tokens[i].toLower();
+        if (t == "sid" || t == "scanid" || t == "scan_id") {
+          sidCol = i;
+          break;
+        }
+      }
+      continue;
+    }
+
+    auto fields = line.split(ws, Qt::SkipEmptyParts);
+    if (sidCol < fields.size()) {
+      sids.append(fields[sidCol]);
+    }
+  }
+  return sids;
 }
 
 } // namespace tomviz

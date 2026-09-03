@@ -638,15 +638,12 @@ public:
     }
   }
 
-  // Blocks (with the event loop running) until no scan is in progress.
-  // Used before reading the selection out of the widget, so an Apply
-  // during a scan waits for complete results instead of using partial
-  // ones.
+  // Blocks (event loop running) until no scan is in progress, so an
+  // Apply during a scan waits for complete results.
   void waitForScan()
   {
-    // Self-guarded: the dialog refuses to close during an apply, but if
-    // this object is ever destroyed under the nested loop anyway, quit
-    // instead of spinning on freed state.
+    // The dialog refuses to close during an apply; if this object is
+    // destroyed under the nested loop anyway, quit rather than spin.
     QPointer<Internal> self(this);
     while (self && self->scanInProgress) {
       QEventLoop loop;
@@ -658,9 +655,7 @@ public:
 
   // Scans the ptycho directory in a background thread, streaming SIDs
   // into the table as they are found. onDone runs after the next scan
-  // that completes: if this scan is superseded (e.g. the parked ptycho
-  // GUI exiting triggers a reload mid-restore), the continuation
-  // carries over to the superseding scan instead of being lost.
+  // that completes, carrying over if this scan is superseded.
   void loadPtychoDir(std::function<void()> onDone = {})
   {
     cancelScan();
@@ -805,8 +800,7 @@ public:
   }
 
   // Record one scanned SID with its default selection (first valid
-  // version, used; else first version, unused) and stream its row into
-  // the table when no SID filter is active.
+  // version, used) and stream its row in when no SID filter is active.
   void appendScannedSid(long sid, const QStringList& versions,
                         const QVariantList& angles, const QStringList& errors)
   {
@@ -918,19 +912,7 @@ public:
     }
 
     QTextStream reader(&file);
-
-    // Now load the SIDs
-    QStringList sids;
-    while (!reader.atEnd()) {
-      auto line = reader.readLine().trimmed();
-      if (line.isEmpty() || line.startsWith('#')) {
-        // Skip over it
-        continue;
-      }
-
-      sids.append(line.split(' ')[0]);
-    }
-
+    auto sids = readSidsFromText(reader);
     ui.filterSIDsString->setText(sids.join(", "));
 
     updateFilteredSidList();
@@ -1003,9 +985,15 @@ public:
       }
     }
 
+    QList<long> missing;
     for (int i = 0; i < sids.size(); ++i) {
       auto sid = sids[i];
       auto idx = sidList.indexOf(sid);
+      if (idx < 0) {
+        // The file lists a SID that is not in the ptycho directory
+        missing.append(sid);
+        continue;
+      }
       if (i < use.size()) {
         useList[idx] = use[i];
       }
@@ -1025,6 +1013,11 @@ public:
       }
     }
 
+    if (!missing.isEmpty()) {
+      qWarning() << missing.size() << "SIDs from the file are not in the"
+                 << "ptycho directory and were skipped:" << missing;
+    }
+
     updateTable();
   }
 
@@ -1036,7 +1029,8 @@ public:
       startPath = ptychoDirectory();
     }
     auto file = QFileDialog::getSaveFileName(
-      parent.data(), caption, startPath, "Text files (*.txt)");
+      parent.data(), caption, startPath,
+      "CSV files (*.csv);;Text files (*.txt)");
     if (file.isEmpty()) {
       return;
     }

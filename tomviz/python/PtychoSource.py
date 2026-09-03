@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import hashlib
 import json
 import sys
@@ -297,6 +298,17 @@ def _write_ptycho_info_file(
     output_path: str,
     info_rows: list[tuple[int, int, float, str]],
 ) -> None:
+    if Path(output_path).suffix.lower() == '.csv':
+        # Write the scan list CSV format, whose columns match the
+        # pyxrf-utils log file so that either the ptycho or the pyxrf
+        # dialog can load it back in.
+        with open(Path(output_path), 'w', newline='') as wf:
+            writer = csv.writer(wf)
+            writer.writerow(['Scan ID', 'Theta', 'Use', 'Version'])
+            for row in info_rows:
+                writer.writerow([row[1], f'{row[2]:.3f}', 1, row[3]])
+        return
+
     currentsidlist_str: list[list[str]] = []
     for row in info_rows:
         this_row: list[str] = []

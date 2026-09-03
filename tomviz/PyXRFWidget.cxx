@@ -447,15 +447,7 @@ public:
 
   void loadSidsFromTxt(QTextStream& reader)
   {
-    QStringList sids;
-    while (!reader.atEnd()) {
-      auto line = reader.readLine().trimmed();
-      if (line.isEmpty() || line.startsWith('#')) {
-        continue;
-      }
-      sids.append(line.split(' ')[0]);
-    }
-
+    auto sids = readSidsFromText(reader);
     ui.filterSidsString->setText(sids.join(", "));
   }
 
@@ -468,18 +460,31 @@ public:
       col = col.trimmed();
     }
 
-    int sidCol = columns.indexOf("Scan ID");
-    if (sidCol < 0) {
-      sidCol = columns.indexOf("Scan_ID");
+    // Match headers the way the ptycho scan list parser does: case-
+    // and punctuation-insensitive, so "Scan ID", "Scan_ID", and "SID"
+    // are all understood.
+    auto normalized = [](const QString& s) {
+      QString out;
+      for (auto ch : s.toLower()) {
+        if (ch.isLetterOrNumber()) {
+          out.append(ch);
+        }
+      }
+      return out;
+    };
+    int sidCol = -1;
+    int useCol = -1;
+    for (int i = 0; i < columns.size(); ++i) {
+      auto key = normalized(columns[i]);
+      if (sidCol < 0 && (key == "scanid" || key == "sid")) {
+        sidCol = i;
+      } else if (useCol < 0 && key == "use") {
+        useCol = i;
+      }
     }
     if (sidCol < 0) {
       qCritical() << "CSV file has no \"Scan ID\" column";
       return;
-    }
-
-    int useCol = columns.indexOf("Use");
-    if (useCol < 0) {
-      useCol = columns.indexOf("use");
     }
 
     QStringList sids;
