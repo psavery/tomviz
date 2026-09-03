@@ -15,12 +15,129 @@ from tqdm import tqdm
 
 import tomviz.nodes
 
-from tomviz.ptycho.ptycho import find_ptycho_file
-
 if TYPE_CHECKING:
     from collections.abc import Callable
 
     from tomviz.dataset import Dataset
+
+
+# The ptycho file-layout helpers below are copied from
+# tomviz/ptycho/ptycho.py so that this script stays self-contained: it
+# is embedded verbatim in state files and may execute in an external
+# Python environment where the application's tomviz.ptycho module does
+# not exist.
+
+# Files with these suffixes cannot be the small text config that
+# carries the angle and pixel sizes.
+NON_CONFIG_SUFFIXES = {
+    '.npy', '.npz', '.h5', '.hdf5', '.nxs', '.tif', '.tiff',
+    '.png', '.jpg', '.jpeg', '.mat',
+}
+
+# The config is a small text file; never read more than this much of
+# any candidate while searching for it.
+MAX_CONFIG_READ_BYTES = 1024 * 1024
+
+
+def find_ptycho_file(sid: int, version: str, type_str: str,
+                     ptycho_dir: str | Path) -> Path | None:
+    # type_str is `ptycho` or `probe`
+    ptycho_dir = Path(ptycho_dir)
+    dir_path = ptycho_dir / f'S{sid}/{version}/recon_data'
+    base_str = f'recon_{sid}_{version}_{type_str}'
+    # Prefer `_ave.npy` if available, then `.npy`
+    suffix_to_try = [
+        '_ave.npy',
+        '.npy',
+    ]
+    for suffix in suffix_to_try:
+        path = dir_path / f'{base_str}{suffix}'
+        if path.exists():
+            return path
+
+    # If those didn't exist, just try to grab anything that
+    # matches `{base_str}*.npy`
+    paths = list(dir_path.glob(f'{base_str}*.npy'))
+    if paths:
+        return paths[0].resolve()
+
+    # Didn't find any matches
+    return None
+
+
+def locate_ptycho_hyan_file(sid: int, version: str,
+                            ptycho_dir: str | Path) -> Path | None:
+    recon_data_dir = Path(ptycho_dir) / f'S{sid}' / version / 'recon_data'
+    matches = list(recon_data_dir.glob(f'{sid}_{version}*'))
+
+    for match in matches:
+        if match.suffix.lower() in NON_CONFIG_SUFFIXES:
+            continue
+        try:
+            with open(match.resolve(), 'r', encoding='utf-8',
+                      errors='replace') as rf:
+                if 'angle =' in rf.read(MAX_CONFIG_READ_BYTES):
+                    return match.resolve()
+        except Exception:
+            # Move on to the next one
+            continue
+
+    return None
+
+
+def fetch_pixel_sizes_from_ptycho_hyan_file(
+    filepath: str | Path,
+) -> tuple[float, float] | None:
+    print(f'Obtaining pixel sizes from config file: {filepath}')
+    vars_required = [
+        'lambda_nm', 'z_m', 'nx', 'ny', 'ccd_pixel_um'
+    ]
+    alternatives = {
+        'nx': 'x_arr_size',
+        'ny': 'y_arr_size',
+    }
+    vars_requested = vars_required + list(alternatives.values())
+    results = {}
+    try:
+        with open(filepath, 'r', encoding='utf-8') as rf:
+            for line in rf:
+                if '=' not in line:
+                    continue
+
+                lhs = line.split('=')[0].strip()
+                if lhs in vars_requested:
+                    value = float(line.split('=', 1)[1].strip())
+                    results[lhs] = value
+    except Exception as e:
+        print('Failed to fetch pixel sizes with error:', e, file=sys.stderr)
+        return None
+
+    # Add alternatives if they are present
+    for name in vars_required:
+        if name not in results and name in alternatives:
+            # Check the alt_name
+            alt_name = alternatives[name]
+            if alt_name in results:
+                # Convert it
+                results[name] = results.pop(alt_name)
+
+    missing = [x for x in vars_required if x not in results]
+    if missing:
+        print(
+            'Failed to fetch pixel sizes. Some required variables '
+            f'were not found: {missing}'
+        )
+        return None
+
+    # Now compute them. They can both use the same numerator
+    numerator = (
+        results['lambda_nm'] * results['z_m'] * 1e6 / results['ccd_pixel_um']
+    )
+
+    x_pixel_size = numerator / results['nx']
+    y_pixel_size = numerator / results['ny']
+
+    return x_pixel_size, y_pixel_size
 
 
 def _rotate_stack_minus_90(array: NDArray) -> NDArray:
@@ -58,7 +175,10 @@ def _load_cached_scan(cache_path: Path,
         return None
     try:
         with np.load(cache_path) as loaded:
-            if not np.allclose(loaded['src_mtimes'], src_mtimes):
+            # Exact comparison: at epoch magnitudes, allclose-style
+            # tolerances would accept mtimes hours apart.
+            if not np.array_equal(loaded['src_mtimes'],
+                                  np.asarray(src_mtimes)):
                 return None
             return loaded['amp'], loaded['phase'], loaded['prb']
     except Exception:
@@ -90,6 +210,10 @@ def _process_scan(
         cached = _load_cached_scan(cache_path, src_mtimes)
         if cached is not None:
             return cached
+
+    if prb_path is None:
+        raise RuntimeError(
+            f'Probe file is missing for SID {sid} ({version})')
 
     obj: NDArray = np.load(obj_path)
     prb: NDArray = np.load(prb_path)
@@ -141,11 +265,6 @@ def _remove_background(im: NDArray[np.floating]) -> NDArray[np.floating]:
 def _attempt_to_read_pixel_sizes(
     sid: int, version: str, ptycho_dir: str | Path,
 ) -> tuple[float, float] | None:
-    from tomviz.ptycho.ptycho import (
-        locate_ptycho_hyan_file,
-        fetch_pixel_sizes_from_ptycho_hyan_file,
-    )
-
     path = locate_ptycho_hyan_file(sid, version, ptycho_dir)
     if path is None:
         print(
