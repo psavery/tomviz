@@ -17,6 +17,7 @@
 #include <QComboBox>
 #include <QDebug>
 #include <QFormLayout>
+#include <QGroupBox>
 #include <QJsonArray>
 #include <QMessageBox>
 #include <QPushButton>
@@ -1564,19 +1565,26 @@ QWidget* VolumeSink::createSinkPropertiesWidget(QWidget* parent)
           [this](bool on) { setUseDetachedColorMap(on); });
 
   // --- Cut-out ---
-  auto* cutOutCheck = new QCheckBox(widget);
-  cutOutCheck->setToolTip(
+  // A checkable group below Lighting; the corner and position rows are
+  // only shown while the cut-out is on so the panel stays uncluttered.
+  auto* cutOutBox = new QGroupBox("Cut Out", widget);
+  cutOutBox->setCheckable(true);
+  cutOutBox->setToolTip(
     "Remove one octant of the volume so the interior can be seen from "
     "outside.");
   {
-    QSignalBlocker blocker(cutOutCheck);
-    cutOutCheck->setChecked(cutOutEnabled());
+    QSignalBlocker blocker(cutOutBox);
+    cutOutBox->setChecked(cutOutEnabled());
   }
-  widget->formLayout()->insertRow(insertRow++, "Cut Out", cutOutCheck);
-  connect(cutOutCheck, &QCheckBox::toggled,
+  auto* cutOutBody = new QWidget(cutOutBox);
+  auto* cutOutForm = new QFormLayout(cutOutBody);
+  cutOutForm->setContentsMargins(0, 0, 0, 0);
+  auto* cutOutLayout = new QVBoxLayout(cutOutBox);
+  cutOutLayout->addWidget(cutOutBody);
+  connect(cutOutBox, &QGroupBox::toggled, this,
           [this](bool on) { setCutOutEnabled(on); });
 
-  auto* cornerCombo = new QComboBox(widget);
+  auto* cornerCombo = new QComboBox(cutOutBody);
   // Order matches the corner bits: 1 = high X, 2 = high Y, 4 = high Z.
   cornerCombo->addItems({ "-X -Y -Z", "+X -Y -Z", "-X +Y -Z", "+X +Y -Z",
                           "-X -Y +Z", "+X -Y +Z", "-X +Y +Z", "+X +Y +Z" });
@@ -1585,40 +1593,38 @@ QWidget* VolumeSink::createSinkPropertiesWidget(QWidget* parent)
     QSignalBlocker blocker(cornerCombo);
     cornerCombo->setCurrentIndex(cutOutCorner());
   }
-  widget->formLayout()->insertRow(insertRow++, "Cut Out Corner", cornerCombo);
+  cutOutForm->addRow("Corner", cornerCombo);
   connect(cornerCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
           this, [this](int idx) { setCutOutCorner(idx); });
 
-  QList<QWidget*> cutOutRows{ cornerCombo };
-  const char* axisNames[3] = { "Cut Out X", "Cut Out Y", "Cut Out Z" };
+  const char* axisNames[3] = { "X", "Y", "Z" };
   for (int axis = 0; axis < 3; ++axis) {
-    auto* slider = new DoubleSliderWidget(true, widget);
+    auto* slider = new DoubleSliderWidget(true, cutOutBody);
     slider->setLineEditWidth(50);
     slider->setMinimum(0.0);
     slider->setMaximum(1.0);
     slider->setValue(cutOutPosition(axis));
     slider->setToolTip(
       "Where the cut sits along this axis, as a fraction of the volume.");
-    widget->formLayout()->insertRow(insertRow++, axisNames[axis], slider);
+    cutOutForm->addRow(axisNames[axis], slider);
     connect(slider, &DoubleSliderWidget::valueEdited, this,
             [this, axis](double v) { setCutOutPosition(axis, v); });
     connect(slider, &DoubleSliderWidget::valueChanged, this,
             [this, axis](double v) { setCutOutPosition(axis, v); });
-    cutOutRows.append(slider);
   }
 
-  // The corner and position rows only mean anything while the cut-out is on
-  auto syncCutOutRows = [this, cutOutRows, widget]() {
-    for (auto* row : cutOutRows) {
-      row->setEnabled(cutOutEnabled());
-      if (auto* label = widget->formLayout()->labelForField(row)) {
-        label->setEnabled(cutOutEnabled());
-      }
-    }
+  auto syncCutOut = [this, cutOutBox, cutOutBody]() {
+    QSignalBlocker blocker(cutOutBox);
+    cutOutBox->setChecked(cutOutEnabled());
+    cutOutBody->setVisible(cutOutEnabled());
   };
-  syncCutOutRows();
+  syncCutOut();
   connect(this, &VolumeSink::cutOutChanged, widget,
-          [syncCutOutRows]() { syncCutOutRows(); });
+          [syncCutOut]() { syncCutOut(); });
+
+  // Below the Lighting group, ahead of the trailing stretch
+  auto* mainLayout = widget->mainLayout();
+  mainLayout->insertWidget(mainLayout->count() - 1, cutOutBox);
 
   // Push all lighting state (values + active preset highlight) into the
   // widget; reused whenever any lighting parameter changes on this sink.
