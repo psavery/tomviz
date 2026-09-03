@@ -45,6 +45,7 @@ void DataTransformMenu::buildTransforms()
   auto arrayWranglerAction = dataManagement->addAction("Convert Type");
   auto transposeDataAction = dataManagement->addAction("Transpose Data");
   auto removeArraysAction = dataManagement->addAction("Remove Arrays");
+  auto combineDatasetsAction = dataManagement->addAction("Combine Datasets");
   auto reinterpretSignedToUnignedAction =
     dataManagement->addAction("Reinterpret Signed to Unsigned");
   dataManagement->addSeparator();
@@ -124,6 +125,10 @@ void DataTransformMenu::buildTransforms()
     removeArraysAction, "Remove Arrays",
     readInPythonScript("RemoveArrays"),
     readInJSONDescription("RemoveArrays"));
+  new AddPythonTransformReaction(
+    combineDatasetsAction, "Combine Datasets",
+    readInPythonScript("CombineDatasets"),
+    readInJSONDescription("CombineDatasets"));
   new AddPythonTransformReaction(
     reinterpretSignedToUnignedAction, "Reinterpret Signed to Unsigned",
     readInPythonScript("ReinterpretSignedToUnsigned"));

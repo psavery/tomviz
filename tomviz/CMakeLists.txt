@@ -511,6 +511,7 @@ set(python_files
   AddPoissonNoise.py
   BinaryThreshold.py
   CircleMask.py
+  CombineDatasets.py
   ConnectedComponents.py
   ClipEdges.py
   OtsuMultipleThreshold.py
@@ -604,6 +605,7 @@ set(json_files
   PyStackRegImageAlignment.json
   BinaryThreshold.json
   CircleMask.json
+  CombineDatasets.json
   ConnectedComponents.json
   ClipEdges.json
   OtsuMultipleThreshold.json
