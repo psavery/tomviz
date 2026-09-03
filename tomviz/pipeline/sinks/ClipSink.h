@@ -104,6 +104,11 @@ public:
   /// Max slice index for the current direction (-1 if Custom).
   int maxSlice() const;
 
+  /// Physical coordinate of the current slice along its axis (NaN when
+  /// Custom or before data arrives), and the reverse; see SliceSink.
+  double slicePosition() const;
+  bool setSlicePosition(double position);
+
   /// Direction axis: XY→2, YZ→0, XZ→1, Custom→-1.
   int directionAxis() const;
 
@@ -123,6 +128,7 @@ public:
   void setLinked(bool linked);
 
 signals:
+  void directionChanged(Direction direction);
   /// Emitted when the clip plane geometry is updated.
   void clipPlaneUpdated();
   /// Emitted when the slice index changes (from widget interaction).
@@ -147,6 +153,7 @@ private:
 
   // Called when the user drags the widget interactively
   void onWidgetInteraction();
+  void onWidgetInteractionStarted();
 
   /// Push this clip's direction and index onto the other linked clips.
   /// Connected to sliceChanged and directionChanged.
@@ -162,6 +169,7 @@ private:
   vtkSmartPointer<vtkNonOrthoImagePlaneWidget> m_widget;
   vtkNew<vtkPlane> m_clippingPlane;
   unsigned long m_interactionTag = 0;
+  unsigned long m_startInteractionTag = 0;
   Direction m_direction = XY;
   int m_slice = -1;
   double m_opacity = 0.5;

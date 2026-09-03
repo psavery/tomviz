@@ -10,6 +10,7 @@
 #include "Pipeline.h"
 #include "data/VolumeData.h"
 #include "vtkActiveScalarsProducer.h"
+#include "PlaneIndexing.h"
 #include "vtkNonOrthoImagePlaneWidget.h"
 
 #include <QCheckBox>
@@ -27,6 +28,9 @@
 #include <QSpinBox>
 #include <QVBoxLayout>
 #include <QWidget>
+
+#include <cmath>
+#include <limits>
 
 #include <pqCoreUtilities.h>
 #include <vtkAlgorithmOutput.h>
@@ -159,6 +163,8 @@ bool SliceSink::initialize(vtkSMViewProxy* view)
   // When the user drags the slice in the 3D view, update our state and UI.
   pqCoreUtilities::connect(m_widget, vtkCommand::InteractionEvent, this,
                            SLOT(onPlaneChanged()));
+  pqCoreUtilities::connect(m_widget, vtkCommand::StartInteractionEvent, this,
+                           SLOT(onInteractionStarted()));
 
   // Report the voxel under the cursor (the widget picks it on a short
   // timer while the mouse moves over the slice); the main window shows
@@ -501,14 +507,64 @@ void SliceSink::propagateToLinkedSinks()
       continue;
     }
     // Direction first: changing it re-centres the peer's slice, which
-    // the index below then overwrites.
+    // the position below then overwrites.
     other->setDirection(m_direction);
     if (isOrtho()) {
-      // setSlice clamps to the peer's own extents, so datasets of
-      // different depths stay in range.
-      other->setSlice(m_slice);
+      // Match by physical position so different voxel sizes line up;
+      // fall back to the raw index until both geometries are known.
+      if (!other->setSlicePosition(slicePosition())) {
+        other->setSlice(m_slice);
+      }
+    } else {
+      double c[3], n[3];
+      planeCenter(c);
+      planeNormal(n);
+      other->setPlaneNormal(n[0], n[1], n[2]);
+      other->setPlaneCenter(c[0], c[1], c[2]);
     }
   }
+}
+
+double SliceSink::slicePosition() const
+{
+  int axis = directionAxis();
+  if (axis < 0 || planeindex::spacing(m_dims, m_bounds, axis) <= 0.0) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  return planeindex::position(m_dims, m_bounds, axis, m_slice);
+}
+
+bool SliceSink::setSlicePosition(double position)
+{
+  int axis = directionAxis();
+  if (axis < 0 || std::isnan(position)) {
+    return false;
+  }
+  int index = planeindex::index(m_dims, m_bounds, axis, position);
+  if (index < 0) {
+    return false;
+  }
+  setSlice(index);
+  return true;
+}
+
+void SliceSink::onInteractionStarted()
+{
+  if (!m_widget || !isOrtho()) {
+    return;
+  }
+  // Grabbing the arrow (rotate) or the center sphere (move) is asking
+  // for a plane the axis-aligned directions cannot express, so switch
+  // to Custom from the plane's current placement.
+  int state = m_widget->GetWidgetState();
+  if (state != vtkNonOrthoImagePlaneWidget::Rotating &&
+      state != vtkNonOrthoImagePlaneWidget::Moving) {
+    return;
+  }
+  m_widget->GetCenter(m_planeCenter);
+  m_widget->GetNormal(m_planeNormal);
+  m_planeCenterSet = true;
+  setDirection(Custom);
 }
 
 void SliceSink::applyActiveScalars()
@@ -591,19 +647,13 @@ void SliceSink::onPlaneChanged()
   // For orthogonal directions, update the slice index from the widget
   if (isOrtho()) {
     int axis = directionAxis();
-    if (axis >= 0 && m_dims[axis] > 0) {
-      double spacing = (m_bounds[2 * axis + 1] - m_bounds[2 * axis]) /
-                        (m_dims[axis] - 1);
-      if (spacing > 0) {
-        int newSlice = static_cast<int>(
-          (center[axis] - m_bounds[2 * axis]) / spacing + 0.5);
-        newSlice = qBound(0, newSlice, m_dims[axis] - 1);
-        if (newSlice != m_slice) {
-          m_slice = newSlice;
-          emit sliceChanged(m_slice);
-        }
-      }
+    int newSlice = planeindex::index(m_dims, m_bounds, axis, center[axis]);
+    if (newSlice >= 0 && newSlice != m_slice) {
+      m_slice = newSlice;
+      emit sliceChanged(m_slice);
     }
+  } else {
+    propagateToLinkedSinks();
   }
 
   emit planeChanged();
@@ -620,6 +670,7 @@ void SliceSink::setPlaneCenter(double x, double y, double z)
     m_widget->SetCenter(m_planeCenter);
     m_widget->UpdatePlacement();
   }
+  propagateToLinkedSinks();
   emit renderNeeded();
 }
 
@@ -643,6 +694,7 @@ void SliceSink::setPlaneNormal(double x, double y, double z)
     m_widget->SetNormal(m_planeNormal);
     m_widget->UpdatePlacement();
   }
+  propagateToLinkedSinks();
   emit renderNeeded();
 }
 

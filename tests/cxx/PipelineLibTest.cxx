@@ -3966,6 +3966,103 @@ TEST_F(PipelineLibTest, SinkLinkFlagSurvivesSerialization)
   EXPECT_TRUE(restoredClip.linked());
 }
 
+// A volume with the given dimensions and spacing, for geometry tests.
+PortData makeVolumeWithGeometry(int nx, int ny, int nz, double sx, double sy,
+                                double sz)
+{
+  vtkNew<vtkImageData> image;
+  image->SetDimensions(nx, ny, nz);
+  image->SetSpacing(sx, sy, sz);
+  vtkNew<vtkFloatArray> array;
+  array->SetName("scalars");
+  array->SetNumberOfTuples(nx * ny * nz);
+  array->FillValue(1.0f);
+  image->GetPointData()->SetScalars(array);
+  return PortData(std::any(std::make_shared<VolumeData>(image)),
+                  PortType::ImageData);
+}
+
+TEST_F(PipelineLibTest, LinkedSlicesMatchByPhysicalPosition)
+{
+  struct OpenSliceSink : SliceSink
+  {
+    using SliceSink::consume;
+  };
+  auto* fine = new OpenSliceSink();
+  auto* coarse = new OpenSliceSink();
+  pipeline->addNode(fine);
+  pipeline->addNode(coarse);
+
+  // Same 20-unit extent along Z: 21 slices 1 apart vs 11 slices 2 apart
+  QMap<QString, PortData> inputs;
+  inputs["volume"] = makeVolumeWithGeometry(4, 4, 21, 1, 1, 1);
+  ASSERT_TRUE(fine->consume(inputs));
+  inputs["volume"] = makeVolumeWithGeometry(4, 4, 11, 1, 1, 2);
+  ASSERT_TRUE(coarse->consume(inputs));
+
+  fine->setLinked(true);
+  coarse->setLinked(true);
+  fine->setSlice(10);
+  EXPECT_EQ(coarse->slice(), 5);
+  coarse->setSlice(8);
+  EXPECT_EQ(fine->slice(), 16);
+  EXPECT_DOUBLE_EQ(fine->slicePosition(), coarse->slicePosition());
+
+  // A peer whose geometry is unknown still gets the raw index
+  auto* empty = new SliceSink();
+  pipeline->addNode(empty);
+  empty->setLinked(true);
+  fine->setSlice(4);
+  EXPECT_EQ(empty->slice(), 4);
+}
+
+TEST_F(PipelineLibTest, LinkedSlicesShareTheCustomPlane)
+{
+  auto* a = new SliceSink();
+  auto* b = new SliceSink();
+  pipeline->addNode(a);
+  pipeline->addNode(b);
+  a->setLinked(true);
+  b->setLinked(true);
+
+  a->setDirection(SliceSink::Custom);
+  a->setPlaneNormal(0, 1, 0);
+  a->setPlaneCenter(1, 2, 3);
+  EXPECT_EQ(b->direction(), SliceSink::Custom);
+  double n[3], c[3];
+  b->planeNormal(n);
+  b->planeCenter(c);
+  EXPECT_DOUBLE_EQ(n[1], 1.0);
+  EXPECT_DOUBLE_EQ(c[0], 1.0);
+  EXPECT_DOUBLE_EQ(c[2], 3.0);
+}
+
+TEST_F(PipelineLibTest, LinkedClipsMatchByPhysicalPosition)
+{
+  struct OpenClipSink : ClipSink
+  {
+    using ClipSink::consume;
+  };
+  auto* fine = new OpenClipSink();
+  auto* coarse = new OpenClipSink();
+  pipeline->addNode(fine);
+  pipeline->addNode(coarse);
+
+  QMap<QString, PortData> inputs;
+  inputs["volume"] = makeVolumeWithGeometry(4, 4, 21, 1, 1, 1);
+  ASSERT_TRUE(fine->consume(inputs));
+  inputs["volume"] = makeVolumeWithGeometry(4, 4, 11, 1, 1, 2);
+  ASSERT_TRUE(coarse->consume(inputs));
+
+  fine->setLinked(true);
+  coarse->setLinked(true);
+  fine->setSlice(10);
+  EXPECT_EQ(coarse->slice(), 5);
+
+  fine->setDirection(ClipSink::Custom);
+  EXPECT_EQ(coarse->direction(), ClipSink::Custom);
+}
+
 TEST_F(PipelineLibTest, VolumeSinkCutOutProperties)
 {
   VolumeSink sink;

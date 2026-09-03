@@ -9,6 +9,7 @@
 #include "Link.h"
 #include "OutputPort.h"
 #include "Pipeline.h"
+#include "PlaneIndexing.h"
 #include "Port.h"
 #include "data/VolumeData.h"
 #include "vtkNonOrthoImagePlaneWidget.h"
@@ -28,6 +29,9 @@
 #include <QSignalBlocker>
 #include <QVBoxLayout>
 #include <QWidget>
+
+#include <cmath>
+#include <limits>
 
 #include <vtkCallbackCommand.h>
 #include <vtkCamera.h>
@@ -162,6 +166,15 @@ void ClipSink::setupWidget()
   });
   m_interactionTag =
     m_widget->AddObserver(vtkCommand::InteractionEvent, callback);
+
+  vtkNew<vtkCallbackCommand> startCallback;
+  startCallback->SetClientData(this);
+  startCallback->SetCallback(
+    [](vtkObject*, unsigned long, void* clientData, void*) {
+      static_cast<ClipSink*>(clientData)->onWidgetInteractionStarted();
+    });
+  m_startInteractionTag =
+    m_widget->AddObserver(vtkCommand::StartInteractionEvent, startCallback);
 }
 
 bool ClipSink::initialize(vtkSMViewProxy* view)
@@ -204,6 +217,10 @@ bool ClipSink::finalize()
     if (m_interactionTag) {
       m_widget->RemoveObserver(m_interactionTag);
       m_interactionTag = 0;
+    }
+    if (m_startInteractionTag) {
+      m_widget->RemoveObserver(m_startInteractionTag);
+      m_startInteractionTag = 0;
     }
     // Order matters: InteractionOff/Off require a valid interactor,
     // so call them before clearing it.
@@ -321,12 +338,15 @@ ClipSink::Direction ClipSink::direction() const
 
 void ClipSink::setDirection(Direction dir)
 {
+  if (m_direction == dir) {
+    return;
+  }
   m_direction = dir;
   applyDirection();
   syncClippingPlane();
+  emit directionChanged(dir);
   emit clipPlaneUpdated();
   emit renderNeeded();
-  // No directionChanged signal here, so drive the link explicitly.
   propagateToLinkedSinks();
 }
 
@@ -496,6 +516,7 @@ void ClipSink::setPlaneOrigin(double x, double y, double z)
     m_widget->SetCenter(c);
   }
   syncClippingPlane();
+  propagateToLinkedSinks();
   emit clipPlaneUpdated();
   emit renderNeeded();
 }
@@ -507,6 +528,7 @@ void ClipSink::setPlaneNormal(double nx, double ny, double nz)
     m_widget->SetNormal(n);
   }
   syncClippingPlane();
+  propagateToLinkedSinks();
   emit clipPlaneUpdated();
   emit renderNeeded();
 }
@@ -592,8 +614,57 @@ void ClipSink::propagateToLinkedSinks()
     }
     other->setDirection(m_direction);
     if (isOrtho()) {
-      other->setSlice(m_slice);
+      // Match by physical position so different voxel sizes line up;
+      // fall back to the raw index until both geometries are known.
+      if (!other->setSlicePosition(slicePosition())) {
+        other->setSlice(m_slice);
+      }
+    } else if (m_widget) {
+      // The widget holds the custom plane in data coordinates, which is
+      // what the peer's setters take.
+      double* n = m_widget->GetNormal();
+      double* c = m_widget->GetCenter();
+      other->setPlaneNormal(n[0], n[1], n[2]);
+      other->setPlaneOrigin(c[0], c[1], c[2]);
     }
+  }
+}
+
+double ClipSink::slicePosition() const
+{
+  int axis = directionAxis();
+  if (axis < 0 || planeindex::spacing(m_dims, m_bounds, axis) <= 0.0) {
+    return std::numeric_limits<double>::quiet_NaN();
+  }
+  return planeindex::position(m_dims, m_bounds, axis, m_slice);
+}
+
+bool ClipSink::setSlicePosition(double position)
+{
+  int axis = directionAxis();
+  if (axis < 0 || std::isnan(position)) {
+    return false;
+  }
+  int index = planeindex::index(m_dims, m_bounds, axis, position);
+  if (index < 0) {
+    return false;
+  }
+  setSlice(index);
+  return true;
+}
+
+void ClipSink::onWidgetInteractionStarted()
+{
+  if (!m_widget || !isOrtho()) {
+    return;
+  }
+  // Grabbing the arrow (rotate) or the center sphere (move) asks for a
+  // plane the axis-aligned directions cannot express: switch to Custom,
+  // keeping the plane where it is.
+  int state = m_widget->GetWidgetState();
+  if (state == vtkNonOrthoImagePlaneWidget::Rotating ||
+      state == vtkNonOrthoImagePlaneWidget::Moving) {
+    setDirection(Custom);
   }
 }
 
@@ -897,6 +968,16 @@ QWidget* ClipSink::createSinkPropertiesWidget(QWidget* parent)
             }
           });
 
+  // Follow direction changes made from the sink itself (arrow drag,
+  // linked peer); the combo handler below then updates the rest.
+  connect(this, &ClipSink::directionChanged, widget,
+          [dirCombo](Direction dir) {
+            int idx = dirCombo->findData(static_cast<int>(dir));
+            if (idx >= 0 && idx != dirCombo->currentIndex()) {
+              dirCombo->setCurrentIndex(idx);
+            }
+          });
+
   // Direction combo
   connect(dirCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
           [this, sliceSlider, pointInputs, normalInputs, dirCombo](int idx) {
@@ -1001,20 +1082,14 @@ void ClipSink::onWidgetInteraction()
   // For orthogonal directions, update the slice index from the widget
   if (isOrtho()) {
     int axis = directionAxis();
-    if (axis >= 0 && m_dims[axis] > 1) {
-      double* widgetCenter = m_widget->GetCenter();
-      double spacing = (m_bounds[2 * axis + 1] - m_bounds[2 * axis]) /
-                        (m_dims[axis] - 1);
-      if (spacing > 0) {
-        int newSlice = static_cast<int>(
-          (widgetCenter[axis] - m_bounds[2 * axis]) / spacing + 0.5);
-        newSlice = qBound(0, newSlice, m_dims[axis] - 1);
-        if (newSlice != m_slice) {
-          m_slice = newSlice;
-          emit sliceChanged(m_slice);
-        }
-      }
+    int newSlice = planeindex::index(m_dims, m_bounds, axis,
+                                     m_widget->GetCenter()[axis]);
+    if (newSlice >= 0 && newSlice != m_slice) {
+      m_slice = newSlice;
+      emit sliceChanged(m_slice);
     }
+  } else {
+    propagateToLinkedSinks();
   }
 
   emit clipPlaneUpdated();

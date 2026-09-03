@@ -64,6 +64,14 @@ public:
   /// Maximum slice index for the current direction.
   int maxSlice() const;
 
+  /// Physical coordinate of the current slice along its axis, so views
+  /// of datasets with different voxel sizes can be kept at the same
+  /// place. NaN when the direction is Custom or no data has arrived.
+  double slicePosition() const;
+  /// Move to the slice nearest a physical coordinate; false if the
+  /// geometry is not known yet.
+  bool setSlicePosition(double position);
+
   /// Opacity of the slice plane.
   double opacity() const;
   void setOpacity(double value);
@@ -123,6 +131,7 @@ protected:
 
 private slots:
   void onPlaneChanged();
+  void onInteractionStarted();
   /// Push this slice's direction and index onto the other linked
   /// slice views. Driven by sliceChanged/directionChanged; the
   /// slider's drag ticks emit neither, so peers follow on release.
