@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
+import tempfile
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 import numpy as np
 from numpy.typing import NDArray
-from scipy.ndimage import rotate
 from scipy.optimize import leastsq
 from tqdm import tqdm
 
@@ -19,6 +20,106 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from tomviz.dataset import Dataset
+
+
+def _rotate_stack_minus_90(array: NDArray) -> NDArray:
+    # Exact quarter turn: identical result to
+    # scipy.ndimage.rotate(array, -90.0, axes=(1, 2)) but with no
+    # interpolation and orders of magnitude faster.
+    return np.rot90(array, k=-1, axes=(1, 2))
+
+
+def _cache_dir_for(ptycho_dir: str | Path) -> Path:
+    # Per-scan processing cache, keyed by the data directory so several
+    # datasets never collide. Lives in the system temp dir to keep the
+    # (possibly read-only) data directory untouched.
+    digest = hashlib.sha1(
+        str(Path(ptycho_dir).resolve()).encode()).hexdigest()[:16]
+    return Path(tempfile.gettempdir()) / 'tomviz-ptycho-cache' / digest
+
+
+def _dir_fingerprint(ptycho_dir: str | Path) -> str:
+    # A digest of the reconstruction files present and their mtimes, so
+    # a new scan or an updated reconstruction changes the fingerprint.
+    root = Path(ptycho_dir)
+    entries = []
+    for path in sorted(root.glob('S*/*/recon_data/recon_*.npy')):
+        try:
+            entries.append(f'{path.relative_to(root)}:{path.stat().st_mtime}')
+        except OSError:
+            continue
+    return hashlib.sha1('\n'.join(entries).encode()).hexdigest()
+
+
+def _load_cached_scan(cache_path: Path,
+                      src_mtimes: list[float]) -> tuple | None:
+    if not cache_path.exists():
+        return None
+    try:
+        with np.load(cache_path) as loaded:
+            if not np.allclose(loaded['src_mtimes'], src_mtimes):
+                return None
+            return loaded['amp'], loaded['phase'], loaded['prb']
+    except Exception:
+        return None
+
+
+def _save_cached_scan(cache_path: Path, amp: NDArray, phase: NDArray,
+                      prb: NDArray, src_mtimes: list[float]) -> None:
+    try:
+        np.savez(cache_path, amp=amp, phase=phase, prb=prb,
+                 src_mtimes=src_mtimes)
+    except OSError:
+        pass
+
+
+def _process_scan(
+    obj_path: Path, prb_path: Path | None, sid: int, version: str,
+    cache_dir: Path | None,
+) -> tuple[NDArray, NDArray, NDArray]:
+    """Load and process one scan, using the per-scan cache when valid.
+
+    Returns (amplitude, phase, probe) for the scan.
+    """
+    cache_path = None
+    src_mtimes = None
+    if cache_dir is not None and prb_path is not None:
+        cache_path = cache_dir / f'{sid}_{version}.npz'
+        src_mtimes = [obj_path.stat().st_mtime, prb_path.stat().st_mtime]
+        cached = _load_cached_scan(cache_path, src_mtimes)
+        if cached is not None:
+            return cached
+
+    obj: NDArray = np.load(obj_path)
+    prb: NDArray = np.load(prb_path)
+
+    if obj.ndim == 3:
+        obj = obj[0]
+
+    if prb.ndim == 3:
+        prb = prb[0]
+
+    space = 15
+    obj = np.fliplr(np.rot90(obj))
+    prb = np.fliplr(np.rot90(prb))
+    prb_sz = np.shape(prb)
+    obj_sz = np.shape(obj)
+    obj_c = obj[
+        int(prb_sz[0] / 2) + space: obj_sz[0] - int(prb_sz[0] / 2) - space,
+        int(prb_sz[1] / 2) + space: obj_sz[1] - int(prb_sz[1] / 2) - space,
+    ]
+    obj_c_arg = np.angle(obj_c)
+    obj_c_amp = np.abs(obj_c)
+    obj_c_arg = _remove_background(obj_c_arg)
+    objectoutput = obj_c_amp * np.exp((0 + 1j) * obj_c_arg)
+    obj_c_arg = np.angle(objectoutput)
+    obj_c_amp = np.abs(obj_c)
+
+    if cache_path is not None:
+        _save_cached_scan(cache_path, obj_c_amp, obj_c_arg * -1, prb,
+                          src_mtimes)
+
+    return obj_c_amp, obj_c_arg * -1, prb
 
 
 def _fit_func(p0: float, px1: float,
@@ -111,37 +212,25 @@ def _stack_ptycho_data(
     has_pixel_sizes = pixel_size_x is not None
     print(f"found: {len(filespty_obj)}")
 
+    # Per-scan processing results are cached on disk, keyed by scan id,
+    # version, and source file mtimes: when new scans arrive only they
+    # are processed, instead of redoing the whole stack.
+    cache_dir = _cache_dir_for(ptycho_dir)
+    try:
+        cache_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        cache_dir = None
+
     tempPtyobj: list[NDArray] = []
     tempPtyprb: list[NDArray] = []
     tempPtyamp: list[NDArray] = []
     for i in tqdm(range(len(filespty_obj)), desc="processing ptycho"):
-        obj: NDArray = np.load(filespty_obj[i])
-        prb: NDArray = np.load(filespty_prb[i])
-
-        if obj.ndim == 3:
-            obj = obj[0]
-
-        if prb.ndim == 3:
-            prb = prb[0]
-
-        space = 15
-        obj = np.fliplr(np.rot90(obj))
-        prb = np.fliplr(np.rot90(prb))
-        prb_sz = np.shape(prb)
-        obj_sz = np.shape(obj)
-        obj_c = obj[
-            int(prb_sz[0] / 2) + space: obj_sz[0] - int(prb_sz[0] / 2) - space,
-            int(prb_sz[1] / 2) + space: obj_sz[1] - int(prb_sz[1] / 2) - space,
-        ]
-        obj_c_arg = np.angle(obj_c)
-        obj_c_amp = np.abs(obj_c)
-        if True:
-            obj_c_arg = _remove_background(obj_c_arg)
-        objectoutput = obj_c_amp * np.exp((0 + 1j) * obj_c_arg)
-        obj_c_arg = np.angle(objectoutput)
-        obj_c_amp = np.abs(obj_c)
-        tempPtyamp.append(obj_c_amp)
-        tempPtyobj.append(obj_c_arg * -1)
+        sid = currentsidlist[i][1]
+        version = currentsidlist[i][3]
+        amp, phase, prb = _process_scan(
+            filespty_obj[i], filespty_prb[i], sid, version, cache_dir)
+        tempPtyamp.append(amp)
+        tempPtyobj.append(phase)
         tempPtyprb.append(prb)
 
     has_probes = True
@@ -164,14 +253,15 @@ def _stack_ptycho_data(
     ptychodatanew = np.zeros((len(tempPtyobj), int(lmax), int(wmax)))
     ampdatanew = np.zeros((len(tempPtyobj), int(lmax), int(wmax)))
     for n, i in tqdm(enumerate(tempPtyobj), desc="correcting shape"):
-        lerr = np.abs(i.shape[0] - lmax)
-        werr = np.abs(i.shape[1] - wmax)
-        ti = np.pad(i, ((lerr // 2, lerr // 2), (werr // 2, werr // 2)))
-        ta = np.pad(
-            tempPtyamp[n], ((lerr // 2, lerr // 2), (werr // 2, werr // 2)),
-        )
-        ptychodatanew[n, :, :] = ti
-        ampdatanew[n, :, :] = ta
+        lerr = int(lmax - i.shape[0])
+        werr = int(wmax - i.shape[1])
+        # Center the smaller image; the remainder of an odd difference
+        # goes after, so the total padding always reaches the max shape
+        # (half-and-half padding dropped a row/column for odd
+        # differences and made the stack assignment fail).
+        pad = ((lerr // 2, lerr - lerr // 2), (werr // 2, werr - werr // 2))
+        ptychodatanew[n, :, :] = np.pad(i, pad)
+        ampdatanew[n, :, :] = np.pad(tempPtyamp[n], pad)
 
     arrays: dict[str, NDArray] = {
         'Phase': ptychodatanew,
@@ -186,7 +276,7 @@ def _stack_ptycho_data(
 
     for key, array in arrays.items():
         if rotate_datasets:
-            array = rotate(array, -90.0, axes=(1, 2))
+            array = _rotate_stack_minus_90(array)
 
         array = array.swapaxes(0, 2)
         arrays[key] = array
@@ -234,6 +324,21 @@ def _write_ptycho_info_file(
 
 
 class PtychoSource(tomviz.nodes.SourceNode):
+
+    def should_auto_execute(self, **parameters) -> bool:
+        # Watch the reconstruction directory: a new scan showing up, or
+        # an existing reconstruction being rewritten, changes the
+        # fingerprint and requests a re-run. The first check only
+        # records the current state, so enabling periodic execution
+        # does not immediately reload data that is already in.
+        ptycho_dir = parameters.get('ptycho_dir', '')
+        if not ptycho_dir or not Path(ptycho_dir).is_dir():
+            return False
+
+        fingerprint = _dir_fingerprint(ptycho_dir)
+        previous = self.state.get('dir_fingerprint')
+        self.state['dir_fingerprint'] = fingerprint
+        return previous is not None and fingerprint != previous
 
     def produce(self, ptycho_dir: str = '', output_info_file: str = '',
                 rotate_datasets: bool = True, sid_list: str = '[]',

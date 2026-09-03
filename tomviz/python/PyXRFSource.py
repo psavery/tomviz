@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -11,12 +12,32 @@ from typing import TYPE_CHECKING
 import h5py
 import numpy as np
 from numpy.typing import NDArray
-from scipy.ndimage import rotate
 
 import tomviz.nodes
 
 if TYPE_CHECKING:
     from tomviz.dataset import Dataset
+
+
+def _rotate_stack_minus_90(array: NDArray) -> NDArray:
+    # Exact quarter turn: identical result to
+    # scipy.ndimage.rotate(array, -90.0, axes=(1, 2)) but with no
+    # interpolation and orders of magnitude faster.
+    return np.rot90(array, k=-1, axes=(1, 2))
+
+
+def _dir_fingerprint(working_directory: str | Path) -> str:
+    # A digest of the scan files (and the assembled tomo.h5, for the
+    # no-scan-range workflow) with their mtimes, so a newly downloaded
+    # scan or a refreshed assembly changes the fingerprint.
+    root = Path(working_directory)
+    entries = []
+    for path in sorted(root.glob('scan2D_*.h5')) + [root / 'tomo.h5']:
+        try:
+            entries.append(f'{path.name}:{path.stat().st_mtime}')
+        except OSError:
+            continue
+    return hashlib.sha1('\n'.join(entries).encode()).hexdigest()
 
 
 def _expand_scan_range(scan_range: str,
@@ -153,7 +174,7 @@ def _read_tomo_h5(tomo_file: Path, rotate_datasets: bool,
     for i, name in enumerate(element_names):
         element_data = data[:, i, :, :]
         if rotate_datasets:
-            element_data = rotate(element_data, -90.0, axes=(1, 2))
+            element_data = _rotate_stack_minus_90(element_data)
         element_data = element_data.swapaxes(0, 2)
         ds.set_scalars(name, element_data)
 
@@ -170,6 +191,21 @@ def _read_tomo_h5(tomo_file: Path, rotate_datasets: bool,
 
 
 class PyXRFSource(tomviz.nodes.SourceNode):
+
+    def should_auto_execute(self, **parameters) -> bool:
+        # Watch the working directory: a newly downloaded scan2D file or
+        # a refreshed tomo.h5 changes the fingerprint and requests a
+        # re-run. The first check only records the current state, so
+        # enabling periodic execution does not immediately reprocess
+        # data that is already in.
+        working_directory = parameters.get('working_directory', '')
+        if not working_directory or not Path(working_directory).is_dir():
+            return False
+
+        fingerprint = _dir_fingerprint(working_directory)
+        previous = self.state.get('dir_fingerprint')
+        self.state['dir_fingerprint'] = fingerprint
+        return previous is not None and fingerprint != previous
 
     def produce(self, pyxrf_utils_command: str = 'pyxrf-utils',
                 working_directory: str = '',
