@@ -79,7 +79,7 @@ def binary_dilation(a, structure):
     This version is slower for smaller structuring elements, but becomes
     faster with larger ones, and it also appears to be more stable
     """
-    dil = np.zeros(shape=a.shape, dtype=np.bool)
+    dil = np.zeros(shape=a.shape, dtype=bool)
     extent = tuple((0, s) for s in a.shape)
     for coord in coord_iterator(extent):
         if (a[coord]):

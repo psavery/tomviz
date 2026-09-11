@@ -86,9 +86,9 @@ QVariant ImageStackModel::headerData(int section, Qt::Orientation orientation,
       } else if (section == c_yCol) {
         return QString("Y");
       } else if (section == c_posCol) {
-        if (m_stackType == DataSource::DataSourceType::Volume) {
+        if (m_stackType == pipeline::PortType::Volume) {
           return QString("Slice");
-        } else if (m_stackType == DataSource::DataSourceType::TiltSeries) {
+        } else if (m_stackType == pipeline::PortType::TiltSeries) {
           return QString("Angle");
         }
       }
@@ -134,7 +134,7 @@ void ImageStackModel::onFilesInfoChanged(QList<ImageInfo> filesInfo)
   endResetModel();
 }
 
-void ImageStackModel::onStackTypeChanged(DataSource::DataSourceType stackType)
+void ImageStackModel::onStackTypeChanged(pipeline::PortType stackType)
 {
   beginResetModel();
   m_stackType = stackType;

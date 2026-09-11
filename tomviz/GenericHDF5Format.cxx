@@ -3,8 +3,9 @@
 
 #include "GenericHDF5Format.h"
 
+#include "pipeline/data/VolumeData.h"
+
 #include <DataExchangeFormat.h>
-#include <DataSource.h>
 #include <Hdf5SubsampleWidget.h>
 #include <Utilities.h>
 
@@ -124,8 +125,8 @@ void GenericHDF5Format::reorderData(vtkImageData* in, vtkImageData* out,
     auto* name = inPd->GetArrayName(i);
     auto* array = inPd->GetArray(name);
 
-    vtkSmartPointer<vtkDataArray> newArray =
-      vtkDataArray::CreateDataArray(array->GetDataType());
+    auto newArray = vtkSmartPointer<vtkDataArray>::Take(
+      vtkDataArray::CreateDataArray(array->GetDataType()));
     newArray->SetName(name);
     reorderDataArray(array, newArray, in->GetDimensions(), mode);
     outPd->AddArray(newArray);
@@ -166,8 +167,8 @@ QVector<double> GenericHDF5Format::readAngles(h5::H5ReadWrite& reader,
     return angles;
   }
 
-  vtkSmartPointer<vtkDataArray> array =
-    vtkDataArray::CreateDataArray(vtkDataType);
+  auto array = vtkSmartPointer<vtkDataArray>::Take(
+    vtkDataArray::CreateDataArray(vtkDataType));
   array->SetNumberOfTuples(dims[0]);
   if (!reader.readData(path, type, array->GetVoidPointer(0))) {
     std::cerr << "Failed to read the angles\n";
@@ -240,12 +241,12 @@ bool GenericHDF5Format::addScalarArray(h5::H5ReadWrite& reader,
   // Set up the strides and counts
   int strides[3] = { 1, 1, 1 };
   size_t start[3], counts[3];
-  if (DataSource::wasSubsampled(image)) {
+  if (pipeline::VolumeData::wasSubsampled(image)) {
     // If the main image was subsampled, we need to use the same
     // subsampling for the scalars
-    DataSource::subsampleStrides(image, strides);
+    pipeline::VolumeData::subsampleStrides(image, strides);
     int bs[6];
-    DataSource::subsampleVolumeBounds(image, bs);
+    pipeline::VolumeData::subsampleVolumeBounds(image, bs);
 
     for (int i = 0; i < 3; ++i) {
       start[i] = static_cast<size_t>(bs[i * 2]);
@@ -261,7 +262,7 @@ bool GenericHDF5Format::addScalarArray(h5::H5ReadWrite& reader,
   // vtk requires the counts to be an int array
   int vtkCounts[3];
   for (int i = 0; i < 3; ++i)
-    vtkCounts[i] = counts[i];
+    vtkCounts[i] = static_cast<int>(counts[i]);
 
   // Make sure the dimensions match those of the image, or else
   // we will probably experience a crash later...
@@ -270,7 +271,7 @@ bool GenericHDF5Format::addScalarArray(h5::H5ReadWrite& reader,
   for (int i = 0; i < 3; ++i) {
     if (vtkCounts[i] != imageDims[i]) {
       std::stringstream ss;
-      if (DataSource::wasSubsampled(image)) {
+      if (pipeline::VolumeData::wasSubsampled(image)) {
         ss << "Subsampled dimensions of ";
       } else {
         ss << "Dimensions of ";
@@ -282,14 +283,15 @@ bool GenericHDF5Format::addScalarArray(h5::H5ReadWrite& reader,
 
       std::cerr << "Error in GenericHDF5Format::addScalarArray():\n"
                 << ss.str() << std::endl;
-      QMessageBox::critical(nullptr, "Dimensions do not match",
-                            ss.str().c_str());
+      // No modal dialog here: the caller may run under a BQC during
+      // intermediate updates, and a nested QDialog reenters paint/
+      // layout from inside a format-reader stack frame and crashes.
       return false;
     }
   }
 
-  vtkSmartPointer<vtkAbstractArray> array =
-    vtkAbstractArray::CreateArray(vtkDataType);
+  auto array = vtkSmartPointer<vtkAbstractArray>::Take(
+    vtkAbstractArray::CreateArray(vtkDataType));
   array->SetNumberOfTuples(counts[0] * counts[1] * counts[2]);
   array->SetName(name.c_str());
 
@@ -352,8 +354,8 @@ bool GenericHDF5Format::readVolume(h5::H5ReadWrite& reader,
     QVariantList list = options["subsampleVolumeBounds"].toList();
     for (int i = 0; i < list.size() && i < 6; ++i)
       bs[i] = list[i].toInt();
-    DataSource::setWasSubsampled(image, true);
-    DataSource::setSubsampleVolumeBounds(image, bs);
+    pipeline::VolumeData::setWasSubsampled(image, true);
+    pipeline::VolumeData::setSubsampleVolumeBounds(image, bs);
   } else {
     // Set it to the defaults
     for (int i = 0; i < 3; ++i) {
@@ -371,8 +373,8 @@ bool GenericHDF5Format::readVolume(h5::H5ReadWrite& reader,
         strides[i] = 1;
     }
 
-    DataSource::setWasSubsampled(image, true);
-    DataSource::setSubsampleStrides(image, strides);
+    pipeline::VolumeData::setWasSubsampled(image, true);
+    pipeline::VolumeData::setSubsampleStrides(image, strides);
   }
 
   bool askForSubsample = false;
@@ -401,12 +403,12 @@ bool GenericHDF5Format::readVolume(h5::H5ReadWrite& reader,
     Hdf5SubsampleWidget widget(dimensions, size);
     layout.addWidget(&widget);
 
-    if (DataSource::wasSubsampled(image)) {
+    if (pipeline::VolumeData::wasSubsampled(image)) {
       // If it was previously subsampled, start with the previous values
-      DataSource::subsampleStrides(image, strides);
+      pipeline::VolumeData::subsampleStrides(image, strides);
       widget.setStrides(strides);
 
-      DataSource::subsampleVolumeBounds(image, bs);
+      pipeline::VolumeData::subsampleVolumeBounds(image, bs);
       widget.setBounds(bs);
     }
 
@@ -427,9 +429,9 @@ bool GenericHDF5Format::readVolume(h5::H5ReadWrite& reader,
     widget.bounds(bs);
     widget.strides(strides);
 
-    DataSource::setWasSubsampled(image, true);
-    DataSource::setSubsampleStrides(image, strides);
-    DataSource::setSubsampleVolumeBounds(image, bs);
+    pipeline::VolumeData::setWasSubsampled(image, true);
+    pipeline::VolumeData::setSubsampleStrides(image, strides);
+    pipeline::VolumeData::setSubsampleVolumeBounds(image, bs);
   }
 
   // Do one final check to make sure all bounds are valid
@@ -449,7 +451,7 @@ bool GenericHDF5Format::readVolume(h5::H5ReadWrite& reader,
 
   if (changed) {
     // Update the volume bounds that were used
-    DataSource::setSubsampleVolumeBounds(image, bs);
+    pipeline::VolumeData::setSubsampleVolumeBounds(image, bs);
   }
 
   // Set up the strides and counts
@@ -462,7 +464,7 @@ bool GenericHDF5Format::readVolume(h5::H5ReadWrite& reader,
   // vtk requires the counts to be an int array
   int vtkCounts[3];
   for (int i = 0; i < 3; ++i)
-    vtkCounts[i] = counts[i];
+    vtkCounts[i] = static_cast<int>(counts[i]);
 
   image->SetDimensions(&vtkCounts[0]);
   image->AllocateScalars(vtkDataType, 1);
@@ -572,7 +574,7 @@ bool GenericHDF5Format::read(const std::string& fileName, vtkImageData* image,
   if (selectedDatasets.empty()) {
     QString msg = "At least one volume must be selected";
     std::cerr << msg.toStdString() << std::endl;
-    QMessageBox::critical(nullptr, "Invalid Selection", msg);
+    QMessageBox::critical(tomviz::mainWidget(), "Invalid Selection", msg);
     return false;
   }
 
@@ -583,7 +585,7 @@ bool GenericHDF5Format::read(const std::string& fileName, vtkImageData* image,
     auto msg =
       QString("Failed to read the data at: ") + selectedDatasets[0].c_str();
     std::cerr << msg.toStdString() << std::endl;
-    QMessageBox::critical(nullptr, "Read Failed", msg);
+    QMessageBox::critical(tomviz::mainWidget(), "Read Failed", msg);
     return false;
   }
 
@@ -597,7 +599,7 @@ bool GenericHDF5Format::read(const std::string& fileName, vtkImageData* image,
     if (!addScalarArray(reader, path, image, path)) {
       auto msg = QString("Failed to read or add the data of: ") + path.c_str();
       std::cerr << msg.toStdString() << std::endl;
-      QMessageBox::critical(nullptr, "Failure", msg);
+      QMessageBox::critical(tomviz::mainWidget(), "Failure", msg);
       return false;
     }
   }
@@ -619,8 +621,8 @@ bool GenericHDF5Format::read(const std::string& fileName, vtkImageData* image,
   } else {
     // No deep copying of the data needed. Just relabel the X and Z axes.
     relabelXAndZAxes(image);
-    DataSource::setTiltAngles(image, angles);
-    DataSource::setType(image, DataSource::TiltSeries);
+    pipeline::VolumeData::setTiltAngles(image, angles);
+    pipeline::VolumeData::setType(image, pipeline::VolumeData::DataType::TiltSeries);
   }
 
   // Made it to the end...

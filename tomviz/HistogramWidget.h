@@ -10,6 +10,8 @@
 #include <vtkNew.h>
 #include <vtkWeakPointer.h>
 
+#include <memory>
+
 class vtkChartHistogramColorOpacityEditor;
 class vtkContextView;
 class vtkDataArray;
@@ -27,7 +29,13 @@ class vtkSMProxy;
 
 namespace tomviz {
 
+namespace pipeline {
+class VolumeData;
+using VolumeDataPtr = std::shared_ptr<VolumeData>;
+} // namespace pipeline
+
 class BrightnessContrastWidget;
+class OpacityPresetWidget;
 class ColorMapSettingsWidget;
 class PresetDialog;
 class QVTKGLWidget;
@@ -42,6 +50,7 @@ public:
 
   void setLUT(vtkDiscretizableColorTransferFunction* lut);
   void setLUTProxy(vtkSMProxy* proxy);
+  void setVolumeData(pipeline::VolumeDataPtr volumeData);
 
   void setInputData(vtkTable* table, const char* x_, const char* y_);
 
@@ -65,6 +74,8 @@ public slots:
   void onPresetClicked();
   void onSaveToPresetClicked();
   void onBrightnessAndContrastClicked();
+  void onOpacityPresetsClicked();
+  void onCreateSegmentationColormapClicked();
   void applyCurrentPreset();
   void updateUI();
 
@@ -91,6 +102,11 @@ private:
   void autoAdjustContrast();
   void autoAdjustContrast(vtkDataArray* histogram, vtkDataArray* extents,
                           vtkImageData* imageData);
+  /// Open a box selector in the render view and auto-adjust the
+  /// contrast from the voxels inside it.
+  void autoAdjustContrastForSelectedRegion();
+  /// Auto-adjust the contrast using only @a extent (in voxel indices).
+  void autoAdjustContrastForExtent(const int extent[6]);
   void resetAutoContrastState();
 
   // Add placeholder nodes to make the color bar and opacity editor look nicer
@@ -104,6 +120,7 @@ private:
   QToolButton* m_colorMapSettingsButton;
   QToolButton* m_savePresetButton;
   QToolButton* m_brightnessAndContrastButton;
+  QToolButton* m_opacityPresetButton;
 
   vtkWeakPointer<vtkDiscretizableColorTransferFunction> m_LUT;
   vtkWeakPointer<vtkPiecewiseFunction> m_scalarOpacityFunction;
@@ -118,12 +135,24 @@ private:
 
   QPointer<QDialog> m_brightnessContrastDialog;
   QPointer<BrightnessContrastWidget> m_brightnessContrastWidget;
+  QPointer<QDialog> m_opacityPresetDialog;
+  QPointer<OpacityPresetWidget> m_opacityPresetWidget;
+  QPointer<QDialog> m_autoContrastRegionDialog;
+
+  pipeline::VolumeDataPtr m_volumeData;
 
   // To prevent infinite recursion...
   bool m_updatingColorFunction = false;
 
+  // Coalesces the deferred color-function rebuild (see
+  // onColorFunctionChanged) so reentrant ModifiedEvents don't pile up.
+  bool m_colorFunctionUpdatePending = false;
+
+  // Matches ImageJ's ContrastAdjuster: AUTO_THRESHOLD is the starting
+  // threshold divisor, and the current value must begin below 10 so the
+  // first "Auto" press uses the full AUTO_THRESHOLD before halving.
   static const int m_defaultAutoContrastThreshold = 5000;
-  int m_currentAutoContrastThreshold = 5000;
+  int m_currentAutoContrastThreshold = 0;
 };
 } // namespace tomviz
 

@@ -1,15 +1,18 @@
 from pathlib import Path
 from types import ModuleType
 from typing import Callable
+import http.client
 import importlib.util
 import inspect
 import shutil
+import time
+import urllib.error
 import urllib.request
 import zipfile
 
-from tomviz.executor import OperatorWrapper
 from tomviz.operators import Operator
-from tomviz._internal import add_transform_decorators
+from tomviz.nodes import Node
+from tomviz._internal import OperatorWrapper, add_transform_decorators
 
 OPERATOR_PATH = Path(__file__).parent.parent.parent / 'tomviz/python'
 
@@ -56,25 +59,69 @@ def load_operator_class(operator_module: ModuleType) -> Operator | None:
             return operator
 
 
-def download_file(url: str, destination: str):
-    filename = Path('downloaded_file')
-    if filename.exists():
-        filename.unlink()
+def load_node_class(operator_module: ModuleType) -> Node | None:
+    for v in operator_module.__dict__.values():
+        if inspect.isclass(v) and issubclass(v, Node) and v is not Node:
+            node = v()
+            node._operator_wrapper = OperatorWrapper()
+            return node
 
+
+def _download_to(url: str, filename: Path):
+    # A read timeout matters more than it looks: without one, a stalled
+    # connection hangs the test until CTest's own timeout kills it, so a
+    # blip on the data server turns into a 25 minute failure.
+    timeout = 60
+    block_size = 1024 * 1024
     last_progress = -1
 
-    def download_progress_hook(block_num, block_size, total_size):
-        nonlocal last_progress
-        downloaded = block_num * block_size
-        downloaded_mb = downloaded / 1024 / 1024
-        total_size_mb = total_size / 1024 / 1024
-        progress = int((downloaded / total_size) * 100) if total_size > 0 else 0
-        if progress > last_progress:
-            last_progress = progress
-            print(f"\rDownload Progress: {progress}% ({downloaded_mb:.2f}/{total_size_mb:.2f} MB)")
+    with urllib.request.urlopen(url, timeout=timeout) as response:
+        total_size = int(response.headers.get('Content-Length') or 0)
+        downloaded = 0
+        with open(filename, 'wb') as wf:
+            while True:
+                block = response.read(block_size)
+                if not block:
+                    break
+                wf.write(block)
+                downloaded += len(block)
+                downloaded_mb = downloaded / 1024 / 1024
+                total_size_mb = total_size / 1024 / 1024
+                progress = (int((downloaded / total_size) * 100)
+                            if total_size > 0 else 0)
+                if progress > last_progress:
+                    last_progress = progress
+                    print(f"\rDownload Progress: {progress}% "
+                          f"({downloaded_mb:.2f}/{total_size_mb:.2f} MB)")
+
+    if total_size > 0 and downloaded != total_size:
+        raise http.client.IncompleteRead(b'', total_size - downloaded)
+
+
+def download_file(url: str, destination: str):
+    filename = Path('downloaded_file')
 
     print(f'Downloading "{url}" to "{filename}"')
-    urllib.request.urlretrieve(url, filename, reporthook=download_progress_hook)
+    # Retry on transient network errors (e.g. a 5xx from the data server) with
+    # exponential backoff, since the test fixtures are downloaded at run time.
+    attempts = 5
+    for attempt in range(1, attempts + 1):
+        if filename.exists():
+            filename.unlink()
+
+        try:
+            _download_to(url, filename)
+            break
+        except (urllib.error.URLError, OSError,
+                http.client.HTTPException) as e:
+            # Don't retry on 4xx (client) errors - those won't fix themselves.
+            code = getattr(e, 'code', None)
+            if (code is not None and 400 <= code < 500) or attempt == attempts:
+                raise
+            wait = 2 ** (attempt - 1)
+            print(f'Download failed ({e}); retrying in {wait}s '
+                  f'({attempt}/{attempts - 1})')
+            time.sleep(wait)
     print('\n')
 
     shutil.copy(filename, destination)
