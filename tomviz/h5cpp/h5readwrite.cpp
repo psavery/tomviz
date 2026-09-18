@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <iostream>
 #include <map>
+#include <mutex>
 #include <numeric>
 
 #include "h5capi.h"
@@ -28,6 +29,25 @@ void setOk(bool* ok, bool status)
   if (ok)
     *ok = status;
 }
+
+// HDF5 built without thread safety (both the VTK-vendored build and the
+// Homebrew one) mutates global state - the ID table, free lists, the
+// error stack - on every API call, so entry into the library must be
+// serialized process-wide. Tomviz calls HDF5 from more than one thread:
+// pipeline executors write/read tvh5 files on worker threads (shim
+// files, port-data disk cache) while the GUI thread loads, saves and
+// decodes intermediates. All of that funnels through H5ReadWrite, so
+// its public methods are the chokepoint; every one of them takes this
+// lock. Recursive because they call each other (e.g. readData ->
+// getDimensions). Intentionally leaked so it stays valid if a static
+// H5ReadWrite is destroyed during exit.
+std::recursive_mutex& h5Mutex()
+{
+  static auto* mutex = new std::recursive_mutex;
+  return *mutex;
+}
+
+using H5Lock = std::lock_guard<std::recursive_mutex>;
 
 } // end namespace
 
@@ -304,7 +324,8 @@ public:
                           stridesVector.data(), countsVector.data(), nullptr);
 
       // Finally, create the mem space
-      memSpace = H5Screate_simple(ndims, countsVector.data(), nullptr);
+      memSpace =
+        H5Screate_simple(static_cast<int>(ndims), countsVector.data(), nullptr);
       memSpaceCloser.reset(memSpace);
     }
 
@@ -490,10 +511,17 @@ public:
 };
 
 H5ReadWrite::H5ReadWrite(const string& file, OpenMode mode)
-  : m_impl(new H5ReadWriteImpl(file, mode))
-{}
+{
+  H5Lock lock(h5Mutex());
+  m_impl.reset(new H5ReadWriteImpl(file, mode));
+}
 
-H5ReadWrite::~H5ReadWrite() = default;
+H5ReadWrite::~H5ReadWrite()
+{
+  // The impl's destructor closes the file, which is an HDF5 call.
+  H5Lock lock(h5Mutex());
+  m_impl.reset();
+}
 
 string H5ReadWrite::fileName() const
 {
@@ -502,11 +530,13 @@ string H5ReadWrite::fileName() const
 
 void H5ReadWrite::close()
 {
+  H5Lock lock(h5Mutex());
   m_impl->clear();
 }
 
 vector<string> H5ReadWrite::children(const string& path, bool* ok)
 {
+  H5Lock lock(h5Mutex());
   setOk(ok, false);
   vector<string> result;
 
@@ -540,6 +570,7 @@ vector<string> H5ReadWrite::children(const string& path, bool* ok)
 template <typename T>
 T H5ReadWrite::attribute(const string& path, const string& name, bool* ok)
 {
+  H5Lock lock(h5Mutex());
   setOk(ok, false);
   T result;
 
@@ -557,6 +588,7 @@ template <>
 string H5ReadWrite::attribute<string>(const string& path, const string& name,
                                       bool* ok)
 {
+  H5Lock lock(h5Mutex());
   setOk(ok, false);
   string result;
 
@@ -615,16 +647,19 @@ string H5ReadWrite::attribute<string>(const string& path, const string& name,
 
 bool H5ReadWrite::hasAttribute(const string& path)
 {
+  H5Lock lock(h5Mutex());
   return m_impl->hasAttribute(path);
 }
 
 bool H5ReadWrite::hasAttribute(const string& path, const string& name)
 {
+  H5Lock lock(h5Mutex());
   return m_impl->attributeExists(path, name);
 }
 
 DataType H5ReadWrite::attributeType(const string& path, const string& name)
 {
+  H5Lock lock(h5Mutex());
   if (!m_impl->attributeExists(path, name)) {
     cerr << "Attribute " << path << name << " not found!" << endl;
     return DataType::None;
@@ -648,21 +683,25 @@ DataType H5ReadWrite::attributeType(const string& path, const string& name)
 
 bool H5ReadWrite::isDataSet(const string& path)
 {
+  H5Lock lock(h5Mutex());
   return m_impl->isDataSet(path);
 }
 
 bool H5ReadWrite::isGroup(const string& path)
 {
+  H5Lock lock(h5Mutex());
   return m_impl->isGroup(path);
 }
 
 vector<string> H5ReadWrite::allDataSets(const string& path)
 {
+  H5Lock lock(h5Mutex());
   return m_impl->allDataSets(path);
 }
 
 DataType H5ReadWrite::dataType(const string& path)
 {
+  H5Lock lock(h5Mutex());
   if (!m_impl->isDataSet(path)) {
     cerr << path << " is not a data set.\n";
     return DataType::None;
@@ -685,23 +724,26 @@ DataType H5ReadWrite::dataType(const string& path)
 
 vector<int> H5ReadWrite::getDimensions(const string& path)
 {
+  H5Lock lock(h5Mutex());
   return m_impl->getDimensions(path);
 }
 
 int H5ReadWrite::dimensionCount(const string& path)
 {
+  H5Lock lock(h5Mutex());
   vector<int> dims = getDimensions(path);
   if (dims.empty()) {
     cerr << "Failed to get the dimensions\n";
     return -1;
   }
 
-  return dims.size();
+  return static_cast<int>(dims.size());
 }
 
 template <typename T>
 vector<T> H5ReadWrite::readData(const string& path)
 {
+  H5Lock lock(h5Mutex());
   vector<int> dims;
   vector<T> result = readData<T>(path, dims);
   if (result.empty()) {
@@ -723,6 +765,7 @@ vector<T> H5ReadWrite::readData(const string& path)
 template <typename T>
 vector<T> H5ReadWrite::readData(const string& path, vector<int>& dims)
 {
+  H5Lock lock(h5Mutex());
   vector<T> result;
 
   dims = getDimensions(path);
@@ -747,6 +790,7 @@ vector<T> H5ReadWrite::readData(const string& path, vector<int>& dims)
 template <typename T>
 bool H5ReadWrite::readData(const string& path, T* data)
 {
+  H5Lock lock(h5Mutex());
   const hid_t dataTypeId = BasicTypeToH5<T>::dataTypeId();
   const hid_t memTypeId = BasicTypeToH5<T>::memTypeId();
 
@@ -761,6 +805,7 @@ bool H5ReadWrite::readData(const string& path, T* data)
 bool H5ReadWrite::readData(const string& path, const DataType& type, void* data,
                            int* strides, size_t* start, size_t* counts)
 {
+  H5Lock lock(h5Mutex());
   auto it = DataTypeToH5DataType.find(type);
   if (it == DataTypeToH5DataType.end()) {
     cerr << "Failed to get H5 data type for " << dataTypeToString(type) << "\n";
@@ -790,6 +835,7 @@ template <typename T>
 bool H5ReadWrite::writeData(const string& path, const string& name,
                             const vector<int>& dims, const T* data)
 {
+  H5Lock lock(h5Mutex());
   const hid_t dataTypeId = BasicTypeToH5<T>::dataTypeId();
   const hid_t memTypeId = BasicTypeToH5<T>::memTypeId();
 
@@ -800,6 +846,7 @@ bool H5ReadWrite::writeData(const string& path, const string& name,
                             const vector<int>& dims, const DataType& type,
                             const void* data)
 {
+  H5Lock lock(h5Mutex());
   auto it = DataTypeToH5DataType.find(type);
   if (it == DataTypeToH5DataType.end()) {
     cerr << "Failed to get H5 data type for " << dataTypeToString(type) << "\n";
@@ -822,6 +869,7 @@ bool H5ReadWrite::writeData(const string& path, const string& name,
 template <typename T>
 bool H5ReadWrite::setAttribute(const string& path, const string& name, T value)
 {
+  H5Lock lock(h5Mutex());
   const hid_t dataTypeId = BasicTypeToH5<T>::dataTypeId();
   const hid_t memTypeId = BasicTypeToH5<T>::memTypeId();
 
@@ -834,6 +882,7 @@ bool H5ReadWrite::setAttribute<const string&>(const string& path,
                                               const string& name,
                                               const string& value)
 {
+  H5Lock lock(h5Mutex());
   if (!m_impl->fileIsValid()) {
     cerr << "File is not valid\n";
     return false;
@@ -887,11 +936,13 @@ bool H5ReadWrite::setAttribute<const char*>(const string& path,
                                             const string& name,
                                             const char* value)
 {
+  H5Lock lock(h5Mutex());
   return setAttribute<const string&>(path, name, value);
 }
 
 bool H5ReadWrite::createGroup(const string& path)
 {
+  H5Lock lock(h5Mutex());
   if (!m_impl->fileIsValid()) {
     cerr << "File is not valid\n";
     return false;
@@ -911,11 +962,13 @@ bool H5ReadWrite::createGroup(const string& path)
 
 bool H5ReadWrite::createSoftLink(const string& target, const string& path)
 {
+  H5Lock lock(h5Mutex());
   return m_impl->createSoftLink(target, path);
 }
 
 bool H5ReadWrite::isSoftLink(const string& path)
 {
+  H5Lock lock(h5Mutex());
   return m_impl->isSoftLink(path);
 }
 
@@ -954,7 +1007,8 @@ template unsigned long long H5ReadWrite::attribute(const string&, const string&,
                                                    bool*);
 template float H5ReadWrite::attribute(const string&, const string&, bool*);
 template double H5ReadWrite::attribute(const string&, const string&, bool*);
-template string H5ReadWrite::attribute(const string&, const string&, bool*);
+// attribute<string> is explicitly specialized above, so no explicit
+// instantiation is needed (and one here would have no effect).
 
 // readData(): single-dimensional
 template vector<char> H5ReadWrite::readData(const string&);
@@ -1012,10 +1066,8 @@ template bool H5ReadWrite::setAttribute(const string&, const string&,
                                         unsigned long long);
 template bool H5ReadWrite::setAttribute(const string&, const string&, float);
 template bool H5ReadWrite::setAttribute(const string&, const string&, double);
-template bool H5ReadWrite::setAttribute(const string&, const string&,
-                                        const string&);
-template bool H5ReadWrite::setAttribute(const string&, const string&,
-                                        const char*);
+// setAttribute<const string&> and setAttribute<const char*> are explicitly
+// specialized above, so explicit instantiations here would have no effect.
 
 // writeData
 template bool H5ReadWrite::writeData(const string&, const string&,

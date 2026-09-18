@@ -2,6 +2,9 @@
 
 Simple utility functions for interacting with PyXRF.
 
+For building, validating, and deploying the pixi-managed environment
+that Tomviz invokes, see [MAINTENANCE.md](MAINTENANCE.md).
+
 For example, make a set of PyXRF HDF5 files in a directory:
 
 ```bash

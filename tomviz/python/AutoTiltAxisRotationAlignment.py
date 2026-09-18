@@ -95,7 +95,7 @@ class AutoTiltAxisRotationAlignOperator(tomviz.operators.CancelableOperator):
         for name in dataset.scalars_names:
             array = dataset.scalars(name)
             result = np.empty(shape, array.dtype, order='F')
-            ndimage.interpolation.rotate(
+            ndimage.rotate(
                 array, -rot_ang, axes=axes, output=result)
 
             # Set the result as the new scalars.
