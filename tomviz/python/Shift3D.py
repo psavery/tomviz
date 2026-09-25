@@ -12,6 +12,6 @@ def transform(dataset, SHIFT=None):
         raise RuntimeError("No data array found!")
 
     data_py_return = np.empty_like(data_py)
-    ndimage.interpolation.shift(data_py, SHIFT, order=0, output=data_py_return)
+    ndimage.shift(data_py, SHIFT, order=0, output=data_py_return)
 
     dataset.active_scalars = data_py_return

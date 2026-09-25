@@ -4,10 +4,8 @@
 #include "Utilities.h"
 
 #include "ActiveObjects.h"
-#include "DataSource.h"
 #include "tomvizConfig.h"
 
-#include <pqAnimationCue.h>
 #include <pqAnimationManager.h>
 #include <pqAnimationScene.h>
 #include <pqCoreUtilities.h>
@@ -27,7 +25,6 @@
 #include <vtkSMRenderViewProxy.h>
 #include <vtkSMTransferFunctionManager.h>
 #include <vtkSMTransferFunctionProxy.h>
-#include <vtkSMUtilities.h>
 
 #include <vtkBoundingBox.h>
 #include <vtkCamera.h>
@@ -60,12 +57,18 @@
 #include <QDebug>
 #include <QDesktopServices>
 #include <QDir>
+#include <QFile>
 #include <QFileDialog>
 #include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonValue>
 #include <QLayout>
 #include <QMessageBox>
+#include <QRegularExpression>
 #include <QStandardPaths>
 #include <QString>
+#include <QTextStream>
 #include <QUrl>
 
 namespace tomviz {
@@ -298,19 +301,25 @@ bool deserialize(vtkDiscretizableColorTransferFunction* func,
     auto opacityFunc = func->GetScalarOpacityFunction();
     deserialize(opacityFunc, json);
     auto colors = json["colors"].toArray();
-    double* values = new double[colors.size()];
+    std::vector<double> values(colors.size());
     for (int i = 0; i < colors.size(); ++i) {
       values[i] = colors[i].toDouble();
     }
-    func->FillFromDataPointer(colors.size(), values);
+    // FillFromDataPointer's first argument is the number of control
+    // points, not the number of doubles in the buffer. Each control
+    // point contributes 4 doubles (x, r, g, b).
+    func->FillFromDataPointer(static_cast<int>(colors.size() / 4),
+                              values.data());
 
     if (json.contains("colorSpace")) {
-      QMap<QString, int> colorSpaceToIntMap = {
-        { "RGB", 0 },       { "HSV", 1 },  { "CIELAB", 2 },
-        { "CIEDE2000", 4 }, { "Step", 5 },
+      static const QMap<QString, int> colorSpaceToIntMap = {
+        { "RGB", 0 },        { "HSV", 1 },       { "CIELAB", 2 },
+        { "Lab", 2 },        { "Diverging", 3 }, { "CIEDE2000", 4 },
+        { "Step", 5 },
       };
-      if (colorSpaceToIntMap.contains(json["colorSpace"].toString())) {
-        func->SetColorSpace(colorSpaceToIntMap[json["colorSpace"].toString()]);
+      auto name = json["colorSpace"].toString();
+      if (colorSpaceToIntMap.contains(name)) {
+        func->SetColorSpace(colorSpaceToIntMap.value(name));
       }
     }
     return true;
@@ -578,14 +587,38 @@ vtkPVArrayInformation* scalarArrayInformation(vtkSMSourceProxy* proxy)
                : nullptr;
 }
 
-bool rescaleColorMap(vtkSMProxy* colorMap, DataSource* dataSource)
+namespace {
+// vtkSMProxy keeps SetPropertyModifiedFlag protected; naming it through
+// a derived class yields an ordinary pointer to the base member, which
+// is the sanctioned way to reach it from outside.
+struct ProxyModifiedFlag : vtkSMProxy
+{
+  static void clear(vtkSMProxy* proxy, const char* name)
+  {
+    constexpr auto flag = &ProxyModifiedFlag::SetPropertyModifiedFlag;
+    (proxy->*flag)(name, 0);
+  }
+};
+} // namespace
+
+void recordProxyValues(vtkSMProxy* proxy, const char* name,
+                       const double* values, unsigned int count)
+{
+  auto* prop = proxy ? proxy->GetProperty(name) : nullptr;
+  if (!prop) {
+    return;
+  }
+  vtkSMPropertyHelper(prop).Set(values, count);
+  ProxyModifiedFlag::clear(proxy, name);
+}
+
+bool rescaleColorMap(vtkSMProxy* colorMap, vtkSMSourceProxy* dataProxy)
 {
   // rescale the color/opacity maps for the data source.
   vtkSMProxy* cmap = colorMap;
   vtkSMProxy* omap =
     vtkSMPropertyHelper(cmap, "ScalarOpacityFunction").GetAsProxy();
-  vtkPVArrayInformation* ainfo =
-    tomviz::scalarArrayInformation(dataSource->proxy());
+  vtkPVArrayInformation* ainfo = tomviz::scalarArrayInformation(dataProxy);
   if (ainfo != nullptr &&
       vtkSMPropertyHelper(cmap, "AutomaticRescaleRangeMode").GetAsInt() !=
         vtkSMTransferFunctionManager::NEVER) {
@@ -637,116 +670,39 @@ QString readInJSONDescription(const QString& fileName)
   return readInTextFile(fileName, ".json");
 }
 
-void clearCameraCues(vtkSMRenderViewProxy* renderView)
+bool ensureAnimationFrames()
 {
   pqAnimationScene* scene =
     pqPVApplicationCore::instance()->animationManager()->getActiveScene();
-
-  for (auto* cue : scene->getCues()) {
-    if (!cue->getSMName().startsWith("CameraAnimationCue")) {
-      continue;
-    }
-
-    vtkSMProxy* animatedProxy = pqSMAdaptor::getProxyProperty(
-      cue->getProxy()->GetProperty("AnimatedProxy"));
-    if (renderView && animatedProxy != renderView) {
-      continue;
-    }
-
-    // If we made it this far, we should remove this cue
-    scene->removeCue(cue);
-  }
-}
-
-void createCameraOrbit(vtkSMSourceProxy* data, vtkSMRenderViewProxy* renderView)
-{
-  // Get camera position at start
-  double* normal = renderView->GetActiveCamera()->GetViewUp();
-  double* origin = renderView->GetActiveCamera()->GetPosition();
-
-  // Get center of data
-  double center[3];
-  vtkTrivialProducer* t =
-    vtkTrivialProducer::SafeDownCast(data->GetClientSideObject());
-  if (!t) {
-    return;
-  }
-  auto imageData = vtkImageData::SafeDownCast(t->GetOutputDataObject(0));
-  double data_bounds[6];
-  imageData->GetBounds(data_bounds);
-  vtkBoundingBox box;
-  box.SetBounds(data_bounds);
-  box.GetCenter(center);
-  QList<QVariant> centerList;
-  centerList << center[0] << center[1] << center[2];
-
-  // Generate camera orbit
-  vtkSmartPointer<vtkPoints> pts;
-  pts.TakeReference(vtkSMUtilities::CreateOrbit(center, normal, 7, origin));
-  QList<QVariant> points;
-  for (vtkIdType i = 0; i < pts->GetNumberOfPoints(); ++i) {
-    double coords[3];
-    pts->GetPoint(i, coords);
-    points << coords[0] << coords[1] << coords[2];
+  if (!scene) {
+    return false;
   }
 
-  pqAnimationScene* scene =
-    pqPVApplicationCore::instance()->animationManager()->getActiveScene();
-
-  pqAnimationCue* cue =
-    scene->createCue(renderView, "Camera", 0, "CameraAnimationCue");
-  pqSMAdaptor::setElementProperty(cue->getProxy()->GetProperty("Mode"), 1);
-  cue->getProxy()->UpdateVTKObjects();
-  vtkSMProxy* kf = cue->getKeyFrame(0);
-  pqSMAdaptor::setMultipleElementProperty(kf->GetProperty("PositionPathPoints"),
-                                          points);
-  pqSMAdaptor::setMultipleElementProperty(kf->GetProperty("FocalPathPoints"),
-                                          centerList);
-  pqSMAdaptor::setElementProperty(kf->GetProperty("ClosedPositionPath"), 1);
-  kf->UpdateVTKObjects();
-}
-
-void createCameraOrbit(vtkSMRenderViewProxy* renderView)
-{
-  // Get camera position at start
-  double* normal = renderView->GetActiveCamera()->GetViewUp();
-  double* origin = renderView->GetActiveCamera()->GetPosition();
-  double* center = renderView->GetActiveCamera()->GetFocalPoint();
-
-  QList<QVariant> centerList;
-  centerList << center[0] << center[1] << center[2];
-
-  // Generate camera orbit
-  vtkSmartPointer<vtkPoints> pts;
-  pts.TakeReference(vtkSMUtilities::CreateOrbit(center, normal, 7, origin));
-  QList<QVariant> points;
-  for (vtkIdType i = 0; i < pts->GetNumberOfPoints(); ++i) {
-    auto* coords = pts->GetPoint(i);
-    points << coords[0] << coords[1] << coords[2];
+  // Only a count that cannot animate at all is overridden; anything the
+  // user or a data load chose is left alone.
+  if (pqSMAdaptor::getElementProperty(
+        scene->getProxy()->GetProperty("NumberOfFrames"))
+        .toInt() > 1) {
+    return false;
   }
 
-  pqAnimationScene* scene =
-    pqPVApplicationCore::instance()->animationManager()->getActiveScene();
-
-  pqAnimationCue* cue =
-    scene->createCue(renderView, "Camera", 0, "CameraAnimationCue");
-  pqSMAdaptor::setElementProperty(cue->getProxy()->GetProperty("Mode"), 1);
-  cue->getProxy()->UpdateVTKObjects();
-  vtkSMProxy* kf = cue->getKeyFrame(0);
-  pqSMAdaptor::setMultipleElementProperty(kf->GetProperty("PositionPathPoints"),
-                                          points);
-  pqSMAdaptor::setMultipleElementProperty(kf->GetProperty("FocalPathPoints"),
-                                          centerList);
-  pqSMAdaptor::setElementProperty(kf->GetProperty("ClosedPositionPath"), 1);
-  kf->UpdateVTKObjects();
+  setAnimationNumberOfFrames(defaultAnimationFrames);
+  return true;
 }
 
 void setAnimationNumberOfFrames(int numFrames)
 {
   pqAnimationScene* scene =
     pqPVApplicationCore::instance()->animationManager()->getActiveScene();
+  if (!scene) {
+    return;
+  }
   pqSMAdaptor::setElementProperty(
     scene->getProxy()->GetProperty("NumberOfFrames"), numFrames);
+  // Without this the value sits on the proxy but never reaches the
+  // animation player, so playback keeps using the previous frame count
+  // until something else happens to flush the scene proxy.
+  scene->getProxy()->UpdateVTKObjects();
 }
 
 void snapAnimationToTimeSteps(const std::vector<double>& timeSteps)
@@ -755,14 +711,19 @@ void snapAnimationToTimeSteps(const std::vector<double>& timeSteps)
 
   pqAnimationScene* scene =
     pqPVApplicationCore::instance()->animationManager()->getActiveScene();
+  if (!scene) {
+    return;
+  }
   pqSMAdaptor::setEnumerationProperty(
     scene->getProxy()->GetProperty("PlayMode"), "Snap To TimeSteps");
+  scene->getProxy()->UpdateVTKObjects();
 
   auto* timeKeeper = ActiveObjects::instance().activeTimeKeeper();
   auto* proxy = timeKeeper->getProxy();
   vtkSMPropertyHelper(proxy, "TimestepValues")
-    .Set(&timeSteps[0], timeSteps.size());
+    .Set(&timeSteps[0], static_cast<unsigned int>(timeSteps.size()));
   vtkSMPropertyHelper(proxy, "TimeRange").Set(&timeRange[0], 2);
+  proxy->UpdateVTKObjects();
 }
 
 void setupRenderer(vtkRenderer* renderer, vtkImageSliceMapper* mapper,
@@ -979,6 +940,20 @@ QString findPrefix(const QStringList& fileNames)
 QWidget* mainWidget()
 {
   return pqCoreUtilities::mainWidget();
+}
+
+void floatAboveMainWindow(QWidget* widget)
+{
+  if (!widget) {
+    return;
+  }
+  // Replace the window type (e.g. Qt::Dialog) with Qt::Tool while preserving
+  // the hint flags, so the window floats above the main window on macOS rather
+  // than slipping behind it.
+  auto flags = widget->windowFlags();
+  flags &= ~Qt::WindowType_Mask;
+  flags |= Qt::Tool;
+  widget->setWindowFlags(flags);
 }
 
 QJsonValue toJson(vtkVariant variant)
@@ -1230,6 +1205,15 @@ bool moleculeToFile(vtkMolecule* molecule)
     fileName = QString("%1.xyz").arg(fileName);
   }
 
+  return moleculeToXyzFile(molecule, fileName);
+}
+
+bool moleculeToXyzFile(vtkMolecule* molecule, const QString& fileName)
+{
+  if (molecule == nullptr) {
+    return false;
+  }
+
   QFile file(fileName);
   if (!file.open(QIODevice::WriteOnly)) {
     qCritical() << QString("Error opening file for writing: %1").arg(fileName);
@@ -1410,22 +1394,89 @@ double getVoxelValue(vtkImageData* data, const vtkVector3d& point,
   return scalar;
 }
 
-QString userDataPath() {
-  // Ensure the tomviz directory exists
-  QStringList locations =
+QString userDataPath()
+{
+  // TOMVIZ_USER_DIRECTORY relocates the whole user directory, custom
+  // operators and templates included.
+  QString path = QString::fromLocal8Bit(qgetenv("TOMVIZ_USER_DIRECTORY"));
+  if (path.isEmpty()) {
+    const QStringList homes =
       QStandardPaths::standardLocations(QStandardPaths::HomeLocation);
-  QString home = locations[0];
-  QString path = QString("%1%2tomviz").arg(home).arg(QDir::separator());
-  QDir dir(path);
-  // dir.mkpath() returns true if the path already exists or if it was
-  // successfully created.
-  if (!dir.mkpath(path)) {
+    path = QDir(homes.first()).filePath("tomviz");
+  }
+  path = QDir(path).absolutePath();
+
+  // mkpath() is also true when the directory already exists.
+  if (!QDir().mkpath(path)) {
     QMessageBox::warning(
       tomviz::mainWidget(), "Could not create tomviz directory",
       QString("Could not create tomviz directory '%1'.").arg(path));
     return QString();
   }
   return path;
+}
+
+QString userTemplatesPath()
+{
+  const QString base = userDataPath();
+  return base.isEmpty() ? QString() : base + "/templates";
+}
+
+QStringList customOperatorSearchPaths()
+{
+  QStringList paths;
+  auto addIfDir = [&paths](const QString& path) {
+    if (QFileInfo(path).isDir()) {
+      paths.append(QDir::cleanPath(path));
+    }
+  };
+
+  const QByteArray envOverride = qgetenv("TOMVIZ_CUSTOM_TRANSFORMS_PATH");
+  if (!envOverride.isEmpty()) {
+    const QStringList entries = QString::fromLocal8Bit(envOverride)
+                                  .split(QDir::listSeparator(),
+                                         Qt::SkipEmptyParts);
+    for (const QString& path : entries) {
+      addIfDir(path);
+    }
+    return paths;
+  }
+
+  // ~/.tomviz, where earlier releases also looked; kept so operators
+  // placed there keep appearing (read-only, unlike userDataPath()).
+  for (const QString& home :
+       QStandardPaths::standardLocations(QStandardPaths::HomeLocation)) {
+    addIfDir(QDir(home).filePath(QStringLiteral(".tomviz")));
+  }
+  // The platform app-data directories, e.g.
+  // C:/Users/<USER>/AppData/Local/tomviz on Windows.
+  for (const QString& path :
+       QStandardPaths::standardLocations(QStandardPaths::AppDataLocation)) {
+    addIfDir(path);
+  }
+  return paths;
+}
+
+bool writeTextFile(QWidget* parent, const QString& path, const QString& text)
+{
+  QFile file(path);
+  if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+    QMessageBox::critical(parent, QObject::tr("Failed to save"),
+                          QObject::tr("Could not open \"%1\" for writing:\n%2")
+                            .arg(QDir::toNativeSeparators(path),
+                                 file.errorString()));
+    return false;
+  }
+  const QByteArray bytes = text.toUtf8();
+  // Report a short write too: close() can still fail to flush.
+  if (file.write(bytes) != bytes.size() || !file.flush()) {
+    QMessageBox::critical(parent, QObject::tr("Failed to save"),
+                          QObject::tr("Could not write to \"%1\":\n%2")
+                            .arg(QDir::toNativeSeparators(path),
+                                 file.errorString()));
+    return false;
+  }
+  return true;
 }
 
 } // namespace tomviz
@@ -1457,16 +1508,13 @@ static bool nodeYsMatch(double* a, double* b)
 
 } // namespace
 
-void addPlaceholderNodes(vtkColorTransferFunction* lut, DataSource* ds)
+void addPlaceholderNodes(vtkColorTransferFunction* lut, const double range[2])
 {
   // Add nodes on the data ends as placeholders
   auto numNodes = lut->GetSize();
   if (numNodes == 0) {
     return;
   }
-
-  double range[2];
-  ds->getRange(range);
 
   auto* dataArray = lut->GetDataPointer();
   int nodeStride = 4;
@@ -1523,16 +1571,13 @@ void removePlaceholderNodes(vtkColorTransferFunction* lut)
   }
 }
 
-void addPlaceholderNodes(vtkPiecewiseFunction* opacity, DataSource* ds)
+void addPlaceholderNodes(vtkPiecewiseFunction* opacity, const double range[2])
 {
   // Add nodes on the data ends as placeholders
   auto numNodes = opacity->GetSize();
   if (numNodes == 0) {
     return;
   }
-
-  double range[2];
-  ds->getRange(range);
 
   auto* dataArray = opacity->GetDataPointer();
   int nodeStride = 2;
@@ -1655,12 +1700,11 @@ void rescaleNodes(vtkPiecewiseFunction* opacity, double newMin, double newMax)
   }
 }
 
-void removePointsOutOfRange(vtkColorTransferFunction* lut, DataSource* ds)
+void removePointsOutOfRange(vtkColorTransferFunction* lut,
+                            const double range[2])
 {
-  // Remove points outside the range of the data source
+  // Remove points outside the range
   // This will also add points on the ends of the range
-  double range[2];
-  ds->getRange(range);
 
   // Make sure there are points on the ends of the data
   double startColor[3], endColor[3];
@@ -1686,13 +1730,11 @@ void removePointsOutOfRange(vtkColorTransferFunction* lut, DataSource* ds)
   lut->AddRGBPoint(range[1], endColor[0], endColor[1], endColor[2]);
 }
 
-void removePointsOutOfRange(vtkPiecewiseFunction* opacity, DataSource* ds)
+void removePointsOutOfRange(vtkPiecewiseFunction* opacity,
+                            const double range[2])
 {
-  // Remove points outside the range of the data source
+  // Remove points outside the range
   // This will also add points on the ends of the range
-
-  double range[2];
-  ds->getRange(range);
 
   // Make sure there are points on the ends of the data
   double startY = opacity->GetValue(range[0]);
@@ -1815,6 +1857,37 @@ void relabelXAndZAxes(vtkImageData* image)
 
   // Reinstate the field data
   image->SetFieldData(fd);
+}
+
+QStringList readSidsFromText(QTextStream& reader)
+{
+  QStringList sids;
+  int sidCol = 0;
+  static const QRegularExpression ws("\\s+");
+  while (!reader.atEnd()) {
+    auto line = reader.readLine().trimmed();
+    if (line.isEmpty()) {
+      continue;
+    }
+    if (line.startsWith('#')) {
+      // A header comment can name the columns, e.g. "# Angle SID Version"
+      auto tokens = line.mid(1).trimmed().split(ws, Qt::SkipEmptyParts);
+      for (int i = 0; i < tokens.size(); ++i) {
+        auto t = tokens[i].toLower();
+        if (t == "sid" || t == "scanid" || t == "scan_id") {
+          sidCol = i;
+          break;
+        }
+      }
+      continue;
+    }
+
+    auto fields = line.split(ws, Qt::SkipEmptyParts);
+    if (sidCol < fields.size()) {
+      sids.append(fields[sidCol]);
+    }
+  }
+  return sids;
 }
 
 } // namespace tomviz

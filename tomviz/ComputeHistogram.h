@@ -7,19 +7,99 @@
 #include <vtkDoubleArray.h>
 #include <vtkImageData.h>
 #include <vtkMath.h>
+#include <vtkPointData.h>
 
+#include <algorithm>
 #include <cmath>
+#include <limits>
+#include <vector>
 
 namespace tomviz {
+
+// Mirrors the bin count in HistogramManager::PopulateHistogram.
+constexpr int kHistogramBins = 256;
+
+/**
+ * Compute the finite value range used for histogram binning, reading the raw
+ * buffer directly.
+ *
+ * This deliberately avoids vtkDataArray::GetRange()/GetFiniteRange(), which
+ * lazily cache their result inside the array's vtkInformation object. That
+ * cache write is NOT thread-safe: the histogram runs on a background thread
+ * while the main (render) thread touches the same shared array, and concurrent
+ * range caching corrupts the Information's reference counts -> "delete object
+ * with non-zero reference count" -> crash in vtkGarbageCollector. Computing the
+ * range from the buffer here keeps the background thread read-only with respect
+ * to the shared array.
+ *
+ * \param useMagnitude when true and numComponents > 1, ranges over the vector
+ *   magnitude (matching GetFiniteRange(range, -1) and the multi-component
+ *   binning path in CalculateHistogram). Otherwise ranges over the raw
+ *   component values (matching the per-component range used for the 2D
+ *   histogram). For single-component arrays the two are equivalent.
+ */
+template <typename T>
+void ComputeFiniteRange(const T* values, const vtkIdType numTuples,
+                        const vtkIdType numComponents, const bool useMagnitude,
+                        double range[2])
+{
+  double minValue = std::numeric_limits<double>::max();
+  double maxValue = -std::numeric_limits<double>::max();
+
+  if (useMagnitude && numComponents > 1) {
+    for (vtkIdType j = 0; j < numTuples; ++j) {
+      double squaredSum = 0.0;
+      bool valid = true;
+      for (vtkIdType c = 0; c < numComponents; ++c) {
+        double value = static_cast<double>(values[j * numComponents + c]);
+        if (!vtkMath::IsFinite(value)) {
+          valid = false;
+          break;
+        }
+        squaredSum += value * value;
+      }
+      if (valid) {
+        double mag = std::sqrt(squaredSum);
+        minValue = std::min(minValue, mag);
+        maxValue = std::max(maxValue, mag);
+      }
+    }
+  } else {
+    const vtkIdType total = numTuples * numComponents;
+    for (vtkIdType i = 0; i < total; ++i) {
+      double value = static_cast<double>(values[i]);
+      if (vtkMath::IsFinite(value)) {
+        minValue = std::min(minValue, value);
+        maxValue = std::max(maxValue, value);
+      }
+    }
+  }
+
+  if (minValue > maxValue) {
+    // No finite values found; fall back to a benign range.
+    minValue = 0.0;
+    maxValue = 0.0;
+  }
+
+  range[0] = minValue;
+  range[1] = maxValue;
+}
 
 /** Single component integral type specialization. */
 template <typename T,
           typename std::enable_if<std::is_integral<T>::value>::type* = nullptr>
 void calcHistogram(T* values, const vtkIdType numTuples, const float min,
-                   const float inv, uint64_t* pops, int&)
+                   const float inv, uint64_t* pops, int& invalid)
 {
+  // Clamp idx so garbage data (e.g. uninit numpy buffer pushed
+  // before being filled) doesn't write past pops[].
   for (vtkIdType j = 0; j < numTuples; ++j) {
-    ++pops[static_cast<int>((*values++ - min) * inv)];
+    int idx = static_cast<int>((*values++ - min) * inv);
+    if (idx >= 0 && idx < kHistogramBins) {
+      ++pops[idx];
+    } else {
+      ++invalid;
+    }
   }
 }
 
@@ -31,9 +111,13 @@ void calcHistogram(T*, const vtkIdType, uint64_t*)
 }
 
 /** Single component unsigned char covering 0 -> 255 range. */
-void calcHistogram(unsigned char* values, const vtkIdType numTuples,
-                   uint64_t* pops)
+// inline: unlike its neighbours this overload is not a template, so
+// without it the header cannot be included in more than one translation
+// unit.
+inline void calcHistogram(unsigned char* values, const vtkIdType numTuples,
+                          uint64_t* pops)
 {
+  // unsigned char is always in [0, kBins-1], no clamp needed.
   for (vtkIdType j = 0; j < numTuples; ++j) {
     ++pops[*values++];
   }
@@ -48,7 +132,12 @@ void calcHistogram(T* values, const vtkIdType numTuples, const float min,
   for (vtkIdType j = 0; j < numTuples; ++j) {
     T value = *(values++);
     if (std::isfinite(value)) {
-      ++pops[static_cast<int>((value - min) * inv)];
+      int idx = static_cast<int>((value - min) * inv);
+      if (idx >= 0 && idx < kHistogramBins) {
+        ++pops[idx];
+      } else {
+        ++invalid;
+      }
     } else {
       ++invalid;
     }
@@ -202,6 +291,66 @@ void Calculate2DHistogram(T* values, const int* dim, const int numComp,
     std::swap(sliceLast, sliceCurrent);
     std::swap(sliceCurrent, sliceNext);
   }
+}
+
+/**
+ * Estimate the value below which @a fraction of the finite values (or
+ * magnitudes, for multi-component arrays) lie, from a fine histogram
+ * over @a range. Linear interpolation inside the bin holding the
+ * percentile keeps the estimate smooth for coarse integer data.
+ *
+ * With @a excludeMinimum the values equal to range[0] are left out of
+ * the count. A reconstruction is padded with its minimum (usually zero)
+ * wherever there is nothing, and that pile can be most of the volume,
+ * which drags every percentile down to the noise just above it.
+ */
+template <typename T>
+double ComputePercentile(const T* values, const vtkIdType numTuples,
+                         const vtkIdType numComponents, const double range[2],
+                         const double fraction,
+                         const bool excludeMinimum = false)
+{
+  constexpr int bins = 4096;
+  if (numTuples <= 0 || !(range[1] > range[0])) {
+    return range[0];
+  }
+  const double inv = bins / (range[1] - range[0]);
+  std::vector<uint64_t> pops(bins, 0);
+  uint64_t total = 0;
+  for (vtkIdType j = 0; j < numTuples; ++j) {
+    double value;
+    if (numComponents == 1) {
+      value = static_cast<double>(values[j]);
+    } else {
+      double squaredSum = 0.0;
+      for (vtkIdType c = 0; c < numComponents; ++c) {
+        double v = static_cast<double>(values[j * numComponents + c]);
+        squaredSum += v * v;
+      }
+      value = std::sqrt(squaredSum);
+    }
+    if (!vtkMath::IsFinite(value) || (excludeMinimum && value == range[0])) {
+      continue;
+    }
+    int idx = static_cast<int>((value - range[0]) * inv);
+    idx = std::min(std::max(idx, 0), bins - 1);
+    ++pops[idx];
+    ++total;
+  }
+  if (total == 0) {
+    return range[0];
+  }
+
+  const double target = std::min(std::max(fraction, 0.0), 1.0) * total;
+  uint64_t below = 0;
+  for (int i = 0; i < bins; ++i) {
+    if (below + pops[i] >= target) {
+      double within = pops[i] > 0 ? (target - below) / pops[i] : 0.0;
+      return range[0] + (i + within) / inv;
+    }
+    below += pops[i];
+  }
+  return range[1];
 }
 
 } // namespace tomviz

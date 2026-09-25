@@ -9,7 +9,7 @@ def transform(dataset, sigma=2.0):
 
     # Transform the dataset.
     result = np.empty_like(tiltSeries)
-    scipy.ndimage.filters.gaussian_filter(
+    scipy.ndimage.gaussian_filter(
         tiltSeries, [sigma, sigma, 0], output=result)
 
     # Set the result as the new scalars.

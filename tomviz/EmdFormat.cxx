@@ -3,7 +3,7 @@
 
 #include "EmdFormat.h"
 
-#include "DataSource.h"
+#include "pipeline/data/VolumeData.h"
 #include "GenericHDF5Format.h"
 #include "Utilities.h"
 
@@ -11,6 +11,7 @@
 
 #include <vtkDataArray.h>
 #include <vtkImageData.h>
+#include <vtkMath.h>
 #include <vtkPointData.h>
 
 #include <string>
@@ -155,8 +156,20 @@ bool EmdFormat::readNode(h5::H5ReadWrite& reader, const std::string& emdNode,
   } else {
     // No deep copying of the data needed. Just relabel the X and Z axes.
     relabelXAndZAxes(image);
-    DataSource::setTiltAngles(image, angles);
-    DataSource::setType(image, DataSource::TiltSeries);
+    pipeline::VolumeData::setTiltAngles(image, angles);
+    pipeline::VolumeData::setType(
+      image, pipeline::VolumeData::DataType::TiltSeries);
+  }
+
+  // /data carries the first scalar in insertion order; the true
+  // active is in active_scalar_name when it differs. Files without
+  // the attr leave the active as /data.
+  if (reader.hasAttribute(emdNode, "active_scalar_name")) {
+    auto activeName =
+      reader.attribute<std::string>(emdNode, "active_scalar_name", &ok);
+    if (ok && !activeName.empty()) {
+      image->GetPointData()->SetActiveScalars(activeName.c_str());
+    }
   }
 
   // Read scan IDs if present
@@ -169,16 +182,11 @@ bool EmdFormat::readNode(h5::H5ReadWrite& reader, const std::string& emdNode,
       for (auto& id : scanIdsData) {
         scanIDs.push_back(id);
       }
-      DataSource::setScanIDs(image, scanIDs);
+      pipeline::VolumeData::setScanIds(image, scanIDs);
     }
   }
 
   return true;
-}
-
-bool EmdFormat::write(const std::string& fileName, DataSource* source)
-{
-  return write(fileName, source->imageData());
 }
 
 bool EmdFormat::write(const std::string& fileName, vtkImageData* image)
@@ -205,10 +213,10 @@ bool EmdFormat::writeNode(h5::H5ReadWrite& writer, const std::string& path,
   writer.setAttribute(path, "emd_group_type", 1u);
 
   // See if we have tilt angles
-  auto hasTiltAngles = DataSource::hasTiltAngles(image);
+  auto hasTiltAngles = pipeline::VolumeData::hasTiltAngles(image);
 
   vtkNew<vtkImageData> permutedImage;
-  if (DataSource::hasTiltAngles(image)) {
+  if (pipeline::VolumeData::hasTiltAngles(image)) {
     // No deep copies of data needed. Just re-label the axes.
     permutedImage->ShallowCopy(image);
     relabelXAndZAxes(permutedImage);
@@ -237,7 +245,7 @@ bool EmdFormat::writeNode(h5::H5ReadWrite& writer, const std::string& path,
   std::vector<float> imageDimDataZ(dimensions[2]);
 
   if (hasTiltAngles) {
-    auto angles = DataSource::getTiltAngles(permutedImage);
+    auto angles = pipeline::VolumeData::getTiltAngles(permutedImage);
     imageDimDataX.reserve(angles.size());
     for (int i = 0; i < angles.size(); ++i) {
       imageDimDataX[i] = static_cast<float>(angles[i]);
@@ -256,7 +264,7 @@ bool EmdFormat::writeNode(h5::H5ReadWrite& writer, const std::string& path,
 
   // Create the 3 dim sets too...
   std::vector<int> side(1);
-  side[0] = imageDimDataX.size();
+  side[0] = static_cast<int>(imageDimDataX.size());
   writer.writeData(path, "dim1", side, imageDimDataX);
   if (hasTiltAngles) {
     writer.setAttribute(path + "/dim1", "name", "angles");
@@ -266,12 +274,12 @@ bool EmdFormat::writeNode(h5::H5ReadWrite& writer, const std::string& path,
     writer.setAttribute(path + "/dim1", "units", "[n_m]");
   }
 
-  side[0] = imageDimDataY.size();
+  side[0] = static_cast<int>(imageDimDataY.size());
   writer.writeData(path, "dim2", side, imageDimDataY);
   writer.setAttribute(path + "/dim2", "name", "y");
   writer.setAttribute(path + "/dim2", "units", "[n_m]");
 
-  side[0] = imageDimDataZ.size();
+  side[0] = static_cast<int>(imageDimDataZ.size());
   writer.writeData(path, "dim3", side, imageDimDataZ);
   if (hasTiltAngles) {
     writer.setAttribute(path + "/dim3", "name", "x");
@@ -285,8 +293,8 @@ bool EmdFormat::writeNode(h5::H5ReadWrite& writer, const std::string& path,
   writeExtraScalars(writer, path, permutedImage);
 
   // Write scan IDs if present
-  if (DataSource::hasScanIDs(image)) {
-    auto scanIDs = DataSource::getScanIDs(image);
+  if (pipeline::VolumeData::hasScanIds(image)) {
+    auto scanIDs = pipeline::VolumeData::getScanIds(image);
     std::vector<int> scanIdsVec(scanIDs.begin(), scanIDs.end());
     std::vector<int> dims(1, static_cast<int>(scanIdsVec.size()));
     writer.writeData(path, "scan_ids", dims, scanIdsVec);
