@@ -9,7 +9,7 @@ def transform(dataset, size=2):
 
     # Transform the dataset.
     result = np.empty_like(array)
-    scipy.ndimage.filters.median_filter(array, size, output=result)
+    scipy.ndimage.median_filter(array, size, output=result)
 
     # Set the result as the new scalars.
     dataset.active_scalars = result

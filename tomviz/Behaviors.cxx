@@ -5,12 +5,21 @@
 
 #include "ActiveObjects.h"
 #include "AddRenderViewContextMenuBehavior.h"
-#include "ShiftRotationCenterWidget.h"
 #include "ManualManipulationWidget.h"
-#include "MoveActiveObject.h"
-#include "OperatorPython.h"
+#include "PtychoWidget.h"
+#include "PyXRFWidget.h"
+#include "SAM2SeedWidget.h"
+#include "SelectCylinderWidget.h"
+#include "SelectVolumeRangeWidget.h"
+#include "LabelSelectionWidget.h"
+#include "ThresholdRangeWidget.h"
+#include "ShiftRotationCenterWidget.h"
 #include "RotateAlignWidget.h"
+#include "CustomNodeWidgetRegistry.h"
+#include "ClippingRangeBehavior.h"
+#include "ImageViewerModeBehavior.h"
 #include "TimeSeriesLabel.h"
+#include "TrackpadTouchFix.h"
 #include "ViewFrameActions.h"
 
 #include <pqAlwaysConnectedBehavior.h>
@@ -18,7 +27,9 @@
 #include <pqDefaultViewBehavior.h>
 #include <pqInterfaceTracker.h>
 #include <pqPersistentMainWindowStateBehavior.h>
+#include <pqServerManagerModel.h>
 #include <pqStandardPropertyWidgetInterface.h>
+#include <pqView.h>
 #include <pqViewStreamingBehavior.h>
 #include <vtkSMReaderFactory.h>
 #include <vtkSMSessionProxyManager.h>
@@ -87,8 +98,18 @@ Behaviors::Behaviors(QMainWindow* mainWindow) : QObject(mainWindow)
   new pqPersistentMainWindowStateBehavior(mainWindow);
 
   new tomviz::AddRenderViewContextMenuBehavior(this);
+  new tomviz::ImageViewerModeBehavior(this);
+  new tomviz::ClippingRangeBehavior(this);
 
-  m_moveActiveBehavior.reset(new tomviz::MoveActiveObject(this));
+  // ParaView's view widgets are QVTKOpenGLNativeWidget on macOS, so they need
+  // the same trackpad workaround our own 2D views get in QVTKGLWidget.
+  connect(pqApplicationCore::instance()->getServerManagerModel(),
+          &pqServerManagerModel::viewAdded, this, [](pqView* view) {
+            if (view) {
+              disableTrackpadTouchEvents(view->widget());
+            }
+          });
+
   m_timeSeriesLabel.reset(new tomviz::TimeSeriesLabel(this));
 
   // This will trigger the logic to setup reader/writer factories, etc.
@@ -102,12 +123,28 @@ Behaviors::Behaviors(QMainWindow* mainWindow) : QObject(mainWindow)
 
 void Behaviors::registerCustomOperatorUIs()
 {
-  OperatorPython::registerCustomWidget("ShiftRotationCenterWidget", true,
-                                       ShiftRotationCenterWidget::New);
-  OperatorPython::registerCustomWidget("RotationAlignWidget", true,
-                                       RotateAlignWidget::New);
-  OperatorPython::registerCustomWidget("ManualManipulationWidget", true,
-                                       ManualManipulationWidget::New);
+  using namespace pipeline;
+
+  registerCustomNodeWidget<RotateAlignWidget>(
+    "RotationAlignWidget", /*needsData=*/true);
+  registerCustomNodeWidget<ShiftRotationCenterWidget>(
+    "ShiftRotationCenterWidget", /*needsData=*/true);
+  registerCustomNodeWidget<ManualManipulationWidget>(
+    "ManualManipulationWidget", /*needsData=*/true);
+  registerCustomNodeWidget<SelectCylinderWidget>(
+    "CylindricalCropWidget", /*needsData=*/true);
+  registerCustomNodeWidget<ThresholdRangeWidget>(
+    "ThresholdRangeWidget", /*needsData=*/true);
+  registerCustomNodeWidget<LabelSelectionWidget>(
+    "LabelSelectionWidget", /*needsData=*/true);
+  registerCustomNodeWidget<SelectVolumeRangeWidget>(
+    "SelectVolumeRangeWidget", /*needsData=*/true);
+  registerCustomNodeWidget<SAM2SeedWidget>(
+    "SAM2SeedWidget", /*needsData=*/true);
+  registerCustomNodeWidget<PyXRFWidget>(
+    "PyXRFWidget", /*needsData=*/false);
+  registerCustomNodeWidget<PtychoWidget>(
+    "PtychoWidget", /*needsData=*/false);
 }
 
 } // end of namespace tomviz

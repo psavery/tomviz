@@ -4,8 +4,11 @@
 #include "TimeSeriesLabel.h"
 
 #include "ActiveObjects.h"
-#include "TimeSeriesStep.h"
 #include "Utilities.h"
+
+#include "pipeline/OutputPort.h"
+#include "pipeline/PortData.h"
+#include "pipeline/data/VolumeData.h"
 
 #include <pqView.h>
 #include <vtkSMViewProxy.h>
@@ -30,8 +33,8 @@ public:
   vtkNew<vtkTextRepresentation> textRepresentation;
   vtkNew<vtkTextWidget> textWidget;
 
-  QPointer<DataSource> activeDataSource;
   QPointer<pqView> activeView;
+  QPointer<pipeline::OutputPort> watchedPort;
 
   Internal(QObject* p) : QObject(p)
   {
@@ -50,8 +53,8 @@ public:
     connect(&activeObjects(),
             QOverload<vtkSMViewProxy*>::of(&ActiveObjects::viewChanged), this,
             &Internal::viewChanged);
-    connect(&activeObjects(), &ActiveObjects::dataSourceActivated, this,
-            &Internal::dataSourceActivated);
+    connect(&activeObjects(), &ActiveObjects::activeTipOutputPortChanged, this,
+            &Internal::activeDataChanged);
     connect(&activeObjects(), &ActiveObjects::showTimeSeriesLabelChanged, this,
             &Internal::updateVisibility);
   }
@@ -77,42 +80,55 @@ public:
     render();
   }
 
-  void dataSourceActivated(DataSource* ds)
+  // The VolumeData on the active tip output port, or null.
+  pipeline::VolumeDataPtr activeVolumeData()
   {
-    if (ds == activeDataSource) {
+    auto* port = activeObjects().activeTipOutputPort();
+    if (!port || !port->hasData()) {
+      return nullptr;
+    }
+    try {
+      return port->data().value<pipeline::VolumeDataPtr>();
+    } catch (const std::bad_any_cast&) {
+      return nullptr;
+    }
+  }
+
+  void activeDataChanged()
+  {
+    // Follow the active port so in-place data mutations (time series
+    // playback switching steps) refresh the label text too.
+    auto* port = activeObjects().activeTipOutputPort();
+    if (port != watchedPort) {
+      if (watchedPort) {
+        disconnect(watchedPort, &pipeline::OutputPort::intermediateDataApplied,
+                   this, nullptr);
+      }
+      watchedPort = port;
+      if (port) {
+        connect(port, &pipeline::OutputPort::intermediateDataApplied, this,
+                &Internal::updateLabel);
+      }
+    }
+
+    updateVisibility();
+    updateLabel();
+  }
+
+  void updateLabel()
+  {
+    auto vol = activeVolumeData();
+    if (!vol || !vol->hasTimeSteps()) {
       return;
     }
 
-    if (activeDataSource) {
-      disconnect(activeDataSource);
-    }
-
-    if (ds) {
-      connect(ds, &DataSource::timeStepsModified, this,
-              &Internal::timeStepsModified);
-      connect(ds, &DataSource::timeStepChanged, this,
-              &Internal::timeStepChanged);
-    }
-
-    activeDataSource = ds;
-    updateVisibility();
-    timeStepChanged();
-  }
-
-  void timeStepsModified()
-  {
-    // In case there wasn't a time series before...
-    updateVisibility();
-    timeStepChanged();
-  }
-
-  void timeStepChanged()
-  {
-    if (!activeDataSource || !activeDataSource->hasTimeSteps()) {
+    auto steps = vol->timeSteps();
+    int index = vol->currentTimeStepIndex();
+    if (index < 0 || index >= static_cast<int>(steps.size())) {
       return;
     }
 
-    auto label = activeDataSource->currentTimeSeriesStep().label;
+    auto label = steps[index].label;
     if (label == textActor->GetInput()) {
       // No changes needed
       return;
@@ -124,14 +140,16 @@ public:
 
   void updateVisibility()
   {
-    // If we have an interactor and the settings indicate it should
+    // Show if the setting is enabled, we have an interactor, and the active
+    // data is a time series.
     bool show = activeObjects().showTimeSeriesLabel();
     bool hasInteractor = textWidget->GetInteractor() != nullptr;
-    bool hasTimeSteps = activeDataSource && activeDataSource->hasTimeSteps();
+    auto vol = activeVolumeData();
+    bool hasTimeSteps = vol && vol->hasTimeSteps();
 
     bool visible = show && hasInteractor && hasTimeSteps;
 
-    if (visible != textWidget->GetEnabled()) {
+    if (visible != static_cast<bool>(textWidget->GetEnabled())) {
       textWidget->SetEnabled(visible);
       render();
     }

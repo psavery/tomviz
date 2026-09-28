@@ -723,6 +723,15 @@ class DeconvolutionDenoise(tomviz.operators.CancelableOperator):
         if probe is None:
             raise Exception("A probe dataset is required.")
 
+        # The UI can pass these numeric parameters as floats; cast to int so that
+        # tuple indexing (shape[axis_index]) and integer upscaling work. Without
+        # this, a float axis raises "tuple indices must be integers ... not float".
+        axis = int(axis)
+        scale_x = int(scale_x)
+        scale_y = int(scale_y)
+        max_iter = int(max_iter)
+        probe_kernel = int(probe_kernel)
+
         if selected_scalars is None:
             selected_scalars = (dataset.active_name,)
 
@@ -792,6 +801,14 @@ class DeconvolutionDenoise(tomviz.operators.CancelableOperator):
 
             if dataset_tilt_angles is not None:
                 output_tilt_angles.append(dataset_tilt_angles[i])
+
+        # Accumulate every output first, THEN write them all. A vtkImageData shares
+        # one extent across all of its scalar arrays, so resizing (scale > 1) one
+        # scalar at a time leaves the other, still-native-sized arrays inconsistent
+        # with the new extent -> "cannot reshape array of size N into (...)".
+        # Reading each selected scalar while the extent is still native avoids that.
+        results = {}
+        original_active = dataset.active_name
 
         for name in selected_scalars:
             scalars = dataset.scalars(name)
@@ -871,11 +888,37 @@ class DeconvolutionDenoise(tomviz.operators.CancelableOperator):
 
             self.progress.value = n_slices
 
-            dataset.set_scalars(name, output_scalars)
+            results[name] = output_scalars
 
-        # Remove scalars that were not selected from the output dataset
+        # Write all outputs first, and only remove leftover (non-selected) scalars
+        # AFTER everything is written, so an exception can't wipe the dataset before
+        # the new data is in place. The first resized write bumps the shared extent;
+        # the older arrays are never READ again (all reads happened above), so the
+        # incremental-resize reshape error can't occur, and they're cleared last.
+        for name, output_scalars in results.items():
+            dataset.set_scalars(name, output_scalars)
         for scalar_name in all_scalars_set - selected_scalars_set:
             dataset.remove_scalars(scalar_name)
+        try:
+            if original_active in results:
+                dataset.active_name = original_active
+        except Exception:
+            pass
+
+        # In-plane upscaling produces finer voxels; shrink the spacing to match so
+        # the dataset keeps its physical size.
+        if scale_x != 1 or scale_y != 1:
+            try:
+                spacing = list(dataset.spacing)
+                scale = [scale_x, scale_y]
+                j = 0
+                for i in range(len(spacing)):
+                    if i != axis_index:
+                        spacing[i] = spacing[i] / scale[j]
+                        j += 1
+                dataset.spacing = spacing
+            except Exception:
+                pass
 
         # Set the scan ids on the output
         if dataset_scan_ids is not None:

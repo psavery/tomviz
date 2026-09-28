@@ -12,7 +12,7 @@ def transform(dataset):
     zoom = (0.5, 0.5, 0.5)
     result_shape = utils.zoom_shape(array, zoom)
     result = np.empty(result_shape, array.dtype, order='F')
-    scipy.ndimage.interpolation.zoom(array, zoom,
+    scipy.ndimage.zoom(array, zoom,
                                      output=result, order=1,
                                      mode='constant', cval=0.0,
                                      prefilter=False)
@@ -25,7 +25,7 @@ def transform(dataset):
         tilt_angles = dataset.tilt_angles
         result_shape = utils.zoom_shape(tilt_angles, 0.5)
         result = np.empty(result_shape, array.dtype, order='F')
-        tilt_angles = scipy.ndimage.interpolation.zoom(tilt_angles, 0.5,
+        tilt_angles = scipy.ndimage.zoom(tilt_angles, 0.5,
                                                        output=result)
         dataset.tilt_angles = result
     except: # noqa

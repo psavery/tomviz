@@ -5,6 +5,7 @@
 
 #include "MainWindow.h"
 #include "SaveScreenshotDialog.h"
+#include "Utilities.h"
 
 #include <pqActiveObjects.h>
 #include <pqApplicationCore.h>
@@ -79,7 +80,7 @@ void SaveScreenshotReaction::saveScreenshot(MainWindow* mw)
   filters << "PPM image (*.ppm)";
   filters << "JPG image (*.jpg)";
 
-  QFileDialog file_dialog(nullptr, "Save Screenshot:");
+  QFileDialog file_dialog(tomviz::mainWidget(), "Save Screenshot:");
   file_dialog.setFileMode(QFileDialog::AnyFile);
   file_dialog.setNameFilters(filters);
   file_dialog.setObjectName("FileSaveScreenshotDialog");

@@ -166,7 +166,7 @@ float ctvlib::matrix_2norm()
 {
   float L2;
   L2 = tbb::parallel_reduce(
-    tbb::blocked_range<int>(0, Nslice), 0.0,
+    tbb::blocked_range<int>(0, Nslice), 0.0f,
     [&](tbb::blocked_range<int>& r, float L2loc) {
       for (int s = r.begin(); s < r.end(); ++s) {
         L2loc += (recon[s].array() - temp_recon[s].array()).square().sum();
@@ -198,7 +198,8 @@ void ctvlib::forward_projection()
 void ctvlib::loadA(Eigen::Ref<Mat> pyA)
 {
   for (int i = 0; i < pyA.cols(); i++) {
-    A.coeffRef(pyA(0, i), pyA(1, i)) += pyA(2, i);
+    A.coeffRef(static_cast<Eigen::Index>(pyA(0, i)),
+               static_cast<Eigen::Index>(pyA(1, i))) += pyA(2, i);
   }
 }
 
@@ -211,19 +212,20 @@ void ctvlib::update_proj_angles(Eigen::Ref<Mat> pyA, int Nproj)
   g.resize(Nslice, Nrow);
 
   for (int i = 0; i < pyA.cols(); i++) {
-    A.coeffRef(pyA(0, i), pyA(1, i)) += pyA(2, i);
+    A.coeffRef(static_cast<Eigen::Index>(pyA(0, i)),
+               static_cast<Eigen::Index>(pyA(1, i))) += pyA(2, i);
   }
 }
 
 // TV Minimization (Gradient Descent)
 void ctvlib::tv_gd_3D(int ng, float dPOCS)
 {
-  float tvNorm, eps = 1e-8;
+  float tvNorm, eps = 1e-8f;
 
   // Calculate TV Derivative Tensor.
   for (int gIter = 0; gIter < ng; gIter++) {
     tvNorm = tbb::parallel_reduce(
-      tbb::blocked_range<int>(0, Nslice), 0.0,
+      tbb::blocked_range<int>(0, Nslice), 0.0f,
       [&](tbb::blocked_range<int>& r, float tvNormLoc) {
         for (int i = r.begin(); i < r.end(); ++i) {
           int ip = (i + 1) % Nslice;
@@ -241,7 +243,7 @@ void ctvlib::tv_gd_3D(int ng, float dPOCS)
               int jm_kp = ((j - 1 + Ny) % Ny) * Ny + (k + 1) % Nz;
               int jp_km = ((j + 1) % Ny) * Ny + (k - 1 + Nz) % Nz;
 
-              float v1n = 3.0 * recon[i](jk) - recon[ip](jk) - recon[i](jp) -
+              float v1n = 3.0f * recon[i](jk) - recon[ip](jk) - recon[i](jp) -
                           recon[i](kp);
               float v1d = sqrt(
                 eps +

@@ -10,7 +10,7 @@ def transform(dataset, resampling_factor=[1, 1, 1]):
     # Transform the dataset.
     result_shape = utils.zoom_shape(array, resampling_factor)
     result = np.empty(result_shape, array.dtype, order='F')
-    scipy.ndimage.interpolation.zoom(array, resampling_factor, output=result)
+    scipy.ndimage.zoom(array, resampling_factor, output=result)
 
     # Set the result as the new scalars.
     dataset.active_scalars = result
@@ -22,7 +22,7 @@ def transform(dataset, resampling_factor=[1, 1, 1]):
 
             result_shape = utils.zoom_shape(tilt_angles, resampling_factor[2])
             result = np.empty(result_shape, array.dtype, order='F')
-            scipy.ndimage.interpolation.zoom(
+            scipy.ndimage.zoom(
                 tilt_angles, resampling_factor[2], output=result)
             dataset.tilt_angles = result
         except: # noqa

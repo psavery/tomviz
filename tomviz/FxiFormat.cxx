@@ -3,7 +3,6 @@
 
 #include "FxiFormat.h"
 
-#include "DataSource.h"
 #include "GenericHDF5Format.h"
 #include "Utilities.h"
 
@@ -44,66 +43,56 @@ bool FxiFormat::read(const std::string& fileName, vtkImageData* image,
   return readDataSet(fileName, path, image, options);
 }
 
-bool FxiFormat::read(const std::string& fileName, DataSource* dataSource,
-                     const QVariantMap& options)
+HDF5ReadResult FxiFormat::readAll(const std::string& fileName,
+                                  const QVariantMap& options)
 {
+  HDF5ReadResult result;
+
   vtkNew<vtkImageData> image;
   if (!read(fileName, image, options)) {
     std::cerr << "Failed to read data in: " + fileName + "\n";
-    return false;
+    return result;
   }
 
-  dataSource->setData(image);
+  result.imageData = image;
 
-  // Use the same strides and volume bounds for the dark and white data,
-  // except for the tilt axis.
-  QVariantMap darkWhiteOptions = options;
-  int strides[3];
-  int bs[6];
-  dataSource->subsampleStrides(strides);
-  dataSource->subsampleVolumeBounds(bs);
-
-  QVariantList stridesList = { 1, strides[1], strides[2] };
-  QVariantList boundsList = { 0, 1, bs[2], bs[3], bs[4], bs[5] };
-
-  darkWhiteOptions["subsampleStrides"] = stridesList;
-  darkWhiteOptions["subsampleVolumeBounds"] = boundsList;
-  darkWhiteOptions["askForSubsample"] = false;
-
-  // Read in the dark and white image data as well
+  // Read dark and white data
   vtkNew<vtkImageData> darkImage, whiteImage;
-  readDark(fileName, darkImage, darkWhiteOptions);
-  if (darkImage->GetPointData()->GetNumberOfArrays() != 0)
-    dataSource->setDarkData(std::move(darkImage));
+  readDark(fileName, darkImage, options);
+  if (darkImage->GetPointData()->GetNumberOfArrays() != 0) {
+    result.darkData = darkImage;
+  }
 
-  readWhite(fileName, whiteImage, darkWhiteOptions);
-  if (whiteImage->GetPointData()->GetNumberOfArrays() != 0)
-    dataSource->setWhiteData(std::move(whiteImage));
+  readWhite(fileName, whiteImage, options);
+  if (whiteImage->GetPointData()->GetNumberOfArrays() != 0) {
+    result.whiteData = whiteImage;
+  }
 
-  QVector<double> angles = readTheta(fileName, options);
+  result.tiltAngles = readTheta(fileName, options);
 
-  if (angles.isEmpty()) {
+  if (result.tiltAngles.isEmpty()) {
     // Re-order the data to Fortran ordering
     GenericHDF5Format::reorderData(image, ReorderMode::CToFortran);
-    GenericHDF5Format::reorderData(dataSource->darkData(),
-                                   ReorderMode::CToFortran);
-    GenericHDF5Format::reorderData(dataSource->whiteData(),
-                                   ReorderMode::CToFortran);
+    if (result.darkData) {
+      GenericHDF5Format::reorderData(result.darkData, ReorderMode::CToFortran);
+    }
+    if (result.whiteData) {
+      GenericHDF5Format::reorderData(result.whiteData,
+                                     ReorderMode::CToFortran);
+    }
   } else {
     // No re-order needed. Just re-label the axes.
     relabelXAndZAxes(image);
-    relabelXAndZAxes(dataSource->darkData());
-    relabelXAndZAxes(dataSource->whiteData());
-    dataSource->setTiltAngles(angles);
-    dataSource->setType(DataSource::TiltSeries);
+    if (result.darkData) {
+      relabelXAndZAxes(result.darkData);
+    }
+    if (result.whiteData) {
+      relabelXAndZAxes(result.whiteData);
+    }
+    result.isTiltSeries = true;
   }
 
-  auto metadata = readMetadata(fileName, options);
-  dataSource->setMetadata(metadata);
-
-  dataSource->dataModified();
-
-  return true;
+  return result;
 }
 
 bool FxiFormat::readDark(const std::string& fileName, vtkImageData* image,

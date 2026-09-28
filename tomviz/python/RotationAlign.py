@@ -11,9 +11,9 @@ def transform(dataset, SHIFT=None, rotation_angle=90.0, tilt_axis=0):
     if data_py is None: #Check if data exists
         raise RuntimeError("No data array found!")
     if SHIFT is None:
-        SHIFT = np.zeros(len(data_py.shape), dtype=np.int)
+        SHIFT = np.zeros(len(data_py.shape), dtype=int)
     data_py_return = np.empty_like(data_py)
-    ndimage.interpolation.shift(data_py, SHIFT, order=0, output=data_py_return)
+    ndimage.shift(data_py, SHIFT, order=0, output=data_py_return)
 
     rotation_axis = 2 # This operator always assumes the rotation axis is Z
     if rotation_angle == []: # If tilt angle not given, assign it to 90 degrees.
@@ -24,7 +24,7 @@ def transform(dataset, SHIFT=None, rotation_angle=90.0, tilt_axis=0):
     axes = (axis1, axis2)
     shape = utils.rotate_shape(data_py_return, rotation_angle, axes=axes)
     data_py_return2 = np.empty(shape, data_py_return.dtype, order='F')
-    ndimage.interpolation.rotate(
+    ndimage.rotate(
         data_py_return, rotation_angle, output=data_py_return2, axes=axes)
 
     dataset.active_scalars = data_py_return2

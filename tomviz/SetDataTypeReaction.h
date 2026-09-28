@@ -6,7 +6,7 @@
 
 #include <pqReaction.h>
 
-#include "DataSource.h"
+#include "pipeline/PortType.h"
 
 class QMainWindow;
 
@@ -20,10 +20,10 @@ class SetDataTypeReaction : public pqReaction
 
 public:
   SetDataTypeReaction(QAction* action, QMainWindow* mw,
-                      DataSource::DataSourceType t = DataSource::Volume);
+                      pipeline::PortType t = pipeline::PortType::Volume);
 
   static void setDataType(QMainWindow* mw, DataSource* source = nullptr,
-                          DataSource::DataSourceType t = DataSource::Volume);
+                          pipeline::PortType t = pipeline::PortType::Volume);
 
 protected:
   /// Called when the action is triggered.
@@ -32,9 +32,9 @@ protected:
 
 private:
   QMainWindow* m_mainWindow;
-  DataSource::DataSourceType m_type;
+  pipeline::PortType m_type;
 
-  void setWidgetText(DataSource::DataSourceType t);
+  void setWidgetText(pipeline::PortType t);
 
   Q_DISABLE_COPY(SetDataTypeReaction)
 };

@@ -22,6 +22,8 @@
 #include <QStringList>
 #include <QVariant>
 
+class QTextStream;
+
 #include <vector>
 
 class pqAnimationScene;
@@ -42,6 +44,7 @@ class vtkTable;
 class QDir;
 class QLayout;
 class QUrl;
+class QWidget;
 
 namespace tomviz {
 
@@ -52,8 +55,6 @@ struct Attributes
   static const char* LABEL;
   static const char* FILENAME;
 };
-
-class DataSource;
 
 //===========================================================================
 // Functions for converting from pqProxy to vtkSMProxy and vice-versa.
@@ -163,7 +164,17 @@ vtkPVArrayInformation* scalarArrayInformation(vtkSMSourceProxy* proxy);
 /// Rescales the colorMap (and associated opacityMap) using the transformed data
 /// range from the data source. This will respect the "LockScalarRange" property
 /// on the colorMap i.e. if user locked the scalar range, it won't be rescaled.
-bool rescaleColorMap(vtkSMProxy* colorMap, DataSource* dataSource);
+bool rescaleColorMap(vtkSMProxy* colorMap, vtkSMSourceProxy* dataProxy);
+
+/// Record @a values on the proxy's vector property @a name without
+/// pushing them to the VTK object, for when that object already holds
+/// exactly these values (the caller set them on it directly). The
+/// property is left unmodified, so the next UpdateVTKObjects() skips
+/// it. A push would replay the property's command per element; for a
+/// transfer function's points that is AddPoint with a re-sort each
+/// time, quadratic in the number of points and minutes at 100k.
+void recordProxyValues(vtkSMProxy* proxy, const char* name,
+                       const double* values, unsigned int count);
 
 // Given the root of a file and an extension, reades the file fileName +
 // extension and returns the content in a QString.
@@ -179,25 +190,44 @@ QString readInPythonScript(const QString& scriptName);
 // of the built-in tomviz python operator scripts.
 QString readInJSONDescription(const QString& scriptName);
 
-// Get the path for the Tomviz directory
+// The user's tomviz directory: custom operators, pipeline templates and
+// the like live here, and tomviz may write to it. <home>/tomviz unless
+// TOMVIZ_USER_DIRECTORY says otherwise. Created on demand; empty (after a
+// warning) when it cannot be.
 QString userDataPath();
+
+// The pipeline templates directory inside userDataPath(); empty when that
+// is. Not created here.
+QString userTemplatesPath();
+
+// The directories to scan for user-defined Python operators in addition to
+// userDataPath(), which is always scanned first (see
+// MainWindow::findCustomOperators). With TOMVIZ_CUSTOM_TRANSFORMS_PATH set,
+// these are its existing entries; otherwise ~/.tomviz (the pre-3.1
+// location) and the platform app-data directories. Paths are cleaned, in
+// scan order.
+QStringList customOperatorSearchPaths();
+
+// Write @a text to @a path as UTF-8, telling the user about any failure in
+// a message box parented to @a parent. False when the file may be
+// incomplete.
+bool writeTextFile(QWidget* parent, const QString& path, const QString& text);
 
 // Remove all camera cues from the animation scene.
 // If a render view is provided, only camera cues associated with that
 // render view will be removed.
-void clearCameraCues(vtkSMRenderViewProxy* renderView = nullptr);
-
-// Create a camera orbit animation for the given renderview around the given
-// object
-void createCameraOrbit(vtkSMSourceProxy* data,
-                       vtkSMRenderViewProxy* renderView);
-
-// Create a camera orbit animation for the given renderview around the current
-// camera focal point.
-void createCameraOrbit(vtkSMRenderViewProxy* renderView);
 
 // Set the number of frames in the animation scene
 void setAnimationNumberOfFrames(int numFrames);
+
+/// The frame count tomviz gives an animation it starts itself.
+constexpr int defaultAnimationFrames = 200;
+
+/// Raise the scene to defaultAnimationFrames if it still holds too few
+/// frames to show any motion. A scene nothing has configured holds one,
+/// which plays as a single still and reads as the animation having done
+/// nothing at all. Returns true if the count was changed.
+bool ensureAnimationFrames();
 
 // Set the animation time steps and set the play mode to "Snap to TimeSteps"
 // This will also set the "TimeRange".
@@ -226,6 +256,15 @@ QString findPrefix(const QStringList& fileNames);
 /// Convenience function to get the main widget (useful for dialog parenting).
 QWidget* mainWidget();
 
+/// Promote a top-level widget to a Qt::Tool window so it reliably floats above
+/// the main window. On macOS a parented modeless QDialog is only hinted (not
+/// guaranteed) to stack above its parent and can slip behind the main window
+/// when the user clicks it; a Qt::Tool window floats above the application's
+/// windows while leaving them interactive. Call this before the widget is
+/// first shown. Any existing window hint flags (frameless, title-only, etc.)
+/// are preserved.
+void floatAboveMainWindow(QWidget* widget);
+
 QJsonValue toJson(vtkVariant variant);
 QJsonValue toJson(vtkSMProperty* prop);
 bool setProperties(const QJsonObject& props, vtkSMProxy* proxy);
@@ -243,6 +282,9 @@ bool csvToFile(const QString& csv);
 
 /// Write a vtkMolecule to json file
 bool moleculeToFile(vtkMolecule* molecule);
+
+/// Write a vtkMolecule as XYZ to an explicit path, without prompting.
+bool moleculeToXyzFile(vtkMolecule* molecule, const QString& fileName);
 extern double offWhite[3];
 
 /// Open a url in the user's default browser
@@ -289,18 +331,20 @@ QString getSizeNearestThousand(T num, bool labelAsBytes = false)
   return ret;
 }
 
-void addPlaceholderNodes(vtkColorTransferFunction* lut, DataSource* ds);
+void addPlaceholderNodes(vtkColorTransferFunction* lut, const double range[2]);
 void removePlaceholderNodes(vtkColorTransferFunction* lut);
 
-void addPlaceholderNodes(vtkPiecewiseFunction* opacity, DataSource* ds);
+void addPlaceholderNodes(vtkPiecewiseFunction* opacity, const double range[2]);
 void removePlaceholderNodes(vtkPiecewiseFunction* opacity);
 
 double rescale(double val, double oldMin, double oldMax, double newMin,
                double newMax);
 void rescaleNodes(vtkColorTransferFunction* lut, double newMin, double newMax);
 void rescaleNodes(vtkPiecewiseFunction* opacity, double newMin, double newMax);
-void removePointsOutOfRange(vtkColorTransferFunction* lut, DataSource* ds);
-void removePointsOutOfRange(vtkPiecewiseFunction* opacity, DataSource* ds);
+void removePointsOutOfRange(vtkColorTransferFunction* lut,
+                            const double range[2]);
+void removePointsOutOfRange(vtkPiecewiseFunction* opacity,
+                            const double range[2]);
 
 // Load a plugin by path
 bool loadPlugin(QString path);
@@ -323,6 +367,14 @@ bool loadPlugins();
  * actually modifying the data.
  */
 void relabelXAndZAxes(vtkImageData* image);
+
+/**
+ * Parse scan IDs from a whitespace-delimited text stream. By default
+ * the first column holds them; a '#' comment header naming the columns
+ * (e.g. the ptycho output info file's "# Angle SID Version") selects
+ * the SID column instead. Used by the ptycho and pyxrf dialogs.
+ */
+QStringList readSidsFromText(QTextStream& reader);
 
 } // namespace tomviz
 

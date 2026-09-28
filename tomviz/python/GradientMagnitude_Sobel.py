@@ -8,8 +8,8 @@ def transform(dataset):
 
     # Transform the dataset
     result = np.empty_like(array)
-    scipy.ndimage.filters.generic_gradient_magnitude(
-        array, scipy.ndimage.filters.sobel, output=result)
+    scipy.ndimage.generic_gradient_magnitude(
+        array, scipy.ndimage.sobel, output=result)
 
     # Set the result as the new scalars.
     dataset.active_scalars = result

@@ -6,12 +6,42 @@
 
 #include <QObject>
 
+#include <QColor>
 #include <QJsonArray>
+#include <QJsonObject>
 #include <QPixmap>
 
+class vtkDataArray;
 class vtkSMProxy;
 
 namespace tomviz {
+
+/// The @a index'th color of the segmentation palette: golden-angle hue
+/// spacing with saturation and brightness cycling on short periods so
+/// that neighboring indices stay distinguishable. The sequence repeats
+/// once the hues wrap onto earlier ones, so very large label counts do
+/// see duplicate colors.
+QColor segmentationLabelColor(int index);
+
+/// Build a step-interpolated, distinct-color segmentation colormap
+/// preset from an integer-valued scalar array. Scans @a scalars for
+/// unique values and emits a preset with one color per label, using
+/// golden-angle hue spacing.
+///
+/// Returns an empty QJsonObject if @a scalars is null, floating-point,
+/// or empty. Colors cycle via golden-angle hue spacing, so duplicate
+/// colors will appear for large label counts.
+QJsonObject buildSegmentationPreset(vtkDataArray* scalars);
+
+/// Apply a tomviz-format preset JSON object (fields "name",
+/// "colorSpace", "colors") to a transfer function proxy. With
+/// rescaleToCurrentRange (the default), the preset's node positions are
+/// remapped into the proxy's current range - right for generic presets,
+/// wrong for presets whose positions are already in data coordinates
+/// (e.g. the per-label segmentation preset), which must pass false.
+void applyPresetToProxy(const QJsonObject& preset, vtkSMProxy* proxy,
+                        bool rescaleToCurrentRange = true);
+
 
 /**
  * Keep track of the loaded color maps, the current default, setting colors.

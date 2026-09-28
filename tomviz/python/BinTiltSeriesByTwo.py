@@ -15,11 +15,11 @@ def transform(dataset):
     result = np.empty(result_shape, array.dtype, order='F')
     # Downsample the dataset x2 using order 1 spline (linear)
     warnings.filterwarnings('ignore', '.*output shape of zoom.*')
-    scipy.ndimage.interpolation.zoom(array, zoom,
-                                     output=result,
-                                     order=1,
-                                     mode='constant',
-                                     cval=0.0, prefilter=False)
+    scipy.ndimage.zoom(array, zoom,
+                       output=result,
+                       order=1,
+                       mode='constant',
+                       cval=0.0, prefilter=False)
 
     # Set the result as the new scalars.
     dataset.active_scalars = result

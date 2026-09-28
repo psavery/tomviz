@@ -3,6 +3,7 @@
 
 #include <QApplication>
 
+#include <QLoggingCategory>
 #include <QSplashScreen>
 #include <QSurfaceFormat>
 
@@ -22,11 +23,42 @@
 
 #include <clocale>
 
+#if __has_include(<viskores/cont/Initialize.h>)
+#include <viskores/cont/Initialize.h>
+#define TOMVIZ_HAS_VISKORES
+#endif
+
+#ifdef _WIN32
+// On hybrid-graphics laptops, ask the NVIDIA and AMD drivers to run tomviz
+// on the discrete GPU instead of the power-saving integrated one. The
+// drivers look for these exported symbols in the executable.
+extern "C" {
+__declspec(dllexport) unsigned long NvOptimusEnablement = 0x00000001;
+__declspec(dllexport) int AmdPowerXpressRequestHighPerformance = 1;
+}
+#endif
+
 int main(int argc, char** argv)
 {
   // Set up loguru, for printing stack traces on crashes
   loguru::g_stderr_verbosity = loguru::Verbosity_ERROR;
   loguru::init(argc, argv);
+
+#ifdef TOMVIZ_HAS_VISKORES
+  // Initialize Viskores (VTK-m) runtime before any VTK filters use it.
+  viskores::cont::Initialize();
+#endif
+
+#ifdef Q_OS_LINUX
+  // VTK's render windows use X11/GLX, which conflicts with the Qt Wayland
+  // platform plugin and causes BadAccess on glXMakeCurrent the second time a
+  // render view is created. Force xcb on Wayland sessions unless the user has
+  // already chosen a platform.
+  if (qgetenv("XDG_SESSION_TYPE") == "wayland" &&
+      !qEnvironmentVariableIsSet("QT_QPA_PLATFORM")) {
+    qputenv("QT_QPA_PLATFORM", "xcb");
+  }
+#endif
 
   QSurfaceFormat::setDefaultFormat(QVTKOpenGLStereoWidget::defaultFormat());
 
@@ -37,6 +69,18 @@ int main(int argc, char** argv)
   tomviz::InitializePythonEnvironment(argc, argv);
 
   QApplication app(argc, argv);
+
+#ifdef Q_OS_MAC
+  // macOS has no font family named "Monospace". ParaView's
+  // pqPythonSyntaxHighlighter constructs a QFont("Monospace") and realizes it
+  // (via QFontMetrics) in its constructor, which forces Qt to scan the entire
+  // font-family alias table and emit a "Populating font family aliases took
+  // ..." warning. We don't control that ParaView code, and a font
+  // substitution does not help because Qt only consults substitutions after
+  // the failed direct lookup that triggers the scan. Silence the warning
+  // category; the one-time scan still happens but is harmless.
+  QLoggingCategory::setFilterRules("qt.qpa.fonts.warning=false");
+#endif
 
   QPixmap pixmap(":/icons/tomvizfull.png");
   QSplashScreen splash(pixmap);
