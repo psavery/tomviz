@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import shutil
 
 import h5py
 import numpy as np
+from pyxrf.api_dev import dask_client_create, fit_pixel_data_and_save
 from xrf_tomo import process_proj, make_single_hdf
 from xrf_tomo.xrf_tomo_workflow import read_log_file
 
 from .create_log_file import create_log_file
+
+# The maps PyXRF saves after the fitted element lines
+_NOT_ELEMENTS = {'compton', 'elastic', 'snip_bkg', 'r_factor', 'sel_cnt',
+                 'total_cnt'}
 
 
 def _used_files_sorted_by_theta(
@@ -23,6 +29,26 @@ def _used_files_sorted_by_theta(
 def _fit_shape(path: Path) -> tuple[int, ...]:
     with h5py.File(path, "r") as f:
         return tuple(f["xrfmap"]["detsum"]["xrf_fit"].shape)
+
+
+def _fitted_with_other_elements(
+    wd: Path, filenames: list[str], parameters_file: Path,
+) -> list[str]:
+    """The already fitted files whose element lines differ from the
+    parameter file's, such as scans fitted earlier with another file."""
+    with open(parameters_file) as f:
+        element_list = json.load(f)['non_fitting_values']['element_list']
+    elements = {e.strip() for e in element_list.split(',') if e.strip()}
+
+    stale = []
+    for name in filenames:
+        with h5py.File(wd / name, 'r') as f:
+            if 'xrfmap/detsum/xrf_fit_name' not in f:
+                continue
+            names = {n.decode() for n in f['xrfmap/detsum/xrf_fit_name']}
+        if names - _NOT_ELEMENTS != elements:
+            stale.append(name)
+    return stale
 
 
 def _make_single_hdf_padded(
@@ -45,12 +71,16 @@ def _make_single_hdf_padded(
     num = len(filenames)
 
     shapes = [_fit_shape(wd_src / name) for name in filenames]
-    n_elements = {s[0] for s in shapes}
-    if len(n_elements) != 1:
+    by_count: dict[int, list[str]] = {}
+    for name, shape in zip(filenames, shapes):
+        by_count.setdefault(shape[0], []).append(name)
+    if len(by_count) != 1:
+        details = '; '.join(f"{n} maps: {', '.join(names)}"
+                            for n, names in sorted(by_count.items()))
         raise RuntimeError(
-            "Scans disagree on the number of fitted elements: "
-            f"{sorted(n_elements)}. They were probably fitted with "
-            "different parameter files; refit and try again.")
+            "Scans disagree on the number of fitted elements "
+            f"({details}). They were probably fitted with different "
+            "parameter files; refit and try again.")
     hmax = max(s[1] for s in shapes)
     wmax = max(s[2] for s in shapes)
     print(f"Padding projections to {hmax} x {wmax}", flush=True)
@@ -67,7 +97,7 @@ def _make_single_hdf_padded(
                       "reconstruction/recon"):
             f.create_group(group)
 
-        n_el = next(iter(n_elements))
+        n_el = next(iter(by_count))
         f_fit = f.create_dataset(
             "/reconstruction/fitting/data",
             shape=(num, n_el, hmax, wmax), compression="gzip")
@@ -133,6 +163,26 @@ def process_projections(
         sid_selection=sid_selection,
         skip_invalid=True,
     )
+
+    # "Skip processed" would keep fits made with another parameter file,
+    # whose element maps then cannot be stacked with the rest. Refit them.
+    if skip_processed:
+        filenames, _ = _used_files_sorted_by_theta(log_file, working_directory)
+        stale = _fitted_with_other_elements(
+            wd, filenames, wd / parameters_file_name)
+        if stale:
+            print(f'Refitting {len(stale)} scans fitted with other '
+                  f'elements: {", ".join(stale)}', flush=True)
+            client = dask_client_create()
+            try:
+                for name in stale:
+                    fit_pixel_data_and_save(
+                        working_directory, name,
+                        param_file_name=str(wd / parameters_file_name),
+                        scaler_name=ic_name, save_tiff=False,
+                        dask_client=client)
+            finally:
+                client.close()
 
     process_proj(
         wd=working_directory,
