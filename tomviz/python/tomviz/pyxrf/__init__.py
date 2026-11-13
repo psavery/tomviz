@@ -3,7 +3,7 @@ import os
 try:
     from .ic_names import ic_names  # noqa
     from .sids import filter_sids  # noqa
-    from .scan_metadata import read_scan_metadata  # noqa
+    from .scan_metadata import expected_scan_ids, read_scan_metadata  # noqa
     requirements_installed = True
 except ImportError:
     requirements_installed = False

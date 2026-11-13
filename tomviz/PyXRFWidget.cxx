@@ -22,6 +22,7 @@
 #include <QMessageBox>
 #include <QPointer>
 #include <QProcess>
+#include <QProgressDialog>
 #include <QProcessEnvironment>
 #include <QSet>
 #include <QSignalBlocker>
@@ -76,6 +77,7 @@ public:
   QPointer<PyXRFWidget> parent;
 
   bool pyxrfIsRunning = false;
+  bool populating = false;
 
   struct ScanEntry
   {
@@ -83,6 +85,13 @@ public:
     double theta;
     QString status;
     bool use;
+
+    // Missing, failed, filtered out and unread scans have no theta
+    bool hasTheta() const
+    {
+      return status != "fail" && status != "missing" &&
+             status != "filtered" && status != "not read";
+    }
   };
   QList<ScanEntry> scanEntries;
 
@@ -118,7 +127,7 @@ public:
     connect(ui.loadSidsFromTxtOrCSV, &QPushButton::clicked, this,
             &Internal::onLoadSidsFromTxt);
     connect(ui.applyFilter, &QPushButton::clicked, this,
-            &Internal::applyFilter);
+            &Internal::populateScanTable);
 
     // Write the table out without running the operator, so a scan list
     // can be prepared up front and shared with the ptycho workflow.
@@ -250,7 +259,6 @@ public:
   {
     populateScanTable();
     setupComboBoxes();
-    autoApplyFilter();
   }
 
   void selectParametersFile()
@@ -289,10 +297,10 @@ public:
     QTextStream out(&file);
     out << "Scan ID,Theta,Use\n";
     for (const auto& entry : scanEntries) {
-      bool hasTheta = entry.status != "fail" && entry.status != "missing";
-      out << entry.scanId << ','
-          << (hasTheta ? QString::number(entry.theta, 'f', 3) : QString())
-          << ',' << (entry.use ? 1 : 0) << '\n';
+      auto theta =
+        entry.hasTheta() ? QString::number(entry.theta, 'f', 3) : QString();
+      out << entry.scanId << ',' << theta << ',' << (entry.use ? 1 : 0)
+          << '\n';
     }
   }
 
@@ -367,33 +375,148 @@ public:
     process->start(cmd, args);
   }
 
+  // Only the scans that pass the SID filter are read, a few files at a
+  // time behind a progress dialog, since opening each file can take a
+  // while on network storage. The rest are listed as filtered, unused.
   void populateScanTable()
   {
+    if (populating) {
+      return;
+    }
+    populating = true;
     scanEntries.clear();
 
     auto wd = workingDirectory();
     if (wd.isEmpty() || !QDir(wd).exists()) {
       rebuildTableUI();
+      populating = false;
       return;
     }
 
+    auto ids = expectedScanIds();
+    auto wanted = filterScanIds(ids);
+
+    QProgressDialog progress("Reading scan files...", "Cancel", 0,
+                             wanted.size(), parent);
+    progress.setWindowModality(Qt::WindowModal);
+    progress.setMinimumDuration(500);
+
+    const int chunkSize = 10;
+    QMap<int, ScanEntry> read;
+    for (int i = 0; i < wanted.size() && !progress.wasCanceled();
+         i += chunkSize) {
+      progress.setValue(i);
+      QStringList chunk;
+      for (int j = i; j < qMin(i + chunkSize, wanted.size()); ++j) {
+        chunk.append(QString::number(wanted[j]));
+      }
+      for (const auto& entry : readScanMetadata(chunk.join(','))) {
+        read[entry.scanId] = entry;
+      }
+    }
+    progress.setValue(wanted.size());
+
+    QSet<int> wantedSet(wanted.begin(), wanted.end());
+    for (int id : ids) {
+      if (read.contains(id)) {
+        scanEntries.append(read[id]);
+      } else if (wantedSet.contains(id)) {
+        // Canceled before its file was read: still used, as before
+        scanEntries.append({ id, 0.0, "not read", true });
+      } else {
+        scanEntries.append({ id, 0.0, "filtered", false });
+      }
+    }
+
+    rebuildTableUI();
+    populating = false;
+  }
+
+  // The scan IDs to list, found without opening any file
+  QList<int> expectedScanIds()
+  {
+    QList<int> ids;
+    importModule();
+
+    Python python;
+    auto func = pyxrfModule.findFunction("expected_scan_ids");
+    if (!func.isValid()) {
+      qCritical() << "Failed to find tomviz.pyxrf.expected_scan_ids";
+      return ids;
+    }
+
+    Python::Dict kwargs;
+    kwargs.set("working_directory", workingDirectory());
+    kwargs.set("scan_range", scanRange());
+    auto res = func.call(kwargs);
+    if (!res.isValid() || !res.isList()) {
+      return ids;
+    }
+
+    auto resList = res.toList();
+    for (int i = 0; i < resList.length(); ++i) {
+      ids.append(static_cast<int>(resList[i].toLong()));
+    }
+    return ids;
+  }
+
+  // The IDs that pass the SID filter, or all of them without one
+  QList<int> filterScanIds(const QList<int>& ids)
+  {
+    auto filterString = ui.filterSidsString->text().trimmed();
+    if (filterString.isEmpty() || ids.isEmpty()) {
+      return ids;
+    }
+
+    importModule();
+
+    Python python;
+    auto func = pyxrfModule.findFunction("filter_sids");
+    if (!func.isValid()) {
+      qCritical() << "Failed to find tomviz.pyxrf.filter_sids";
+      return ids;
+    }
+
+    QStringList allSids;
+    for (int id : ids) {
+      allSids.append(QString::number(id));
+    }
+
+    Python::Dict kwargs;
+    kwargs.set("all_sids", allSids);
+    kwargs.set("filter_string", filterString);
+    auto res = func.call(kwargs);
+    if (!res.isValid() || !res.isList()) {
+      qCritical() << "Error calling tomviz.pyxrf.filter_sids";
+      return ids;
+    }
+
+    QList<int> matched;
+    auto resList = res.toList();
+    for (int i = 0; i < resList.length(); ++i) {
+      matched.append(resList[i].toString().toInt());
+    }
+    return matched;
+  }
+
+  QList<ScanEntry> readScanMetadata(const QString& range)
+  {
+    QList<ScanEntry> entries;
     importModule();
 
     Python python;
     auto func = pyxrfModule.findFunction("read_scan_metadata");
     if (!func.isValid()) {
       qCritical() << "Failed to find tomviz.pyxrf.read_scan_metadata";
-      rebuildTableUI();
-      return;
+      return entries;
     }
 
     Python::Dict kwargs;
-    kwargs.set("working_directory", wd);
-    kwargs.set("scan_range", scanRange());
+    kwargs.set("working_directory", workingDirectory());
+    kwargs.set("scan_range", range);
     auto res = func.call(kwargs);
     if (!res.isValid() || !res.isList()) {
-      rebuildTableUI();
-      return;
+      return entries;
     }
 
     auto resList = res.toList();
@@ -404,18 +527,14 @@ public:
       }
 
       auto dict = item.toDict();
-      int scanId = static_cast<int>(dict["scan_id"].toLong());
-      double theta = dict["theta"].toDouble();
-      QString status = dict["status"].toString();
       ScanEntry entry;
-      entry.scanId = scanId;
-      entry.theta = theta;
-      entry.status = status;
-      entry.use = (status != "fail" && status != "missing");
-      scanEntries.append(entry);
+      entry.scanId = static_cast<int>(dict["scan_id"].toLong());
+      entry.theta = dict["theta"].toDouble();
+      entry.status = dict["status"].toString();
+      entry.use = entry.hasTheta();
+      entries.append(entry);
     }
-
-    rebuildTableUI();
+    return entries;
   }
 
   void rebuildTableUI()
@@ -433,9 +552,8 @@ public:
       table->setItem(i, 0, idItem);
 
       auto* thetaItem = new QTableWidgetItem(
-        (failed || entry.status == "missing")
-          ? QString("-")
-          : QString::number(entry.theta, 'f', 3));
+        entry.hasTheta() ? QString::number(entry.theta, 'f', 3)
+                         : QString("-"));
       thetaItem->setTextAlignment(Qt::AlignCenter);
       table->setItem(i, 1, thetaItem);
 
@@ -491,6 +609,7 @@ public:
   {
     auto sids = readSidsFromText(reader);
     ui.filterSidsString->setText(sids.join(", "));
+    populateScanTable();
   }
 
   void loadSidsFromCsv(QTextStream& reader)
@@ -554,6 +673,7 @@ public:
     }
 
     ui.filterSidsString->setText(sids.join(", "));
+    populateScanTable();
 
     // If the CSV has a "Use" column, apply it to the scan table
     if (!useFlags.isEmpty()) {
@@ -566,64 +686,6 @@ public:
         }
       }
       rebuildTableUI();
-    }
-  }
-
-  void applyFilter()
-  {
-    auto filterString = ui.filterSidsString->text().trimmed();
-    if (filterString.isEmpty() || scanEntries.isEmpty()) {
-      return;
-    }
-
-    importModule();
-
-    Python python;
-    auto func = pyxrfModule.findFunction("filter_sids");
-    if (!func.isValid()) {
-      qCritical() << "Failed to find tomviz.pyxrf.filter_sids";
-      return;
-    }
-
-    QStringList allSids;
-    for (const auto& entry : scanEntries) {
-      if (entry.status != "fail") {
-        allSids.append(QString::number(entry.scanId));
-      }
-    }
-
-    Python::Dict kwargs;
-    kwargs.set("all_sids", allSids);
-    kwargs.set("filter_string", filterString);
-    auto res = func.call(kwargs);
-
-    if (!res.isValid() || !res.isList()) {
-      qCritical() << "Error calling tomviz.pyxrf.filter_sids";
-      return;
-    }
-
-    QSet<int> matchedIds;
-    auto resList = res.toList();
-    for (int i = 0; i < resList.length(); ++i) {
-      matchedIds.insert(resList[i].toString().toInt());
-    }
-
-    for (int i = 0; i < scanEntries.size(); ++i) {
-      auto& entry = scanEntries[i];
-      if (entry.status == "fail" || entry.status == "missing") {
-        continue;
-      }
-      entry.use = matchedIds.contains(entry.scanId);
-    }
-
-    rebuildTableUI();
-  }
-
-  void autoApplyFilter()
-  {
-    if (!ui.filterSidsString->text().trimmed().isEmpty() &&
-        !scanEntries.isEmpty()) {
-      applyFilter();
     }
   }
 
@@ -767,7 +829,6 @@ public:
     settings->endGroup();
 
     populateScanTable();
-    autoApplyFilter();
   }
 
   void writeSettings()
@@ -851,6 +912,14 @@ void PyXRFWidget::setValues(const QMap<QString, QVariant>& map)
     m_internal->setRotateDatasets(
       map.value("rotate_datasets", true).toBool());
     m_internal->setCsvOutput(map.value("csv_output").toString());
+
+    // The filter decides which scan files the table reads
+    auto uiStateJson = map.value("ui_state").toString();
+    if (!uiStateJson.isEmpty()) {
+      auto uiState = QJsonDocument::fromJson(uiStateJson.toUtf8()).object();
+      m_internal->ui.filterSidsString->setText(
+        uiState.value("filter_sids_string").toString());
+    }
   }
 
   m_internal->populateScanTable();
@@ -870,13 +939,6 @@ void PyXRFWidget::setValues(const QMap<QString, QVariant>& map)
 
   m_internal->setupComboBoxes();
   m_internal->setIcName(map.value("ic_name", "sclr1_ch4").toString());
-
-  auto uiStateJson = map.value("ui_state").toString();
-  if (!uiStateJson.isEmpty()) {
-    auto uiState = QJsonDocument::fromJson(uiStateJson.toUtf8()).object();
-    m_internal->ui.filterSidsString->setText(
-      uiState.value("filter_sids_string").toString());
-  }
 }
 
 void PyXRFWidget::writeSettings()

@@ -48,6 +48,63 @@ def _scan_ids_present(working_directory: str) -> list[int]:
     return sorted(ids)
 
 
+def expected_scan_ids(working_directory: str,
+                      scan_range: str = '') -> list[int]:
+    """The scan IDs the table lists, found without opening any file.
+
+    If *scan_range* is empty, these are the ``scan2D_<id>.h5`` files
+    already present in the directory, so a directory of downloaded scans
+    shows its contents without requiring the range to be typed first
+    (matching the ptycho dialog). A range that is given but names no
+    scans (a typo, say) lists nothing rather than every file.
+    """
+    if scan_range and scan_range.strip():
+        return _expand_scan_range(scan_range)
+    return _scan_ids_present(working_directory)
+
+
+# Scan metadata by file path, kept with the file's modification time and
+# size, so reopening the dialog or changing the filter rereads only the
+# files that changed. Opening files on network storage is the slow part.
+_cache: dict[str, tuple[tuple[int, int], dict]] = {}
+
+
+def _open_for_reading(path: str) -> h5py.File:
+    # HDF5's file locking is slow on network file systems, and it refuses
+    # a file that the batch downloader still has open for writing
+    try:
+        return h5py.File(path, 'r', locking=False)
+    except TypeError:
+        # h5py older than 3.5 has no locking argument
+        return h5py.File(path, 'r')
+
+
+def _read_one(path: str) -> dict:
+    stat = os.stat(path)
+    key = (stat.st_mtime_ns, stat.st_size)
+    cached = _cache.get(path)
+    if cached is not None and cached[0] == key:
+        return cached[1]
+
+    with _open_for_reading(path) as f:
+        md = f['xrfmap/scan_metadata']
+        scan_id = int(md.attrs['scan_id'])
+        theta = float(md.attrs['param_theta'])
+        theta_units = md.attrs.get('param_theta_units', 'deg')
+        if theta_units == 'mdeg':
+            theta /= 1000.0
+        theta = round(theta, 3)
+        status = str(md.attrs.get('scan_exit_status', ''))
+    row = {
+        'scan_id': scan_id,
+        'theta': theta,
+        'status': status if status else 'success',
+        'filename': os.path.basename(path),
+    }
+    _cache[path] = (key, row)
+    return row
+
+
 def read_scan_metadata(working_directory: str,
                        scan_range: str = '') -> list[dict]:
     """Return a list of scan metadata dicts from HDF5 files in *working_directory*.
@@ -56,21 +113,12 @@ def read_scan_metadata(working_directory: str,
 
     Any ID in the range without an HDF5 file gets a ``"missing"`` status
     entry, and a file that exists but cannot be read gets a ``"fail"`` entry.
-    The list is sorted by scan ID.
-
-    If *scan_range* is empty, the table is populated from the
-    ``scan2D_<id>.h5`` files already present in the directory, so a
-    directory of downloaded scans shows its contents without requiring
-    the range to be typed first (matching the ptycho dialog). Only files
-    matching that exact naming pattern are opened. A range that is given
-    but names no scans (a typo, say) lists nothing rather than every file.
+    The list is sorted by scan ID. See ``expected_scan_ids`` for what an
+    empty *scan_range* lists.
     """
     wd = working_directory
 
-    if scan_range and scan_range.strip():
-        expected_ids = _expand_scan_range(scan_range)
-    else:
-        expected_ids = _scan_ids_present(wd)
+    expected_ids = expected_scan_ids(wd, scan_range)
     if not expected_ids:
         return []
 
@@ -83,21 +131,8 @@ def read_scan_metadata(working_directory: str,
         if not os.path.isfile(path):
             continue
         try:
-            with h5py.File(path, 'r') as f:
-                md = f['xrfmap/scan_metadata']
-                scan_id = int(md.attrs['scan_id'])
-                theta = float(md.attrs['param_theta'])
-                theta_units = md.attrs.get('param_theta_units', 'deg')
-                if theta_units == 'mdeg':
-                    theta /= 1000.0
-                theta = round(theta, 3)
-                status = str(md.attrs.get('scan_exit_status', ''))
-                found[scan_id] = {
-                    'scan_id': scan_id,
-                    'theta': theta,
-                    'status': status if status else 'success',
-                    'filename': os.path.basename(path),
-                }
+            row = _read_one(path)
+            found[row['scan_id']] = row
         except Exception as e:
             failed_files[sid] = os.path.basename(path)
             logger.warning('Failed to read scan %s from %s: %s: %s', sid, path,

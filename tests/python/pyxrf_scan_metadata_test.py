@@ -32,3 +32,18 @@ def test_only_an_empty_range_lists_the_scans_present(tmp_path, scan_range,
 
     rows = scan_metadata.read_scan_metadata(str(tmp_path), scan_range)
     assert [row['scan_id'] for row in rows] == expected
+
+
+# Files are cached by modification time and size, so a rewritten file
+# (a scan downloaded again, say) is read again
+def test_a_rewritten_file_is_read_again(tmp_path: Path) -> None:
+    path = tmp_path / 'scan2D_1.h5'
+    for theta in (10.0, 20.0):
+        with h5py.File(path, 'w') as f:
+            md = f.create_group('xrfmap/scan_metadata')
+            md.attrs['scan_id'] = 1
+            md.attrs['param_theta'] = theta
+            md.attrs['note'] = 'x' * int(theta)
+
+        rows = scan_metadata.read_scan_metadata(str(tmp_path), '1')
+        assert rows[0]['theta'] == theta
