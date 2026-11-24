@@ -31,6 +31,11 @@ def _fit_shape(path: Path) -> tuple[int, ...]:
         return tuple(f["xrfmap"]["detsum"]["xrf_fit"].shape)
 
 
+def _fit_names(path: Path) -> list[bytes]:
+    with h5py.File(path, "r") as f:
+        return list(f["xrfmap"]["detsum"]["xrf_fit_name"][()])
+
+
 def _fitted_with_other_elements(
     wd: Path, filenames: list[str], parameters_file: Path,
 ) -> list[str]:
@@ -57,7 +62,7 @@ def _make_single_hdf_padded(
     wd_src: Path,
     ic_name: str,
 ) -> None:
-    """Assemble tomo.h5 from scans whose pixel shapes differ.
+    """Assemble tomo.h5 from scans whose pixel shapes or map order differ.
 
     xrf_tomo.make_single_hdf sizes every dataset from the first scan, so
     a scan with more (or fewer) pixels than the first makes the stack
@@ -66,21 +71,30 @@ def _make_single_hdf_padded(
     never need re-padding when a bigger one arrives. Padding goes before
     the data on each axis (top-left), following the convention of the
     beamline stacking scripts.
+
+    xrf_tomo also stacks the maps by position under the first scan's
+    names. PyXRF moves lines that the scan's beam energy does not excite
+    to the end, so the order can differ between scans. Here every scan's
+    maps are matched to the first scan's names.
     """
     filenames, thetas = _used_files_sorted_by_theta(fn_log, str(wd_src))
     num = len(filenames)
 
     shapes = [_fit_shape(wd_src / name) for name in filenames]
-    by_count: dict[int, list[str]] = {}
-    for name, shape in zip(filenames, shapes):
-        by_count.setdefault(shape[0], []).append(name)
-    if len(by_count) != 1:
-        details = '; '.join(f"{n} maps: {', '.join(names)}"
-                            for n, names in sorted(by_count.items()))
+    fit_names = [_fit_names(wd_src / name) for name in filenames]
+    by_elements: dict[frozenset[bytes], list[str]] = {}
+    for name, names in zip(filenames, fit_names):
+        by_elements.setdefault(frozenset(names), []).append(name)
+    if len(by_elements) != 1:
+        details = '; '.join(
+            f"{', '.join(sorted(n.decode() for n in elements))}: "
+            f"{', '.join(names)}"
+            for elements, names in by_elements.items())
         raise RuntimeError(
-            "Scans disagree on the number of fitted elements "
-            f"({details}). They were probably fitted with different "
-            "parameter files; refit and try again.")
+            f"Scans disagree on the fitted elements ({details}). They "
+            "were probably fitted with different parameter files; refit "
+            "and try again.")
+    first_names = fit_names[0]
     hmax = max(s[1] for s in shapes)
     wmax = max(s[2] for s in shapes)
     print(f"Padding projections to {hmax} x {wmax}", flush=True)
@@ -97,7 +111,7 @@ def _make_single_hdf_padded(
                       "reconstruction/recon"):
             f.create_group(group)
 
-        n_el = next(iter(by_count))
+        n_el = len(first_names)
         f_fit = f.create_dataset(
             "/reconstruction/fitting/data",
             shape=(num, n_el, hmax, wmax), compression="gzip")
@@ -114,7 +128,11 @@ def _make_single_hdf_padded(
                   f"(file '{name}')", flush=True)
             with h5py.File(wd_src / name, "r") as tmp_f:
                 detsum = tmp_f["xrfmap"]["detsum"]
-                f_fit[i] = padded(detsum["xrf_fit"][()])
+                order = [fit_names[i].index(n) for n in first_names]
+                if order != list(range(n_el)):
+                    print(f"Reordered the maps of '{name}' to match "
+                          "the first scan", flush=True)
+                f_fit[i] = padded(detsum["xrf_fit"][()][order])
                 f_x[i] = padded(tmp_f["xrfmap"]["positions"]["pos"][1])
                 f_y[i] = padded(tmp_f["xrfmap"]["positions"]["pos"][0])
 
@@ -197,13 +215,21 @@ def process_projections(
     # Scans occasionally come back with slightly different pixel counts
     # (the beamline trims rows/columns per scan). xrf_tomo's assembly
     # sizes everything from the first scan and fails on any mismatch, so
-    # fall back to our padded assembly when the shapes disagree.
+    # fall back to our padded assembly when the shapes disagree. It also
+    # stacks by position, so fall back too when the map order differs.
     filenames, _ = _used_files_sorted_by_theta(log_file, working_directory)
     shapes = {_fit_shape(Path(working_directory) / name)
+              for name in filenames}
+    orders = {tuple(_fit_names(Path(working_directory) / name))
               for name in filenames}
     if len(shapes) > 1:
         print(f'Projections have differing shapes ({sorted(shapes)}); '
               'assembling tomo.h5 with padding', flush=True)
+    if len(orders) > 1:
+        print('Scans list their element maps in different orders, '
+              'probably from lines their beam energy does not excite; '
+              'matching the maps by name', flush=True)
+    if len(shapes) > 1 or len(orders) > 1:
         _make_single_hdf_padded(
             fn=Path(output_directory) / 'tomo.h5',
             fn_log=log_file,
