@@ -1,6 +1,7 @@
 from unittest.mock import patch
 
 import numpy as np
+import pytest
 
 from utils import load_operator_class, load_operator_module, load_node_class
 
@@ -42,10 +43,10 @@ def test_deconvolution_denoise(chipset_xrf_dataset, chipset_probe_dataset):
                                 lastSlice=n_slices_probe - 1,
                                 axis=2)
 
-    # Set scan_ids to None for index-based matching (scan_ids are not
-    # updated by DeleteSlices, so use index-based matching instead)
-    xrf_dataset.scan_ids = None
-    probe_dataset.scan_ids = None
+    # DeleteSlices keeps the scan IDs of the kept slices, so the slices
+    # are matched by scan ID
+    kept_scan_ids = xrf_dataset.scan_ids.copy()
+    assert np.array_equal(probe_dataset.scan_ids, kept_scan_ids)
 
     # Save a copy of the original XRF dataset for reference
     original_xrf = deep_copy_dataset(xrf_dataset)
@@ -79,6 +80,7 @@ def test_deconvolution_denoise(chipset_xrf_dataset, chipset_probe_dataset):
             f"{name}: expected y={orig_shape[1] * 2}, got {output_shape[1]}"
         assert output_shape[2] == orig_shape[2], \
             f"{name}: expected z={orig_shape[2]}, got {output_shape[2]}"
+    assert np.array_equal(xrf_dataset.scan_ids, kept_scan_ids)
 
     # Run similarity metrics: deconvolution output vs original
     sim_module = load_operator_module('SimilarityMetrics')
@@ -150,3 +152,23 @@ def test_deconvolution_denoise(chipset_xrf_dataset, chipset_probe_dataset):
     assert avg_deconv_ssim > avg_gauss_ssim, \
         (f"Avg deconv SSIM ({avg_deconv_ssim:.6f}) should be higher than "
          f"avg Gaussian SSIM ({avg_gauss_ssim:.6f})")
+
+
+def test_deconvolution_refuses_stale_scan_ids() -> None:
+    # A probe cropped to 3 slices that kept all 5 scan IDs must not be
+    # paired by scan ID (it used to index past the end, or worse, pair
+    # slices with the wrong probe)
+    def tilt_series(n_slices: int, scan_ids: list[int]) -> Dataset:
+        dataset = Dataset({'amplitude': np.ones((16, 16, n_slices))},
+                          'amplitude')
+        dataset.tilt_angles = np.linspace(-20, 20, len(scan_ids))
+        dataset.scan_ids = np.array(scan_ids)
+        return dataset
+
+    xrf = tilt_series(5, [10, 11, 12, 13, 14])
+    probe = tilt_series(3, [10, 11, 12, 13, 14])
+
+    deconv_module = load_operator_module('DeconvolutionDenoise')
+    deconv_operator = load_operator_class(deconv_module)
+    with pytest.raises(Exception, match='3 slices along the axis but 5 scan'):
+        deconv_operator.transform(xrf, probe=probe, method='APG_TV')

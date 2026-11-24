@@ -156,7 +156,24 @@ QMap<QString, PortData> CropTransform::transform(
   auto volume = std::make_shared<VolumeData>(outputImage.Get());
   volume->setLabel(inputVolume->label());
   volume->setUnits(inputVolume->units());
-  volume->setTiltAngles(inputVolume->tiltAngles());
+
+  // Keep only the tilt angles and scan IDs of the slices kept. The VOI
+  // output keeps the input's extent indices, and the field data comes
+  // through whole.
+  int inExtent[6];
+  int outExtent[6];
+  inputVolume->imageData()->GetExtent(inExtent);
+  outputImage->GetExtent(outExtent);
+  int first = outExtent[4] - inExtent[4];
+  int count = outExtent[5] - outExtent[4] + 1;
+  if (count > 0) {
+    if (inputVolume->hasTiltAngles()) {
+      volume->setTiltAngles(inputVolume->tiltAngles().mid(first, count));
+    }
+    if (inputVolume->hasScanIds()) {
+      volume->setScanIds(inputVolume->scanIds().mid(first, count));
+    }
+  }
 
   result["output"] = PortData(std::any(volume), inputs["volume"].type());
   return result;

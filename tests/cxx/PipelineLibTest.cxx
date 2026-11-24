@@ -50,6 +50,8 @@
 #include "sources/PythonSource.h"
 #include "sources/SphereSource.h"
 #include "sources/ReaderSourceNode.h"
+#include "transforms/CropTransform.h"
+#include "transforms/SetTiltAnglesTransform.h"
 #include "transforms/ThresholdTransform.h"
 #include "transforms/LegacyPythonTransform.h"
 #include "AutoExecuteController.h"
@@ -1240,6 +1242,45 @@ TEST_F(PipelineLibTest, ThresholdTransformBinaryMask)
   auto range = maskData->scalarRange();
   EXPECT_EQ(range[0], 0.0);
   EXPECT_EQ(range[1], 1.0);
+}
+
+TEST_F(PipelineLibTest, CropKeepsTheAnglesAndScanIdsOfKeptSlices)
+{
+  auto* source = new SphereSource();
+  source->setDimensions(4, 4, 6);
+  pipeline->addNode(source);
+
+  auto* tilt = new SetTiltAnglesTransform();
+  QMap<size_t, double> angles;
+  for (int i = 0; i < 6; ++i) {
+    angles[i] = -30.0 + 10.0 * i;
+  }
+  tilt->setTiltAngles(angles);
+  tilt->setScanIds({ 100, 101, 102, 103, 104, 105 });
+  tilt->outputPort("output")->setPersistent(true);
+  tilt->outputPort("output")->setPersistenceMode(PersistenceMode::InMemory);
+  pipeline->addNode(tilt);
+
+  auto* crop = new CropTransform();
+  int bounds[6] = { 0, 3, 0, 3, 2, 4 };
+  crop->setCropBounds(bounds);
+  pipeline->addNode(crop);
+
+  pipeline->createLink(source->outputPort("volume"), tilt->inputPort("volume"));
+  pipeline->createLink(tilt->outputPort("output"), crop->inputPort("volume"));
+
+  source->execute();
+  pipeline->execute();
+
+  auto cropped = crop->outputPort("output")->data().value<VolumeDataPtr>();
+  ASSERT_TRUE(cropped);
+  EXPECT_EQ(cropped->dimensions()[2], 3);
+  EXPECT_EQ(cropped->tiltAngles(), QVector<double>({ -10.0, 0.0, 10.0 }));
+  EXPECT_EQ(cropped->scanIds(), QVector<int>({ 102, 103, 104 }));
+
+  // The input keeps all of its scan IDs
+  auto input = tilt->outputPort("output")->data().value<VolumeDataPtr>();
+  EXPECT_EQ(input->scanIds().size(), 6);
 }
 
 // --- VolumeStatsSink tests ---

@@ -29,8 +29,10 @@ def test_multi_arrays(hxn_xrf_example_dataset: Dataset):
     assert binned_shapes == expected_shapes
     assert np.allclose(orig_tilt_angles, dataset.tilt_angles)
 
-    # Delete 3 slices. This will delete tilt angles too.
+    # Delete 3 slices. This will delete tilt angles and scan IDs too.
     delete_slices_module = load_operator_module('DeleteSlices')
+    orig_scan_ids = np.arange(len(orig_tilt_angles)) + 1000
+    dataset.scan_ids = orig_scan_ids
 
     first_slice = 3
     last_slice = 5
@@ -50,6 +52,9 @@ def test_multi_arrays(hxn_xrf_example_dataset: Dataset):
 
     assert deleted_shapes == expected_shapes
     assert np.allclose(dataset.tilt_angles, expected_angles)
+    assert np.array_equal(dataset.scan_ids,
+                          np.hstack((orig_scan_ids[:first_slice],
+                                     orig_scan_ids[last_slice + 1:])))
 
     # Now run a reconstruction and verify we get all results
     recon_sirt_module = load_operator_module('Recon_SIRT')

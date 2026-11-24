@@ -757,9 +757,13 @@ class DeconvolutionDenoise(tomviz.operators.CancelableOperator):
                 "There are no scalars named 'amplitude' in the selected probe dataset."
             )
 
-        dataset_scan_ids = dataset.scan_ids
-        probe_scan_ids = probe.scan_ids
-        dataset_tilt_angles = dataset.tilt_angles
+        def listed(values: np.ndarray | None) -> np.ndarray | None:
+            # An empty list (Crop used to add one to any volume) means none
+            return values if values is not None and len(values) > 0 else None
+
+        dataset_scan_ids = listed(dataset.scan_ids)
+        probe_scan_ids = listed(probe.scan_ids)
+        dataset_tilt_angles = listed(dataset.tilt_angles)
 
         dataset_scan_id_to_slice = {}
         probe_scan_id_to_slice = {}
@@ -772,6 +776,21 @@ class DeconvolutionDenoise(tomviz.operators.CancelableOperator):
 
         output_scan_ids = []
         output_tilt_angles = []
+
+        # Slices are matched by scan ID, so there must be one per slice.
+        # An operator that removes slices but not their scan IDs or tilt
+        # angles would otherwise pair a slice with the wrong probe.
+        for owner, n_slices, values, what in (
+            ("dataset", dataset_n_slices, dataset_scan_ids, "scan IDs"),
+            ("dataset", dataset_n_slices, dataset_tilt_angles, "tilt angles"),
+            ("probe", probe_n_slices, probe_scan_ids, "scan IDs"),
+        ):
+            if values is not None and len(values) != n_slices:
+                raise Exception(
+                    f"The {owner} has {n_slices} slices along the axis but "
+                    f"{len(values)} {what}. An earlier operator probably "
+                    f"removed slices without removing their {what}."
+                )
 
         if dataset_scan_ids is None or probe_scan_ids is None:
             for i in range(dataset_n_slices):
@@ -788,19 +807,21 @@ class DeconvolutionDenoise(tomviz.operators.CancelableOperator):
                 probe_scan_id_to_slice[scan_id] = i
 
         slice_indices = []
-        for i, (scan_id, dataset_slice_index) in enumerate(
-            dataset_scan_id_to_slice.items()
-        ):
+        for scan_id, dataset_slice_index in dataset_scan_id_to_slice.items():
             probe_slice_index = probe_scan_id_to_slice.get(scan_id)
 
             if probe_slice_index is None:
                 continue
 
             slice_indices.append((dataset_slice_index, probe_slice_index))
-            output_scan_ids.append(scan_id)
+
+            # Without scan IDs on both, scan_id is only the slice index
+            if dataset_scan_ids is not None:
+                output_scan_ids.append(dataset_scan_ids[dataset_slice_index])
 
             if dataset_tilt_angles is not None:
-                output_tilt_angles.append(dataset_tilt_angles[i])
+                output_tilt_angles.append(
+                    dataset_tilt_angles[dataset_slice_index])
 
         # Accumulate every output first, THEN write them all. A vtkImageData shares
         # one extent across all of its scalar arrays, so resizing (scale > 1) one

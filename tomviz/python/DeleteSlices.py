@@ -34,3 +34,7 @@ def transform(dataset, firstSlice=None, lastSlice=None, axis=2):
         except: # noqa
             # TODO what exception are we ignoring here?
             pass
+
+        # And their scan IDs, which matching by scan ID relies on
+        if dataset.scan_ids is not None:
+            dataset.scan_ids = np.delete(dataset.scan_ids, indices)
