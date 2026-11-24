@@ -686,6 +686,18 @@ bool AlignWidget::eventFilter(QObject* object, QEvent* e)
 {
   if (object == m_widget) {
     switch (e->type()) {
+      case QEvent::ShortcutOverride: {
+        // The main window's shortcuts (such as ParaView's "s" for
+        // selection) also apply in tool windows, so they would take our
+        // keys. Leave the ones with Ctrl, Alt or Meta to the application.
+        auto* ke = static_cast<QKeyEvent*>(e);
+        if (ke->modifiers() &
+            (Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier)) {
+          return false;
+        }
+        e->accept();
+        return true;
+      }
       case QEvent::KeyPress:
         widgetKeyPress(static_cast<QKeyEvent*>(e));
         return true;
