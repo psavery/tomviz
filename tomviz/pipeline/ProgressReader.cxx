@@ -66,6 +66,10 @@ void ProgressReader::handleMessage(const QString& message)
     } else if (type == QLatin1String("progress.data")) {
       emit nodeProgressData(
         nodeId, obj.value(QStringLiteral("value")).toString());
+    } else if (type == QLatin1String("output")) {
+      // What the operator printed, sent by newer tomviz-pipeline
+      // releases. The child also writes it to its stdout and stderr,
+      // which already reach the messages box.
     } else {
       qCritical() << QString("Unrecognized message type: %1").arg(type);
     }

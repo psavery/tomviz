@@ -56,6 +56,7 @@
 #include "transforms/LegacyPythonTransform.h"
 #include "AutoExecuteController.h"
 #include "ExternalNodeExecutor.h"
+#include "ProgressReader.h"
 #include "transforms/PythonTransform.h"
 #include "PipelineStripWidget.h"
 
@@ -489,6 +490,38 @@ TEST_F(PipelineLibTest, BreakpointStopsExecution)
   // t1 should not have been executed
   EXPECT_NE(t1->state(), NodeState::Current);
   EXPECT_NE(t2->state(), NodeState::Current);
+}
+
+// Newer tomviz-pipeline releases also send what an operator prints as
+// "output" messages, which were reported as unrecognized
+TEST_F(PipelineLibTest, ProgressReaderAcceptsOutputMessages)
+{
+  QTemporaryDir dir;
+  FilesProgressReader reader(dir.path());
+  QSignalSpy steps(&reader, &ProgressReader::nodeProgressStep);
+  reader.start();
+
+  static QStringList criticals;
+  criticals.clear();
+  auto previous = qInstallMessageHandler(
+    [](QtMsgType type, const QMessageLogContext&, const QString& message) {
+      if (type == QtCriticalMsg) {
+        criticals << message;
+      }
+    });
+  auto write = [&dir](const QString& name, const QByteArray& message) {
+    QFile file(dir.filePath(name));
+    if (file.open(QIODevice::WriteOnly)) {
+      file.write(message);
+    }
+  };
+  write("progress0", R"({"type": "output", "operator": 2, "value": "Hi"})");
+  write("progress1", R"({"type": "progress.step", "operator": 2, "value": 1})");
+  bool stepped = steps.wait(5000);
+  qInstallMessageHandler(previous);
+
+  EXPECT_TRUE(stepped);
+  EXPECT_TRUE(criticals.isEmpty()) << criticals.join("\n").toStdString();
 }
 
 // An operator gets an input port per dataset parameter, and only the
