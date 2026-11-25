@@ -71,6 +71,7 @@
 #include <QJsonObject>
 #include <QPushButton>
 #include <QSignalSpy>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QTemporaryFile>
 #include <QToolTip>
@@ -1604,6 +1605,51 @@ TEST_F(PipelinePythonTest, AddConstantOperator)
   // The output range should be shifted by +10.0
   EXPECT_NEAR(outputRange[0], inputRange[0] + 10.0, 0.01);
   EXPECT_NEAR(outputRange[1], inputRange[1] + 10.0, 0.01);
+}
+
+// An operator whose description names its environment, or is
+// externalOnly, made the child run it in yet another process, whose
+// output never arrived (and an externalOnly run then failed)
+TEST_F(PipelinePythonTest, ExternalRunShowsOperatorOutput)
+{
+  auto cli = QStandardPaths::findExecutable("tomviz-pipeline");
+  if (cli.isEmpty()) {
+    GTEST_SKIP() << "tomviz-pipeline is not installed";
+  }
+  auto envDir = QFileInfo(cli).absoluteDir();
+  envDir.cdUp();
+  auto env = envDir.absolutePath();
+
+  static QStringList messages;
+  for (const auto& description :
+       { QJsonObject{ { "tomviz_pipeline_env", env } },
+         QJsonObject{ { "externalOnly", true } } }) {
+    auto* source = new SphereSource();
+    source->setDimensions(4, 4, 4);
+    pipeline->addNode(source);
+    source->execute();
+    auto* transform = new LegacyPythonTransform();
+    transform->setJSONDescription(QJsonDocument(description).toJson());
+    transform->setScript("def transform(dataset):\n"
+                         "    print('Hello from the operator')\n");
+    transform->setNodeExecutor(new ExternalNodeExecutor(env));
+    pipeline->addNode(transform);
+    pipeline->createLink(source->outputPort("volume"),
+                         transform->inputPort("volume"));
+
+    messages.clear();
+    auto previous = qInstallMessageHandler(
+      [](QtMsgType, const QMessageLogContext&, const QString& message) {
+        messages << message;
+      });
+    pipeline->execute();
+    qInstallMessageHandler(previous);
+
+    auto name = description.keys().first().toStdString();
+    EXPECT_EQ(transform->state(), NodeState::Current) << name;
+    EXPECT_TRUE(messages.join("\n").contains("Hello from the operator"))
+      << name;
+  }
 }
 
 TEST_F(PipelinePythonTest, JSONParameterDefaults)

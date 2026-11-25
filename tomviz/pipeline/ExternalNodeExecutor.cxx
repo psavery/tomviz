@@ -121,6 +121,27 @@ void applyNodeParametersFile(Node* node, int nodeId, const QString& path)
   }
 }
 
+/// @a node's state for the child that runs it. Without the "executor"
+/// block or the description's legacy "tomviz_pipeline_env" key, either
+/// of which would make the child hand the node to yet another
+/// subprocess (whose output never reaches us), and without
+/// "autoExecute", since timers are the parent app's business.
+QJsonObject childNodeJson(Node* node)
+{
+  QJsonObject json = node->serialize();
+  json.remove(QStringLiteral("executor"));
+  json.remove(QStringLiteral("autoExecute"));
+  auto description = QJsonDocument::fromJson(
+    json.value(QStringLiteral("description")).toString().toUtf8());
+  auto descriptionObject = description.object();
+  if (descriptionObject.contains(QStringLiteral("tomviz_pipeline_env"))) {
+    descriptionObject.remove(QStringLiteral("tomviz_pipeline_env"));
+    json[QStringLiteral("description")] = QString::fromUtf8(
+      QJsonDocument(descriptionObject).toJson(QJsonDocument::Compact));
+  }
+  return json;
+}
+
 } // namespace
 
 ExternalNodeExecutor::ExternalNodeExecutor(QObject* parent)
@@ -257,13 +278,9 @@ QString ExternalNodeExecutor::writeShimTvh5(Node* target,
                << typeName;
     return QString();
   }
-  // Strip the "executor" block so the subprocess doesn't recurse into
-  // another ExternalNodeExecutor, and "autoExecute" — timers are the
-  // parent app's business, not the child's.
-  QJsonObject cloneJson = target->serialize();
-  cloneJson.remove(QStringLiteral("executor"));
-  cloneJson.remove(QStringLiteral("autoExecute"));
-  targetClone->deserialize(cloneJson);
+  targetClone->deserialize(childNodeJson(target));
+  // An "externalOnly" description makes deserialize add an executor back
+  targetClone->setNodeExecutor(nullptr);
   shim.addNode(targetClone);
   shim.setNodeId(targetClone, kShimTargetId);
   targetNodeId = kShimTargetId;
@@ -310,10 +327,9 @@ QString ExternalNodeExecutor::writeCheckStateFile(Node* target,
   }
 
   Pipeline check;
-  QJsonObject cloneJson = target->serialize();
-  cloneJson.remove(QStringLiteral("executor"));
-  cloneJson.remove(QStringLiteral("autoExecute"));
-  clone->deserialize(cloneJson);
+  clone->deserialize(childNodeJson(target));
+  // An "externalOnly" description makes deserialize add an executor back
+  clone->setNodeExecutor(nullptr);
   // Drop pending per-port metadata stashed by deserialize — the check
   // never touches port data, so nothing should look resumable.
   for (auto* port : clone->outputPorts()) {
