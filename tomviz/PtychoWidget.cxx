@@ -125,7 +125,7 @@ public:
             &Internal::selectPtychoDirectory);
 
     connect(ui.loadFromCSVFile, &QLineEdit::editingFinished,
-            this, &Internal::setUseAndVersionsFromCSV);
+            this, &Internal::csvFileEdited);
     connect(ui.selectLoadFromCSVFile, &QPushButton::clicked, this,
             &Internal::selectLoadFromCSV);
 
@@ -854,6 +854,26 @@ public:
     }
   }
 
+  // Back to the choices appendScannedSid made for each SID
+  void resetUseAndVersions()
+  {
+    for (int i = 0; i < sidList.size(); ++i) {
+      auto sid = sidList[i];
+      auto versions = versionOptions[sid];
+      versionList[i] = versions.isEmpty() ? QString("t1") : versions[0];
+      useList[i] = false;
+      for (auto& version : versions) {
+        if (allErrorLists[sid][version].isEmpty()) {
+          versionList[i] = version;
+          useList[i] = true;
+          break;
+        }
+      }
+    }
+    onSelectedVersionsChanged();
+    updateTable();
+  }
+
   void onSelectedVersionsChanged()
   {
     angleList.clear();
@@ -924,9 +944,51 @@ public:
 
     QTextStream reader(&file);
     auto sids = readSidsFromText(reader);
+
+    // Check against the complete SID list, not a partial scan
+    QPointer<Internal> self(this);
+    waitForScan();
+    if (!self) {
+      return;
+    }
+
+    // The list loaded last decides which scans are used, as in the PyXRF
+    // dialog, so drop the choices of an earlier CSV file
+    setCsvFile("");
+    resetUseAndVersions();
+
     ui.filterSIDsString->setText(sids.join(", "));
 
     updateFilteredSidList();
+
+    QList<long> missing;
+    for (auto& s : sids) {
+      bool ok;
+      auto sid = s.toLong(&ok);
+      if (ok && !sidList.contains(sid)) {
+        missing.append(sid);
+      }
+    }
+    if (!missing.isEmpty()) {
+      qWarning() << missing.size() << "SIDs from the file are not in the"
+                 << "ptycho directory and were skipped:" << missing;
+    }
+  }
+
+  void csvFileEdited()
+  {
+    if (!csvFile().isEmpty()) {
+      setUseAndVersionsFromCSV();
+    } else if (ui.loadFromCSVFile->isModified()) {
+      // The user cleared the file, so undo its choices. Waiting first
+      // lets a pending restore of saved choices run before the reset.
+      ui.loadFromCSVFile->setModified(false);
+      QPointer<Internal> self(this);
+      waitForScan();
+      if (self) {
+        resetUseAndVersions();
+      }
+    }
   }
 
   void selectLoadFromCSV()

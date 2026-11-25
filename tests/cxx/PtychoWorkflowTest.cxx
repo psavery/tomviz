@@ -3,13 +3,20 @@
 
 #include <QApplication>
 #include <QDir>
+#include <QFileDialog>
 #include <QFileInfo>
+#include <QLineEdit>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include <QPushButton>
+#include <QRegularExpression>
+#include <QTemporaryDir>
 #include <QTest>
+#include <QTimer>
 
 #include <pqPVApplicationCore.h>
 
+#include "PtychoWidget.h"
 #include "PythonUtilities.h"
 #include "Utilities.h"
 
@@ -23,6 +30,35 @@ using namespace tomviz::pipeline;
 
 const QDir ROOT_DATA_DIR = QString(SOURCE_DIR) + "/data";
 const QDir DATA_DIR = ROOT_DATA_DIR.absolutePath() + "/Pt_Zn_Phase";
+
+QString writeFile(const QString& path, const QByteArray& text)
+{
+  QFile file(path);
+  if (file.open(QIODevice::WriteOnly)) {
+    file.write(text);
+  }
+  return path;
+}
+
+// Click a button that asks for a file, and choose this one
+void clickAndChoose(QPushButton* button, const QString& path)
+{
+  QTimer::singleShot(0, [path]() {
+    auto* dialog =
+      qobject_cast<QFileDialog*>(QApplication::activeModalWidget());
+    dialog->selectFile(path);
+    QMetaObject::invokeMethod(dialog, "accept");
+  });
+  button->click();
+}
+
+// The SIDs the source would load
+QString usedSids(PtychoWidget& widget)
+{
+  QMap<QString, QVariant> values;
+  widget.getValues(values);
+  return values["sid_list"].toString();
+}
 
 class PtychoWorkflowTest : public QObject
 {
@@ -108,10 +144,44 @@ private slots:
     QVERIFY2(QFile::exists(outputInfoFile),
              "Info text file was not written");
   }
+
+  // A CSV file's Use choices could not be cleared, and outlived a txt
+  // list loaded after it
+  void scanListFiles()
+  {
+    QTemporaryDir tmp;
+    auto csv = writeFile(tmp.filePath("list.csv"), "Scan ID,Use\n157391,1\n");
+    auto txt = writeFile(tmp.filePath("list.txt"), "157394\n999\n");
+
+    PtychoWidget widget({});
+    widget.setValues(
+      { { "ptycho_dir", DATA_DIR.absolutePath() + "/Ptycho/recon_result" } });
+    auto* csvEdit = widget.findChild<QLineEdit*>("loadFromCSVFile");
+    csvEdit->setText(csv);
+    emit csvEdit->editingFinished();
+    QCOMPARE(usedSids(widget), QString("[157391]"));
+
+    // Clearing the CSV file brings back the default of using each scan
+    csvEdit->selectAll();
+    csvEdit->del();
+    emit csvEdit->editingFinished();
+    QVERIFY(usedSids(widget).startsWith("[157391,157394,157397,"));
+
+    // A txt list replaces the CSV file, and names the SIDs without data
+    csvEdit->setText(csv);
+    emit csvEdit->editingFinished();
+    QTest::ignoreMessage(QtWarningMsg,
+                         QRegularExpression("1 SIDs from the file .*999"));
+    clickAndChoose(widget.findChild<QPushButton*>("loadSidsFromTxt"), txt);
+    QCOMPARE(usedSids(widget), QString("[157394]"));
+    QVERIFY(csvEdit->text().isEmpty());
+  }
 };
 
 int main(int argc, char** argv)
 {
+  // So the tests can answer file dialogs
+  QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
   QApplication app(argc, argv);
 
   pqPVApplicationCore appCore(argc, argv);

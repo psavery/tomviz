@@ -610,6 +610,39 @@ public:
     auto sids = readSidsFromText(reader);
     ui.filterSidsString->setText(sids.join(", "));
     populateScanTable();
+    warnAboutUnlistedScans(sids);
+  }
+
+  // Name the scans of a loaded list that the table does not show, such
+  // as ones not downloaded yet
+  void warnAboutUnlistedScans(const QStringList& sids)
+  {
+    auto wd = workingDirectory();
+    if (wd.isEmpty() || !QDir(wd).exists()) {
+      return;
+    }
+
+    QSet<int> listed;
+    for (const auto& entry : scanEntries) {
+      listed.insert(entry.scanId);
+    }
+    QList<int> unlisted;
+    for (const auto& s : sids) {
+      bool ok;
+      int sid = s.trimmed().toInt(&ok);
+      if (ok && !listed.contains(sid)) {
+        unlisted.append(sid);
+      }
+    }
+    if (unlisted.isEmpty()) {
+      return;
+    }
+
+    auto reason = scanRange().isEmpty()
+                    ? "have no scan2D file in the working directory"
+                    : "are outside the scan range";
+    qWarning() << unlisted.size() << "scans from the file" << reason
+               << "and were skipped:" << unlisted;
   }
 
   void loadSidsFromCsv(QTextStream& reader)
@@ -674,6 +707,7 @@ public:
 
     ui.filterSidsString->setText(sids.join(", "));
     populateScanTable();
+    warnAboutUnlistedScans(sids);
 
     // If the CSV has a "Use" column, apply it to the scan table
     if (!useFlags.isEmpty()) {

@@ -3,14 +3,19 @@
 
 #include <QApplication>
 #include <QDir>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QProcess>
 #include <QProcessEnvironment>
+#include <QPushButton>
+#include <QRegularExpression>
 #include <QTemporaryDir>
 #include <QTest>
+#include <QTimer>
 
 #include <pqPVApplicationCore.h>
 
+#include "PyXRFWidget.h"
 #include "PythonUtilities.h"
 #include "Utilities.h"
 
@@ -22,6 +27,18 @@
 
 using namespace tomviz;
 using namespace tomviz::pipeline;
+
+// Click a button that asks for a file, and choose this one
+void clickAndChoose(QPushButton* button, const QString& path)
+{
+  QTimer::singleShot(0, [path]() {
+    auto* dialog =
+      qobject_cast<QFileDialog*>(QApplication::activeModalWidget());
+    dialog->selectFile(path);
+    QMetaObject::invokeMethod(dialog, "accept");
+  });
+  button->click();
+}
 
 class PyXRFWorkflowTest : public QObject
 {
@@ -162,10 +179,34 @@ private slots:
     QCOMPARE(scanIds(), QVector<int>({ 102, 101, 100 }));
     QVERIFY(!source->queryShouldAutoExecute());
   }
+
+  // A loaded scan list silently dropped its scans with no file
+  void scanListNamesMissingScans()
+  {
+    QString dir = m_tempDir.path() + "/list";
+    QVERIFY(QDir().mkpath(dir));
+    QString fake = QString(SOURCE_DIR) + "/fixtures/fake_pyxrf_utils.py";
+    QCOMPARE(QProcess::execute(python(), { fake, "raw-scan", dir, "100", "0" }),
+             0);
+    QFile list(dir + "/list.txt");
+    QVERIFY(list.open(QIODevice::WriteOnly));
+    list.write("100\n101\n");
+    list.close();
+
+    PyXRFWidget widget({});
+    widget.setValues({ { "working_directory", dir } });
+    QTest::ignoreMessage(
+      QtWarningMsg,
+      QRegularExpression("1 scans from the file have no scan2D file .*101"));
+    clickAndChoose(widget.findChild<QPushButton*>("loadSidsFromTxtOrCSV"),
+                   list.fileName());
+  }
 };
 
 int main(int argc, char** argv)
 {
+  // So the tests can answer file dialogs
+  QApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
   QApplication app(argc, argv);
 
   pqPVApplicationCore appCore(argc, argv);
