@@ -6,10 +6,12 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QLineEdit>
+#include <QMenu>
 #include <QProcess>
 #include <QProcessEnvironment>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QTableWidget>
 #include <QTemporaryDir>
 #include <QTest>
 #include <QTimer>
@@ -175,6 +177,34 @@ private slots:
     clickAndChoose(widget.findChild<QPushButton*>("loadSidsFromTxt"), txt);
     QCOMPARE(usedSids(widget), QString("[157394]"));
     QVERIFY(csvEdit->text().isEmpty());
+  }
+
+  // Use could only be changed one row at a time
+  void useSelectedRows()
+  {
+    PtychoWidget widget({});
+    widget.setValues(
+      { { "ptycho_dir", DATA_DIR.absolutePath() + "/Ptycho/recon_result" } });
+    QCOMPARE(usedSids(widget), QString("[]"));
+
+    auto* table = widget.findChild<QTableWidget*>("table");
+    for (int row : { 0, 2 }) {
+      table->selectionModel()->select(
+        table->model()->index(row, 0),
+        QItemSelectionModel::Select | QItemSelectionModel::Rows);
+    }
+    QTimer::singleShot(0, []() {
+      auto* menu = qobject_cast<QMenu*>(QApplication::activePopupWidget());
+      for (auto* action : menu->actions()) {
+        if (action->text() == "Use") {
+          menu->setActiveAction(action);
+        }
+      }
+      QTest::keyClick(menu, Qt::Key_Return);
+      menu->close();
+    });
+    emit table->customContextMenuRequested(QPoint());
+    QCOMPARE(usedSids(widget), QString("[157391,157397]"));
   }
 };
 

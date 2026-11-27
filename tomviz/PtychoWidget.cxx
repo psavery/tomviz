@@ -203,7 +203,17 @@ public:
       setVersionAction->setEnabled(false);
       setVersionAction->setText("Set Version... (no shared versions)");
     }
+    auto* useAction = menu.addAction("Use");
+    auto* dontUseAction = menu.addAction("Don't Use");
     auto* chosen = menu.exec(table->viewport()->mapToGlobal(pos));
+    if (chosen == useAction || chosen == dontUseAction) {
+      for (auto& index : selectedRows) {
+        auto idx = sidList.indexOf(filteredSidList[index.row()]);
+        useList[idx] = chosen == useAction;
+      }
+      updateTable();
+      return;
+    }
     if (chosen != setVersionAction) {
       return;
     }
