@@ -23,6 +23,7 @@
 #include <QLineEdit>
 #include <QMouseEvent>
 #include <QPushButton>
+#include <QRegularExpression>
 #include <QSet>
 #include <QSpinBox>
 #include <QStandardItemModel>
@@ -455,8 +456,15 @@ void addPathWidget(QGridLayout* layout, int row, QJsonObject& pathNode)
         path = QFileDialog::getOpenFileName(
           pathField->window(), "Select File", browseDir, filter);
       } else if (type == "save_file") {
-        path = QFileDialog::getSaveFileName(
-          pathField->window(), "Save File Path", browseDir, filter);
+        // Add the filter's extension to a name typed without one
+        QFileDialog dialog(pathField->window(), "Save File Path", browseDir,
+                           filter);
+        dialog.setAcceptMode(QFileDialog::AcceptSave);
+        static const QRegularExpression extension(R"(\*\.(\w+))");
+        dialog.setDefaultSuffix(extension.match(filter).captured(1));
+        if (dialog.exec() == QDialog::Accepted) {
+          path = dialog.selectedFiles().value(0);
+        }
       } else {
         path = QFileDialog::getExistingDirectory(
           pathField->window(), "Select Directory", browseDir);

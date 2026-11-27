@@ -65,6 +65,7 @@
 #include <QLineEdit>
 #include <QCheckBox>
 #include <QFile>
+#include <QFileDialog>
 #include <QFileInfo>
 #include <QHelpEvent>
 #include <QJsonArray>
@@ -80,6 +81,7 @@
 #include <limits>
 #include <QTest>
 #include <QTextStream>
+#include <QTimer>
 
 #include <atomic>
 
@@ -5537,6 +5539,34 @@ TEST_F(PipelineLibTest, VisibleIfHidesLabelsOfEveryParameterType)
   autoCheck->setChecked(false);
   EXPECT_FALSE(centers->isHidden());
   EXPECT_FALSE(centersFile->isHidden());
+}
+
+// Browse for a save_file parameter added no extension to a typed name,
+// so the field did not name the file the operator then wrote
+TEST_F(PipelineLibTest, SaveFileBrowseAddsTheFilterExtension)
+{
+  ParameterInterfaceBuilder builder;
+  builder.setJSONDescription(QString(R"json({"parameters": [
+    {"name": "shifts", "label": "Shifts", "type": "save_file",
+     "filter": "NPZ files (*.npz)"}
+  ]})json"));
+  QWidget parent;
+  builder.buildWidget(&parent);
+  auto* field = parent.findChild<QLineEdit*>("shifts");
+
+  QTemporaryDir dir;
+  QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs);
+  QTimer::singleShot(0, [&dir]() {
+    auto* dialog =
+      qobject_cast<QFileDialog*>(QApplication::activeModalWidget());
+    dialog->selectFile(dir.filePath("shifts"));
+    QMetaObject::invokeMethod(dialog, "accept");
+  });
+  parent.findChild<QPushButton*>()->click();
+  QCoreApplication::setAttribute(Qt::AA_DontUseNativeDialogs, false);
+
+  EXPECT_EQ(field->text().toStdString(),
+            dir.filePath("shifts.npz").toStdString());
 }
 
 // A parameter's "description" is the tooltip of its label and its field,

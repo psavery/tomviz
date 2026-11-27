@@ -72,7 +72,7 @@
       "label": "Save Transformations File",
       "description": "Save transformations file to apply to other datasets later. Leave this blank to not save it.",
       "type": "save_file",
-      "filter": "NPZ files (*npz)",
+      "filter": "NPZ files (*.npz)",
       "visible_if": "transform_source == 'generate'"
     }
   ],
