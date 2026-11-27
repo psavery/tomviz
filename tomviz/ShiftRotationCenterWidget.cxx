@@ -458,10 +458,12 @@ public:
       }
     });
     connect(ui.saveFileBrowse, &QPushButton::clicked, this, [this]() {
-      auto path = QFileDialog::getSaveFileName(
-        parent, "Save Transform File", QString(), "NPZ files (*.npz)");
-      if (!path.isEmpty()) {
-        ui.saveFile->setText(path);
+      QFileDialog dialog(parent, "Save Transform File", QString(),
+                         "NPZ files (*.npz)");
+      dialog.setAcceptMode(QFileDialog::AcceptSave);
+      dialog.setDefaultSuffix("npz");
+      if (dialog.exec() == QDialog::Accepted) {
+        ui.saveFile->setText(dialog.selectedFiles().value(0));
       }
     });
   }
